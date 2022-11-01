@@ -109,6 +109,13 @@ data "external" "elastic_enable_rules" {
   depends_on = [data.external.elastic_load_rules]
 }
 
+# output "elastic_enable_aws_rules" {
+#   value = data.external.elastic_enable_rules.result
+#   depends_on = [
+#     data.external.elastic_enable_rules
+#   ] 
+# }
+
 # -------------------------------------------------------------
 #  Create and Start transforms
 # -------------------------------------------------------------
@@ -128,6 +135,13 @@ data "external" "elastic_upload_saved_objects1" {
   depends_on = [ec_deployment.elastic_deployment]
 }
 
+# output "elastic_upload_saved_objects1" {
+#   value = data.external.elastic_upload_saved_objects1.result
+#   depends_on = [
+#     data.external.elastic_upload_saved_objects1
+#   ] 
+# }
+
 data "external" "elastic_upload_saved_objects2" {
   query = {
 	elastic_http_method = "POST"
@@ -137,5 +151,14 @@ data "external" "elastic_upload_saved_objects2" {
     so_file      		= "${path.module}/../dashboards/VPCFlow Summary.ndjson"
   }
   program = ["sh", "${path.module}/../../lib/elastic_api/kb_upload_saved_objects.sh" ]
-  depends_on = [ec_deployment.elastic_deployment]
+  depends_on = [
+    ec_deployment.elastic_deployment,
+    data.external.elastic_upload_saved_objects1]
 }
+
+# output "elastic_upload_saved_objects2" {
+#   value = data.external.elastic_upload_saved_objects2.result
+#   depends_on = [
+#     data.external.elastic_upload_saved_objects2
+#   ] 
+# }

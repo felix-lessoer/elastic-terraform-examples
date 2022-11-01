@@ -33,6 +33,21 @@ This example will install and configure:
 	- Elastic transforms to prepare the data for the installed dashboards
 	- Preloaded all Elastic Security Detection rules and enabled all Google Cloud related rules
 
+## The Azure Environment
+
+The Azure example is enabling an extended view in the monitoring and security data thats created within the Azure platform. 
+It will create all necessary components like EventHubs within your Azure Account and also configure the Elastic components to collect data from them.
+It takes just a few minutes to get it up and running.  It works both: In [Elastic Cloud directly](https://cloud.elastic.co) or via the [Azure Marketplace option for Elastic Cloud](https://ela.st/azure). 
+
+This example will install and configure:
+- Elastic Cluster
+- Azure VM with Elastic Agent installed and configured to talk to the Elastic Cluster
+- Azure Diagnostic Settings for Platform and Activity Logs to send it to EventHubs
+- Elastic Agent to collect all available Azure Metrics
+- The Elastic Cluster will be configured with the following additional capabilities
+	- Preloaded all Elastic Security Detection rules and enabled all Google Cloud related rules
+
+	
 ## Getting started
 
 You can decide if you like to install the environment for all Cloud Providers at once or each once independently from each other. No matter what you prefer you need to deploy it within the [MultiCloud](MultiCloud) folder. Before you do that you need to prepare your environment. You will find the comprehensive Getting Started description also within the [MultiCloud](MultiCloud) folder.

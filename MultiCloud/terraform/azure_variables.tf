@@ -26,19 +26,23 @@ variable "azure_region" {
 }
 
 variable  "azure_subscription_id" {
- type = string   
+ type = string
+ default = ""   
 }
 
 variable  "azure_client_id" {
- type = string   
+ type = string
+ default = ""     
 }
 
 variable  "azure_client_secret" {
- type = string   
+ type = string 
+ default = ""    
 }
 
 variable  "azure_tenant_id" {
- type = string   
+ type = string 
+ default = ""    
 }
 
 

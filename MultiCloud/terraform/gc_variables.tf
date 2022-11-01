@@ -32,6 +32,7 @@ variable "google_cloud_region" {
 
 variable "google_cloud_service_account_path" {
   type = string
+  default = ""  
 }
 
 variable "google_cloud_network" {

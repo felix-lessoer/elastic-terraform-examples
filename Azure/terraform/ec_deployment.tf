@@ -123,16 +123,16 @@ data "external" "elastic_load_rules" {
   depends_on = [ec_deployment.elastic_deployment]
 }
 
-# data "external" "elastic_enable_rules" {
-#   query = {
-#     kibana_endpoint  = ec_deployment.elastic_deployment.kibana[0].https_endpoint
-#     elastic_username  = ec_deployment.elastic_deployment.elasticsearch_username
-#     elastic_password  = ec_deployment.elastic_deployment.elasticsearch_password
-#     elastic_json_body = templatefile("${path.module}/../json_templates/es_rule_activation.json",{})
-#   }
-#   program = ["sh", "${path.module}/../../lib/elastic_api/kb_enable_detection_rules.sh" ]
-#   depends_on = [data.external.elastic_load_rules]
-# }
+data "external" "elastic_enable_rules" {
+  query = {
+    kibana_endpoint  = ec_deployment.elastic_deployment.kibana[0].https_endpoint
+    elastic_username  = ec_deployment.elastic_deployment.elasticsearch_username
+    elastic_password  = ec_deployment.elastic_deployment.elasticsearch_password
+    elastic_json_body = templatefile("${path.module}/../json_templates/es_rule_activation.json",{})
+  }
+  program = ["sh", "${path.module}/../../lib/elastic_api/kb_enable_detection_rules.sh" ]
+  depends_on = [data.external.elastic_load_rules]
+}
 
 
 # -------------------------------------------------------------

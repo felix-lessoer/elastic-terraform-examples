@@ -75,3 +75,18 @@ module "azure_environment" {
 
   count  = (var.deploy_azure == true) ? 1 : 0
 }
+
+output "aws" {
+  value = module.aws_environment[0]
+  sensitive = true
+}
+
+output "azure" {
+  value = module.azure_environment[0]
+  sensitive = true
+}
+
+output "gc" {
+  value = module.gc_environment[0]
+  sensitive = true
+}

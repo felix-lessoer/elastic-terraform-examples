@@ -60,10 +60,10 @@ data "external" "elastic_add_endpoint_integration" {
   depends_on = [data.external.elastic_add_cspm_integration]
 }
 
-output "elastic_add_endpoint_integration_template" {
-  value = templatefile("${path.module}/../json_templates/k8s_endpoint_integration.json", 
-    {
-    "policy_id": data.external.elastic_create_k8s_policy.result.id,
-    }
-    )
-}
+# output "elastic_add_endpoint_integration_template" {
+#   value = templatefile("${path.module}/../json_templates/k8s_endpoint_integration.json", 
+#     {
+#     "policy_id": data.external.elastic_create_k8s_policy.result.id,
+#     }
+#     )
+# }

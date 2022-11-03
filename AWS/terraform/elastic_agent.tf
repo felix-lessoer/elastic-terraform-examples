@@ -81,7 +81,8 @@ resource "aws_instance" "elastic-agent" {
   instance_type = "t2.micro"
   associate_public_ip_address = true
   security_groups = [ aws_security_group.elastic-agent.name ]
-  key_name = "felix-london"
+  monitoring = true
+  #key_name = "felix-london"
 
   tags = {
     Name = "elastic-agent"

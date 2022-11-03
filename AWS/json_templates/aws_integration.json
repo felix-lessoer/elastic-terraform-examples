@@ -5,7 +5,7 @@
     "package": {
       "name": "aws",
       "title": "AWS",
-      "version": "1.23.4"
+      "version": "1.24.5"
     },
     "enabled": true,
     "policy_id": "${policy_id}",
@@ -1768,10 +1768,10 @@
       {
         "type": "httpjson",
         "policy_template": "securityhub",
-        "enabled": false,
+        "enabled": true,
         "streams": [
           {
-            "enabled": false,
+            "enabled": true,
             "data_stream": {
               "type": "logs",
               "dataset": "aws.securityhub_findings"
@@ -1782,7 +1782,7 @@
                 "type": "text"
               },
               "initial_interval": {
-                "value": "24h",
+                "value": "240h",
                 "type": "text"
               },
               "tags": {
@@ -1793,7 +1793,8 @@
                 "type": "text"
               },
               "aws_region": {
-                "type": "text"
+                "type": "text",
+                "value": "${aws_region}"
               },
               "proxy_url": {
                 "type": "text"
@@ -1817,7 +1818,7 @@
             "id": "httpjson-aws.securityhub_findings-6ed9ee36-5623-4ddc-b5b9-96ef1a132c54"
           },
           {
-            "enabled": false,
+            "enabled": true,
             "data_stream": {
               "type": "logs",
               "dataset": "aws.securityhub_insights"
@@ -1835,7 +1836,8 @@
                 "type": "text"
               },
               "aws_region": {
-                "type": "text"
+                "type": "text",
+                "value": "${aws_region}"
               },
               "proxy_url": {
                 "type": "text"

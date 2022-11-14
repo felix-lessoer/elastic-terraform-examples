@@ -36,7 +36,7 @@ inputs:
   #         batch_max_bytes: 10485760
 %{ for arn in cw-logs-objs ~}
   - type: "cloudwatch-logs"
-    id: "${arn}"
+    id: "${arn}:*"
     outputs:
       - type: "elasticsearch"
         args:

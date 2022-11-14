@@ -31,11 +31,12 @@ export EC_API_KEY="[PUT YOUR ELASTIC CLOUD API KEY HERE]"
 
 ### Create local env files within the repo
 
-Target is to have the *aws.json* file and the *gcp.json* file in *<Repo root>MultiCloud/local_env/* to make the terraform commands below working correctly. 
+Target is to have the *aws.json* file, the *azure.json* file and the *gcp.json* file in *<Repo root>MultiCloud/local_env/* to make the terraform commands below working correctly. 
 ```bash
 mkdir local_env
 touch aws.json
 touch gcp.json
+touch azure.json
 ```
 
 Modify the terraform environment settings to prepare your local env.
@@ -81,6 +82,29 @@ List of other optional parameters that can be added to terraform.tfvars.json
 | google_cloud_region  | europe-west3  | europe-west3  | Used to change the region where the Google Cloud objects getting installed  |
 | google_cloud_network  | default | my-network  | Used to change the network the Elastic Agent VM is installed in. (Network needs to be existent)  |
 
+#### For Azure
+More Azure configuration remarks you can find in the [Azure](../Azure) folder.
+
+Minimal config:
+```json
+{
+    "deploy_azure" : true,
+	"azure_client_id" : "<Your Azure Client ID>",
+	"azure_client_secret" : "<Your Azure Client Secret>",
+    "azure_tenant_id": "<Your Azure Tenant>",
+    "azure_subscription_id": "<Your Azure Subscription>"
+}
+```
+
+List of other optional parameters that can be added to terraform.tfvars.json 
+| Parameter Name  | Default value | Example | Description |
+| ------------- | ------------- | ------------- | ------------- |
+| elastic_version  | latest  | 8.4.1  | Used to define the Elastic Search version  |
+| elastic_region  | azure-westeurope  | azure-westeurope  | Used to set the Elastic Cloud region for the Azure deployment  |
+| elastic_deployment_name  | Azure Observe and Protect  | Azure cluster  | Used to define the name for the Elastic deployment  |
+| azure_region  | West Europe  | West Europe  | Used to change the region where the Azure objects getting installed  |
+
+
 ## Deploy
 
 For the  setup you need to init and apply the terraform configuration in the [Multi Cloud](MultiCloud) root module and start in the terraform folder. Before the apply you need to provide credentials for Elastic Cloud as well as for every Cloud Provider that you want to deploy. Terraform needs access to perform actions in your name.
@@ -102,7 +126,7 @@ List of parameters to de/activate one or more cloud provider environments comple
 | ------------- | ------------- | ------------- | ------------- |
 | deploy_gc  | true  | false  | Used to de/activate the Google Cloud Environment  |
 | deploy_aws  | true  | false  | Used to de/activate the AWS Environment   |
-
+| deploy_azure  | true  | false  | Used to de/activate the Azure Environment   |
 
 ### Run terraform
 
@@ -115,23 +139,29 @@ terraform init
 #### Check plan to see what will be created by terraform
 
 ```bash
-terraform plan -var-file="../local_env/aws.json" -var-file="../local_env/gcp.json"
+terraform plan -var-file="../local_env/aws.json" -var-file="../local_env/gcp.json" -var-file="../local_env/azure.json"
 ```
 
 #### Run with auto-approve will install everything
 
 First run:
 ```bash
-terraform apply -var-file="../local_env/aws.json" -var-file="../local_env/gcp.json" -auto-approve
+terraform apply -var-file="../local_env/aws.json" -var-file="../local_env/gcp.json" -var-file="../local_env/azure.json" -auto-approve
 ```
 
 The replace part is necessary if you deploy the AWS environment. Without that the Cloud Formation template that is used usually have issues on re apply 
 ```bash
-terraform apply -var-file="../local_env/aws.json" -var-file="../local_env/gcp.json" -replace module.aws_environment[0].aws_serverlessapplicationrepository_cloudformation_stack.esf_cf_stack -auto-approve
+terraform apply -var-file="../local_env/aws.json" -var-file="../local_env/gcp.json" -var-file="../local_env/azure.json" -replace module.aws_environment[0].aws_serverlessapplicationrepository_cloudformation_stack.esf_cf_stack -auto-approve
 ```
 
-#### Cleanup (Deletes every component that was created by terraform)
+If you are facing issues while setting up a specific cloud provider, e.g. because of missing credentials for the others you can try to target the apply to a specific module like this: 
+```bash
+terraform apply -var-file="../local_env/aws.json" -var-file="../local_env/gcp.json" -var-file="../local_env/azure.json" -target module.aws_environment[0] -auto-approve
+```
+If this is not working for you, you need to comment out/remove the provider and module blocks within the *modules.tf* file and *<CSP-name>_provider.tf* file.
+
+#### Cleanup (Deletes every component that was created by terraform if possible)
 
 ```bash
-terraform destroy -var-file="../local_env/aws.json" -var-file="../local_env/gcp.json" -auto-approve
+terraform destroy -var-file="../local_env/aws.json" -var-file="../local_env/gcp.json" -var-file="../local_env/azure.json" -auto-approve
 ```

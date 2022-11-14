@@ -2,6 +2,7 @@
 .vs/slnx.sqlite
 *.tfstate
 *.backup
+terraform/*.info
 terraform/*.tfstate
 terraform/.terraform
 *.hcl

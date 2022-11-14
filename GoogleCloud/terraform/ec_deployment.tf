@@ -61,11 +61,6 @@ data "external" "elastic_create_policy" {
   depends_on = [ec_deployment.elastic_deployment]
 }
 
-output "elastic_create_policy" {
-  value = data.external.elastic_create_policy.result
-  depends_on = [data.external.elastic_create_policy]
-}
-
 data "external" "elastic_add_integration" {
   query = {
     kibana_endpoint  = ec_deployment.elastic_deployment.kibana[0].https_endpoint
@@ -86,11 +81,6 @@ data "external" "elastic_add_integration" {
   }
   program = ["sh", "${path.module}/../../lib/elastic_api/kb_add_integration_to_policy.sh" ]
   depends_on = [data.external.elastic_create_policy]
-}
-
-output "elastic_add_integration" {
-  value = data.external.elastic_add_integration.result
-  depends_on = [data.external.elastic_add_integration]
 }
 
 # -------------------------------------------------------------
@@ -116,11 +106,6 @@ data "external" "elastic_enable_rules" {
   }
   program = ["sh", "${path.module}/../../lib/elastic_api/kb_enable_detection_rules.sh" ]
   depends_on = [data.external.elastic_load_rules]
-}
-
-output "elastic_enable_rules" {
-  value = data.external.elastic_enable_rules.result
-  depends_on = [data.external.elastic_enable_rules]
 }
 
 # -------------------------------------------------------------
@@ -150,10 +135,6 @@ data "external" "elastic_start_transforms" {
   depends_on = [data.external.elastic_create_transforms]
 }
 
-output "elastic_start_transforms" {
-  value = data.external.elastic_start_transforms.result
-  depends_on = [data.external.elastic_start_transforms]
-}
 
 ################################################################################
 
@@ -180,10 +161,7 @@ data "external" "elastic_start_transform_host_metrics" {
   depends_on = [data.external.elastic_create_transform_host_metrics]
 }
 
-output "elastic_start_transform_host_metrics" {
-  value = data.external.elastic_start_transform_host_metrics.result
-  depends_on = [data.external.elastic_start_transform_host_metrics]
-}
+
 
 ################################################################################
 
@@ -210,10 +188,6 @@ data "external" "elastic_start_transform_vpc_flow" {
   depends_on = [data.external.elastic_create_transform_vpc_flow]
 }
 
-output "elastic_start_transform_vpc_flow" {
-  value = data.external.elastic_start_transform_vpc_flow.result
-  depends_on = [data.external.elastic_start_transform_vpc_flow]
-}
 
 # -------------------------------------------------------------
 #  Load Dashboards
@@ -231,7 +205,3 @@ data "external" "elastic_upload_saved_objects" {
   depends_on = [ec_deployment.elastic_deployment]
 }
 
-output "elastic_upload_saved_objects" {
-  value = data.external.elastic_upload_saved_objects.result
-  depends_on = [data.external.elastic_upload_saved_objects]
-}

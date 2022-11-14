@@ -12,7 +12,7 @@ data "azurerm_subscription" "current" {}
 #################
 
 resource "azurerm_eventhub_namespace" "elastic" {
-  name                = "azureLogsToElastic"
+  name                = "azure-logs-to-elastic"
   location            = azurerm_resource_group.main.location
   resource_group_name = azurerm_resource_group.main.name
   sku                 = "Standard"
@@ -21,7 +21,7 @@ resource "azurerm_eventhub_namespace" "elastic" {
 }
 
 resource "azurerm_eventhub" "elastic" {
-  name                = "azureLogsToElasticHub"
+  name                = "azure-logs-to-elastic"
   namespace_name      = azurerm_eventhub_namespace.elastic.name
   resource_group_name = azurerm_resource_group.main.name
   partition_count     = 2
@@ -29,7 +29,7 @@ resource "azurerm_eventhub" "elastic" {
 }
 
 resource "azurerm_eventhub_authorization_rule" "elastic" {
-  name                = "azureLogsToElasticHubRule"
+  name                = "azure-logs-to-elastic-hub-rule"
   namespace_name      = azurerm_eventhub_namespace.elastic.name
   eventhub_name       = azurerm_eventhub.elastic.name
   resource_group_name = azurerm_resource_group.main.name

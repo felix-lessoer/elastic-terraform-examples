@@ -95,7 +95,7 @@ data "external" "elastic_add_logs_integration" {
     "policy_id": data.external.elastic_create_policy.result.id,
     "eventhub": azurerm_eventhub.elastic.name,
     "connection_string": azurerm_eventhub_authorization_rule.elastic.primary_connection_string ,
-    "storage_account": azurerm_storage_account.elastic.id ,
+    "storage_account": azurerm_storage_account.elastic.name ,
     "storage_account_key": azurerm_storage_account.elastic.primary_access_key
     }
     )

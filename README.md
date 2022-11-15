@@ -56,6 +56,7 @@ You can decide if you like to install the environment for all Cloud Providers at
 
 Other terraform + elastic examples can be found here:
 - [Patent Search](https://github.com/MarxDimitri/solution-accelerators/tree/main/patent-search) using Google Cloud BigQuery public dataset
+- [AWS Quick Start](https://github.com/aws-ia/terraform-elastic-cloud) 
 
 Kibana Dashboards and other Elastic extensions can be found here
 - [Elastic Content Share](https://elastic-content-share.eu/)

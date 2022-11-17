@@ -1,0 +1,29 @@
+{
+  "policy_id": "${policy_id}",
+  "package": {
+    "name": "azure_billing",
+    "version": "1.1.1"
+  },
+  "name": "azure_billing",
+  "description": "",
+  "namespace": "default",
+  "inputs": {
+    "billing-azure/metrics": {
+      "enabled": true,
+      "streams": {
+        "azure.billing": {
+          "enabled": true,
+          "vars": {
+            "period": "24h"
+          }
+        }
+      }
+    }
+  },
+  "vars": {
+    "client_id": "${client_id}",
+    "client_secret": "${client_secret}",
+    "tenant_id": "${tenant_id}",
+    "subscription_id": "${subscription_id}"
+  }
+}

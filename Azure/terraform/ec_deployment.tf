@@ -85,6 +85,25 @@ data "external" "elastic_add_metrics_integration" {
   depends_on = [data.external.elastic_create_policy]
 }
 
+data "external" "elastic_add_billing_integration" {
+  query = {
+    kibana_endpoint  = ec_deployment.elastic_deployment.kibana[0].https_endpoint
+    elastic_username  = ec_deployment.elastic_deployment.elasticsearch_username
+    elastic_password  = ec_deployment.elastic_deployment.elasticsearch_password
+    elastic_json_body = templatefile("${path.module}/../json_templates/azure-billing-integration.json", 
+    {
+    "policy_id": data.external.elastic_create_policy.result.id,
+    "client_id": var.azure_client_id,
+    "client_secret": var.azure_client_secret,
+    "tenant_id": var.azure_tenant_id,
+    "subscription_id": var.azure_subscription_id
+    }
+    )
+  }
+  program = ["sh", "${path.module}/../../lib/elastic_api/kb_add_integration_to_policy.sh" ]
+  depends_on = [data.external.elastic_create_policy]
+}
+
 data "external" "elastic_add_logs_integration" {
   query = {
     kibana_endpoint  = ec_deployment.elastic_deployment.kibana[0].https_endpoint
@@ -139,8 +158,41 @@ data "external" "elastic_enable_rules" {
 #  Create and Start transforms
 # -------------------------------------------------------------
 
+data "external" "elastic_create_transforms" {
+  query = {
+    elastic_endpoint  = ec_deployment.elastic_deployment.elasticsearch[0].https_endpoint
+    elastic_username  = ec_deployment.elastic_deployment.elasticsearch_username
+    elastic_password  = ec_deployment.elastic_deployment.elasticsearch_password
+    transform_name    = "azure-billing-transform"
+    elastic_json_body = templatefile("${path.module}/../json_templates/billing-transform.json",{})
+  }
+  program = ["sh", "${path.module}/../../lib/elastic_api/es_create_transform.sh" ]
+  depends_on = [ec_deployment.elastic_deployment]
+}
+
+data "external" "elastic_start_transforms" {
+  query = {
+    elastic_endpoint  = ec_deployment.elastic_deployment.elasticsearch[0].https_endpoint
+    elastic_username  = ec_deployment.elastic_deployment.elasticsearch_username
+    elastic_password  = ec_deployment.elastic_deployment.elasticsearch_password
+    transform_name    = "azure-billing-transform"
+  }
+  program = ["sh", "${path.module}/../../lib/elastic_api/es_start_transform.sh" ]
+  depends_on = [data.external.elastic_create_transforms]
+}
 
 # -------------------------------------------------------------
 #  Load Dashboards
 # -------------------------------------------------------------
 
+data "external" "elastic_upload_saved_objects" {
+  query = {
+	elastic_http_method = "POST"
+    kibana_endpoint  = ec_deployment.elastic_deployment.kibana[0].https_endpoint
+    elastic_username  = ec_deployment.elastic_deployment.elasticsearch_username
+    elastic_password  = ec_deployment.elastic_deployment.elasticsearch_password
+    so_file      		= "${path.module}/../dashboards/Azure-dashboards.ndjson"
+  }
+  program = ["sh", "${path.module}/../../lib/elastic_api/kb_upload_saved_objects.sh" ]
+  depends_on = [ec_deployment.elastic_deployment]
+}

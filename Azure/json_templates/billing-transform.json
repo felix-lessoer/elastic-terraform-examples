@@ -1,0 +1,155 @@
+{
+    "source": {
+      "index": [
+        "logs-azure*",
+        "metrics-azure*"
+      ],
+      "query": {
+        "bool": {
+          "should": [
+            {
+              "exists": {
+                "field": "azure.resource.group"
+              }
+            }
+          ],
+          "minimum_should_match": 1
+        }
+      }
+    },
+    "dest": {
+      "index": "billing-azure"
+    },
+    "frequency": "1m",
+    "pivot": {
+      "group_by": {
+        "azure.resource.group": {
+          "terms": {
+            "field": "azure.resource.group"
+          }
+        }
+      },
+      "aggregations": {
+        "billing": {
+          "filter": {
+            "exists": {
+              "field": "azure.billing.billing_period_id"
+            }
+          },
+          "aggs": {
+            "forecast": {
+              "sum": {
+                "field": "azure.billing.forecast_cost"
+              }
+            },
+            "actual": {
+              "sum": {
+                "field": "azure.billing.actual_cost"
+              }
+            },
+            "pretax": {
+              "sum": {
+                "field": "azure.billing.pretax_cost"
+              }
+            }
+          }
+        },
+        "user_interaction": {
+          "filter": {
+            "exists": {
+              "field": "user.name"
+            }
+          },
+          "aggs": {
+            "last": {
+              "max": {
+                "field": "@timestamp"
+              }
+            },
+            "distinct_users": {
+              "cardinality": {
+                "field": "user.name"
+              }
+            },
+            "mail": {
+              "top_metrics": {
+                "metrics": [
+                  {
+                    "field": "user.email"
+                  }
+                ],
+                "sort": {
+                  "@timestamp": "desc"
+                }
+              }
+            },
+            "count": {
+              "value_count": {
+                "field": "@timestamp"
+              }
+            }
+          }
+        },
+        "bandwidth": {
+          "filter": {
+            "exists": {
+              "field": "host.network.egress.bytes"
+            }
+          },
+          "aggs": {
+            "host.network.egress.bytes.sum": {
+              "sum": {
+                "field": "host.network.egress.bytes"
+              }
+            }
+          }
+        },
+        "activitylogs": {
+          "filter": {
+            "term": {
+              "event.dataset": "azure.activitylogs"
+            }
+          },
+          "aggs": {
+            "count": {
+              "value_count": {
+                "field": "@timestamp"
+              }
+            },
+            "last": {
+              "max": {
+                "field": "@timestamp"
+              }
+            }
+          }
+        },
+        "platformlogs": {
+          "filter": {
+            "term": {
+              "event.dataset": "azure.platformlogs"
+            }
+          },
+          "aggs": {
+            "count": {
+              "value_count": {
+                "field": "@timestamp"
+              }
+            },
+            "last": {
+              "max": {
+                "field": "@timestamp"
+              }
+            }
+          }
+        }
+      }
+    },
+    "settings": {
+      "max_page_search_size": 1500
+    },
+    "sync": {
+      "time": {
+        "field": "@timestamp"
+      }
+    }
+  }

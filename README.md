@@ -16,6 +16,8 @@ This example will install and configure:
 - The Elastic Cluster will be configured with the following additional capabilities
 	- Preloaded all Elastic Security Detection rules and enabled all AWS related rules
 
+[![Getting started with AWS](https://i.ytimg.com/vi/9PpjxYOOr7c/maxresdefault.jpg)](https://youtu.be/9PpjxYOOr7c "Getting started with AWS")
+
 ## The Google Cloud Environment
 
 The Google Cloud example is creating a Google Cloud Monitoring and Enhanced Security environment. It creates all necessary Google Cloud Services as well as the Elastic Cloud Cluster for you. The only thing you need to provide is an appropriate Google Cloud Service account that has the right permissions and the Elastic Cloud API Key. It works both: In [Elastic Cloud directly](https://cloud.elastic.co) or via the [Google Cloud Marketplace option for Elastic Cloud](https://ela.st/google).

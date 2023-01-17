@@ -16,6 +16,7 @@ This example will install and configure:
 - The Elastic Cluster will be configured with the following additional capabilities
 	- Preloaded all Elastic Security Detection rules and enabled all AWS related rules
 
+#### Watch this video to learn more
 [![Getting started with AWS](https://raw.githubusercontent.com/felix-lessoer/elastic-terraform-examples/main/AWS/AWS_thumbnail.PNG)](https://youtu.be/9PpjxYOOr7c "Getting started with AWS")
 
 ## The Google Cloud Environment

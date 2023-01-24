@@ -1,15 +1,10 @@
 resource "aws_s3_bucket" "elastic_bucket" {
-  bucket = var.bucket_name
+  bucket = "${var.bucket_name}-${ec_deployment.elastic_deployment.id}"
 
   tags = {
-    Name        = "Elastic SAR Data"
+    Name        = var.bucket_name
   }
 }
-
-# resource "aws_s3_bucket_acl" "private_access" {
-#   bucket = aws_s3_bucket.elastic_bucket.id
-#   acl    = "private"
-# }
 
 resource "aws_s3_bucket_notification" "all_notifications" {
   bucket = aws_s3_bucket.elastic_bucket.id
@@ -39,7 +34,7 @@ resource "aws_s3_bucket_notification" "all_notifications" {
 }
 
 resource "aws_s3_bucket_policy" "cloudtrail" {
-  bucket = aws_s3_bucket.elastic_bucket.id
+  bucket = aws_s3_bucket.elastic_bucket.bucket
   policy = <<POLICY
 {
     "Version": "2012-10-17",
@@ -92,9 +87,13 @@ resource "aws_s3_bucket_policy" "cloudtrail" {
                 "Service": "logging.s3.amazonaws.com"
             },
             "Action": "s3:PutObject",
-            "Resource": "arn:aws:s3:::elastic-sar-bucket/*"
+            "Resource": "${aws_s3_bucket.elastic_bucket.arn}/*"
         }
     ]
 }
 POLICY
+
+depends_on = [
+  aws_s3_bucket.elastic_bucket
+]
 }

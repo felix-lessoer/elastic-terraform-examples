@@ -1,5 +1,5 @@
 resource "aws_s3_object" "config_file" {
-  bucket = var.bucket_name
+  bucket = aws_s3_bucket.elastic_bucket.bucket
   key    = "sar_config.yaml"
   content = templatefile("${path.module}/config.tftpl", 
   {
@@ -28,7 +28,7 @@ resource "aws_serverlessapplicationrepository_cloudformation_stack" "esf_cf_stac
   capabilities     = data.aws_serverlessapplicationrepository_application.esf_sar.required_capabilities
 
 parameters = {
-    ElasticServerlessForwarderS3ConfigFile         = "s3://${var.bucket_name}/sar_config.yaml"  ## FILL WITH THE VALUE OF THE S3 URL IN THE FORMAT "s3://bucket-name/config-file-name" POINTING TO THE CONFIGURATION FILE FOR YOUR DEPLOYMENT OF THE ELASTIC SERVERLESS FORWARDER
+    ElasticServerlessForwarderS3ConfigFile         = "s3://${aws_s3_bucket.elastic_bucket.id}/sar_config.yaml"  ## FILL WITH THE VALUE OF THE S3 URL IN THE FORMAT "s3://bucket-name/config-file-name" POINTING TO THE CONFIGURATION FILE FOR YOUR DEPLOYMENT OF THE ELASTIC SERVERLESS FORWARDER
 
     ElasticServerlessForwarderSSMSecrets           = ""  ## FILL WITH A COMMA DELIMITED LIST OF AWS SSM SECRETS ARNS REFERENCED IN THE CONFIG YAML FILE (IF ANY).
 

@@ -50,7 +50,7 @@ This example will install and configure:
 - The Elastic Cluster will be configured with the following additional capabilities
 	- Preloaded all Elastic Security Detection rules and enabled all Google Cloud related rules
 #### Watch this video to learn more
-[![Getting started with Elasticsearch on Azure](https://raw.githubusercontent.com/felix-lessoer/elastic-terraform-examples/main/Azure/Azure_thumbnail.PNG)](https://youtu.be/SuZyIbFsWcY&list=PLhLSfisesZItKvjRiYt9PGDLYHOjQyzQi "Getting started with Elasticsearch on Azure")
+[![Getting started with Elasticsearch on Azure](https://raw.githubusercontent.com/felix-lessoer/elastic-terraform-examples/main/Azure/AZURE_thumbnail.PNG)](https://youtu.be/SuZyIbFsWcY&list=PLhLSfisesZItKvjRiYt9PGDLYHOjQyzQi "Getting started with Elasticsearch on Azure")
 	
 ## Getting started
 

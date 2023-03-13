@@ -36,6 +36,9 @@ This example will install and configure:
 	- Elastic transforms to prepare the data for the installed dashboards
 	- Preloaded all Elastic Security Detection rules and enabled all Google Cloud related rules
 
+#### Watch this video to learn more
+[![Getting started with Elasticsearch on Google Cloud](https://raw.githubusercontent.com/felix-lessoer/elastic-terraform-examples/main/GoogleCloud/Getting-started-with-Google-Cloud-Monitoring-Google-Slides.png)](https://youtu.be/wAIJZmCi6Iw "Getting started with Google Cloud")
+
 ## The Azure Environment
 
 The Azure example is enabling an extended view in the monitoring and security data thats created within the Azure platform. 

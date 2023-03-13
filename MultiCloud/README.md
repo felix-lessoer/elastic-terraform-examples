@@ -12,6 +12,10 @@ You can decide if you like to install the environment for all Cloud Providers at
 
 - [jq](https://stedolan.github.io/jq/download/)
 - [terraform](https://www.terraform.io/downloads)
+- The Command Line Interface (CLI) tools for each Cloud Provider you wanna use
+	- [AWS](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)
+	- [Google Cloud](https://cloud.google.com/sdk/docs/install)
+	- [Azure](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli)
 
 ### Clone the repository
 

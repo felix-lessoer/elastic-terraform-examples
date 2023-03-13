@@ -149,6 +149,12 @@ First run:
 terraform apply -var-file="../local_env/aws.json" -var-file="../local_env/gcp.json" -var-file="../local_env/azure.json" -auto-approve
 ```
 
+After every terraform apply run you get the output that contains all necessary information to access the Elastic Cluster(s).
+However as this include sensitive data you need to run in order to see it.
+```bash
+terraform output -json
+```
+	
 The replace part is necessary if you deploy the AWS environment. Without that the Cloud Formation template that is used usually have issues on re apply 
 ```bash
 terraform apply -var-file="../local_env/aws.json" -var-file="../local_env/gcp.json" -var-file="../local_env/azure.json" -replace module.aws_environment[0].aws_serverlessapplicationrepository_cloudformation_stack.esf_cf_stack -auto-approve
@@ -156,10 +162,13 @@ terraform apply -var-file="../local_env/aws.json" -var-file="../local_env/gcp.js
 
 If you are facing issues while setting up a specific cloud provider, e.g. because of missing credentials for the others you can try to target the apply to a specific module like this: 
 ```bash
-terraform apply -var-file="../local_env/aws.json" -var-file="../local_env/gcp.json" -var-file="../local_env/azure.json" -target module.aws_environment[0] -auto-approve
+terraform apply -var-file="../local_env/aws.json" -var-file="../local_env/gcp.json" -var-file="../local_env/azure.json" -target module.aws_environment[0] -replace aws_serverlessapplicationrepository_cloudformation_stack.esf_cf_stack -auto-approve
 ```
 If this is not working for you, you need to comment out/remove the provider and module blocks within the *modules.tf* file and *<CSP-name>_provider.tf* file.
+Note: For AWS you need to replace the Serverless Forwarder Application everytime you run terraform. Otherwise the deployment will stuck.
+	
 
+	
 #### Cleanup (Deletes every component that was created by terraform if possible)
 
 ```bash

@@ -7,7 +7,7 @@ data "aws_vpcs" "all" {}
 resource "aws_flow_log" "vpc" { 
   for_each             = toset(data.aws_vpcs.all.ids)
 
-  iam_role_arn         = aws_iam_role.vpcflow.arn
+  #iam_role_arn         = aws_iam_role.vpcflow.arn
   log_destination      = aws_s3_bucket.elastic_bucket.arn
   log_destination_type = "s3"
   traffic_type         = "ALL"

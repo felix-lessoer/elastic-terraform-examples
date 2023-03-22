@@ -13,22 +13,12 @@ variable "elastic_region" {
 
 variable "elastic_deployment_name" {
   type = string
-  default = "AWS Observe and Protect"
+  default = "AWS"
 }
 
 variable "elastic_deployment_template_id" {
   type = string
   default = "aws-general-purpose-arm-v5"
-}
-
-variable "elastic_remotes" {
-    type = list(
-            object({
-                id    = string
-                alias = string
-        })
-    )
-    default = []
 }
 
 # -------------------------------------------------------------
@@ -48,17 +38,6 @@ variable "aws_secret_key" {
   type = string
 }
 
-variable "bucket_name" {
-  type = string
-  default = "elastic-sar-bucket"
-}
-
-variable "elb_names" {
-  type = list
-  default = []
-}
-
 variable "eks_cluster" {
   type = string
-  default = ""
 }

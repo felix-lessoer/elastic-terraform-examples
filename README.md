@@ -17,7 +17,7 @@ This example will install and configure:
 	- Preloaded all Elastic Security Detection rules and enabled all AWS related rules
 
 #### Watch this video to learn more
-[![Getting started with AWS](https://raw.githubusercontent.com/felix-lessoer/elastic-terraform-examples/main/AWS/AWS_thumbnail.PNG)](https://youtu.be/9PpjxYOOr7c "Getting started with AWS")
+[![Getting started with Elasticsearch on AWS](https://raw.githubusercontent.com/felix-lessoer/elastic-terraform-examples/main/AWS/AWS_thumbnail.PNG)](https://youtu.be/9PpjxYOOr7c "Getting started with AWS")
 
 ## The Google Cloud Environment
 
@@ -36,6 +36,9 @@ This example will install and configure:
 	- Elastic transforms to prepare the data for the installed dashboards
 	- Preloaded all Elastic Security Detection rules and enabled all Google Cloud related rules
 
+#### Watch this video to learn more
+[![Getting started with Elasticsearch on Google Cloud](https://raw.githubusercontent.com/felix-lessoer/elastic-terraform-examples/main/GoogleCloud/Getting-started-with-Google-Cloud-Monitoring-Google-Slides.png)](https://youtu.be/wAIJZmCi6Iw "Getting started with Google Cloud")
+
 ## The Azure Environment
 
 The Azure example is enabling an extended view in the monitoring and security data thats created within the Azure platform. 
@@ -49,7 +52,8 @@ This example will install and configure:
 - Elastic Agent to collect all available Azure Metrics
 - The Elastic Cluster will be configured with the following additional capabilities
 	- Preloaded all Elastic Security Detection rules and enabled all Google Cloud related rules
-
+#### Watch this video to learn more
+[![Getting started with Elasticsearch on Azure](https://raw.githubusercontent.com/felix-lessoer/elastic-terraform-examples/main/Azure/AZURE_thumbnail.PNG)](https://youtu.be/SuZyIbFsWcY&list=PLhLSfisesZItKvjRiYt9PGDLYHOjQyzQi "Getting started with Elasticsearch on Azure")
 	
 ## Getting started
 

@@ -35,11 +35,11 @@ output "elastic_cluster_alias_aws" {
 }
 
 output "elastic_endpoint_aws" {
-  value = ec_deployment.elastic_deployment.kibana[0].https_endpoint
+  value = ec_deployment.elastic_deployment.kibana.https_endpoint
 }
 
 output "elastic_cloud_id_aws" {
-  value = ec_deployment.elastic_deployment.elasticsearch[0].cloud_id
+  value = ec_deployment.elastic_deployment.elasticsearch.cloud_id
 }
 
 output "elastic_username_aws" {
@@ -58,7 +58,7 @@ output "elastic_password" {
 
 data "external" "elastic_create_policy" {
   query = {
-    kibana_endpoint  = ec_deployment.elastic_deployment.kibana[0].https_endpoint
+    kibana_endpoint  = ec_deployment.elastic_deployment.kibana.https_endpoint
     elastic_username  = ec_deployment.elastic_deployment.elasticsearch_username
     elastic_password  = ec_deployment.elastic_deployment.elasticsearch_password
     elastic_json_body = templatefile("${path.module}/../json_templates/default-policy.json", {"policy_name": "EKS"})
@@ -73,7 +73,7 @@ data "external" "elastic_create_policy" {
 
 data "external" "elastic_load_rules" {
   query = {
-    kibana_endpoint  = ec_deployment.elastic_deployment.kibana[0].https_endpoint
+    kibana_endpoint  = ec_deployment.elastic_deployment.kibana.https_endpoint
     elastic_username  = ec_deployment.elastic_deployment.elasticsearch_username
     elastic_password  = ec_deployment.elastic_deployment.elasticsearch_password
   }
@@ -83,7 +83,7 @@ data "external" "elastic_load_rules" {
 
 # data "external" "elastic_enable_rules" {
 #   query = {
-#     kibana_endpoint  = ec_deployment.elastic_deployment.kibana[0].https_endpoint
+#     kibana_endpoint  = ec_deployment.elastic_deployment.kibana.https_endpoint
 #     elastic_username  = ec_deployment.elastic_deployment.elasticsearch_username
 #     elastic_password  = ec_deployment.elastic_deployment.elasticsearch_password
 #     elastic_json_body = templatefile("${path.module}/../json_templates/aws_rule_activation.json",{})

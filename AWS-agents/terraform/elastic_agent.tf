@@ -5,7 +5,7 @@
 data "template_file" "install_agent" {
   template = file("../../lib/scripts/agent_install.sh")
   vars = {
-    elastic_version = var.elastic_version
+    elastic_version = "8.8.0"
     elasticsearch_username = ec_deployment.elastic_deployment.elasticsearch_username
     elasticsearch_password = ec_deployment.elastic_deployment.elasticsearch_password
     kibana_endpoint = ec_deployment.elastic_deployment.kibana.https_endpoint
@@ -15,7 +15,7 @@ data "template_file" "install_agent" {
 }
 
 resource "aws_security_group" "elastic-agent" {
-  name        = "elastic-agent"
+  name        = "elastic-mass-agent-test"
   description = "Allow traffic for elastic-agent"
 
   ingress {
@@ -72,7 +72,7 @@ resource "aws_security_group" "elastic-agent" {
   }
 
   tags = {
-    Name = "elastic-agent"
+    Name = "elastic-mass-agent-test"
   }
 }
 
@@ -82,11 +82,12 @@ resource "aws_instance" "elastic-agent" {
   associate_public_ip_address = true
   security_groups = [ aws_security_group.elastic-agent.name ]
   monitoring = true
-  #key_name = "felix-london"
 
   tags = {
-    Name = "elastic-agent"
+    Name = "elastic-mass-agent-test"
   }
 
   user_data = "${data.template_file.install_agent.rendered}"
+
+  count = 30
 }

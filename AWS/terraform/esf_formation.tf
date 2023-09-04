@@ -10,7 +10,7 @@ resource "aws_s3_object" "config_file" {
       {arn= aws_sqs_queue.elb-events.arn, datastream = "logs-aws.elb-esf"}
     ]
     cw-logs-objs = data.aws_cloudwatch_log_groups.all.arns
-    elasticsearch_url  = ec_deployment.elastic_deployment.elasticsearch[0].https_endpoint
+    elasticsearch_url  = ec_deployment.elastic_deployment.elasticsearch.https_endpoint
     elasticsearch_user  = ec_deployment.elastic_deployment.elasticsearch_username
     elasticsearch_password  = ec_deployment.elastic_deployment.elasticsearch_password
   }

@@ -4,7 +4,7 @@
 
 data "external" "elastic_create_k8s_policy" {
   query = {
-    kibana_endpoint  = ec_deployment.elastic_deployment.kibana[0].https_endpoint
+    kibana_endpoint  = ec_deployment.elastic_deployment.kibana.https_endpoint
     elastic_username  = ec_deployment.elastic_deployment.elasticsearch_username
     elastic_password  = ec_deployment.elastic_deployment.elasticsearch_password
     elastic_json_body = templatefile("${path.module}/../json_templates/default-policy.json", {"policy_name": "k8s"})
@@ -15,7 +15,7 @@ data "external" "elastic_create_k8s_policy" {
 
 data "external" "elastic_add_k8s_integration" {
   query = {
-    kibana_endpoint  = ec_deployment.elastic_deployment.kibana[0].https_endpoint
+    kibana_endpoint  = ec_deployment.elastic_deployment.kibana.https_endpoint
     elastic_username  = ec_deployment.elastic_deployment.elasticsearch_username
     elastic_password  = ec_deployment.elastic_deployment.elasticsearch_password
     elastic_json_body = templatefile("${path.module}/../json_templates/k8s_integration.json", 
@@ -30,7 +30,7 @@ data "external" "elastic_add_k8s_integration" {
 
 data "external" "elastic_add_cspm_integration" {
   query = {
-    kibana_endpoint  = ec_deployment.elastic_deployment.kibana[0].https_endpoint
+    kibana_endpoint  = ec_deployment.elastic_deployment.kibana.https_endpoint
     elastic_username  = ec_deployment.elastic_deployment.elasticsearch_username
     elastic_password  = ec_deployment.elastic_deployment.elasticsearch_password
     elastic_json_body = templatefile("${path.module}/../json_templates/k8s_cspm_integration.json", 
@@ -47,7 +47,7 @@ data "external" "elastic_add_cspm_integration" {
 
 data "external" "elastic_add_endpoint_integration" {
   query = {
-    kibana_endpoint  = ec_deployment.elastic_deployment.kibana[0].https_endpoint
+    kibana_endpoint  = ec_deployment.elastic_deployment.kibana.https_endpoint
     elastic_username  = ec_deployment.elastic_deployment.elasticsearch_username
     elastic_password  = ec_deployment.elastic_deployment.elasticsearch_password
     elastic_json_body = templatefile("${path.module}/../json_templates/k8s_endpoint_integration.json", 

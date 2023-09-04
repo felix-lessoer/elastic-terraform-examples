@@ -13,11 +13,10 @@ resource "azurerm_monitor_diagnostic_setting" "elastic" {
   eventhub_name                     = azurerm_eventhub.elastic.name
   eventhub_authorization_rule_id    = "${azurerm_eventhub_namespace.elastic.id}/authorizationRules/RootManageSharedAccessKey"
   
-  dynamic "log" {
+  dynamic "enabled_log" {
     for_each = [ "Administrative", "Security",  "ServiceHealth", "Alert", "Recommendation", "Policy", "Autoscale", "ResourceHealth"]
     content {
-        category = log.value
-        enabled  = true
+        category = enabled_log.value
 
         retention_policy {
             enabled = false

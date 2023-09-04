@@ -1,0 +1,1 @@
+{"action":"enable", "query": "alert.attributes.tags: \"AWS\""}

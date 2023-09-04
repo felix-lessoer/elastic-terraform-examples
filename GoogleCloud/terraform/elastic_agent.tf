@@ -8,8 +8,8 @@ data "template_file" "install_agent" {
     elastic_version = var.elastic_version
     elasticsearch_username = ec_deployment.elastic_deployment.elasticsearch_username
     elasticsearch_password = ec_deployment.elastic_deployment.elasticsearch_password
-    kibana_endpoint = ec_deployment.elastic_deployment.kibana[0].https_endpoint
-    integration_server_endpoint = ec_deployment.elastic_deployment.integrations_server[0].https_endpoint
+    kibana_endpoint = ec_deployment.elastic_deployment.kibana.https_endpoint
+    integration_server_endpoint = ec_deployment.elastic_deployment.integrations_server.https_endpoint
     policy_id = data.external.elastic_create_policy.result.id
   }
 }

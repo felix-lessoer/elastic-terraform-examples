@@ -12,7 +12,7 @@ data "aws_cloudwatch_log_groups" "all" {}
 # data "external" "elastic_add_cw_integrations" {
 #   for_each=data.aws_cloudwatch_log_groups.all.arns
 #   query = {
-#     kibana_endpoint  = ec_deployment.elastic_deployment.kibana[0].https_endpoint
+#     kibana_endpoint  = ec_deployment.elastic_deployment.kibana.https_endpoint
 #     elastic_username  = ec_deployment.elastic_deployment.elasticsearch_username
 #     elastic_password  = ec_deployment.elastic_deployment.elasticsearch_password
 #     elastic_json_body = templatefile("${path.module}/../json_templates/aws_cw_integration.json", 

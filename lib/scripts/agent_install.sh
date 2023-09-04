@@ -21,9 +21,9 @@ sudo apt-get --assume-yes install jq
 #########
 
 ## get version
-version=$(curl -XGET -u $CLOUD_AUTH "$${KIBANA_URL}/api/status" -H "kbn-xsrf: true" -H "Content-Type: application/json" | jq -r '.version.number')
-echo ES_VERSION=$version >> /etc/.env
-export ES_VERSION=$version
+## version=$(curl -XGET -u $CLOUD_AUTH "$${KIBANA_URL}/api/status" -H "kbn-xsrf: true" -H "Content-Type: application/json" | jq -r '.version.number')
+echo ES_VERSION=${elastic_version} >> /etc/.env
+## export ES_VERSION=$version
 
 echo "Command: curl -XGET -u $CLOUD_AUTH \"$${KIBANA_URL}/api/fleet/enrollment_api_keys\""
 

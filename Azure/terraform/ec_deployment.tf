@@ -11,19 +11,20 @@ resource "ec_deployment" "elastic_deployment" {
   region                  = var.elastic_region
   version                 = var.elastic_version == "latest" ? data.ec_stack.latest.version : var.elastic_version
   deployment_template_id  = var.elastic_deployment_template_id
-  elasticsearch {
-	  autoscale = "true"
-
-    dynamic "remote_cluster" {
-      for_each = var.elastic_remotes
-      content {
-        deployment_id = remote_cluster.value["id"]
-        alias         = remote_cluster.value["alias"]
-      }
+  elasticsearch = {
+    hot = {
+      autoscaling = {}
     }
+
+    #"remote_cluster" = {
+    #  for_each      = { for idx, remote in var.elastic_remotes : idx => remote }
+    #  deployment_id = each.value["id"]
+    #  alias         = each.value["alias"]
+    #  }
+
   }
-  kibana {}
-  integrations_server {}
+  kibana = {}
+  integrations_server = {}
 }
 
 output "elastic_cluster_id" {
@@ -35,7 +36,7 @@ output "elastic_cluster_alias" {
 }
 
 output "elastic_endpoint" {
-  value = ec_deployment.elastic_deployment.elasticsearch[0].https_endpoint
+  value = ec_deployment.elastic_deployment.elasticsearch.https_endpoint
 }
 
 output "elastic_password" {
@@ -44,7 +45,7 @@ output "elastic_password" {
 }
 
 output "elastic_cloud_id" {
-  value = ec_deployment.elastic_deployment.elasticsearch[0].cloud_id
+  value = ec_deployment.elastic_deployment.elasticsearch.cloud_id
 }
 
 output "elastic_username" {
@@ -57,7 +58,7 @@ output "elastic_username" {
 
 data "external" "elastic_create_policy" {
   query = {
-    kibana_endpoint  = ec_deployment.elastic_deployment.kibana[0].https_endpoint
+    kibana_endpoint  = ec_deployment.elastic_deployment.kibana.https_endpoint
     elastic_username  = ec_deployment.elastic_deployment.elasticsearch_username
     elastic_password  = ec_deployment.elastic_deployment.elasticsearch_password
     elastic_json_body = templatefile("${path.module}/../json_templates/default-policy.json", {"policy_name": "Azure"})
@@ -68,7 +69,7 @@ data "external" "elastic_create_policy" {
 
 data "external" "elastic_add_metrics_integration" {
   query = {
-    kibana_endpoint  = ec_deployment.elastic_deployment.kibana[0].https_endpoint
+    kibana_endpoint  = ec_deployment.elastic_deployment.kibana.https_endpoint
     elastic_username  = ec_deployment.elastic_deployment.elasticsearch_username
     elastic_password  = ec_deployment.elastic_deployment.elasticsearch_password
     elastic_json_body = templatefile("${path.module}/../json_templates/azure-metrics-integration.json", 
@@ -87,7 +88,7 @@ data "external" "elastic_add_metrics_integration" {
 
 data "external" "elastic_add_billing_integration" {
   query = {
-    kibana_endpoint  = ec_deployment.elastic_deployment.kibana[0].https_endpoint
+    kibana_endpoint  = ec_deployment.elastic_deployment.kibana.https_endpoint
     elastic_username  = ec_deployment.elastic_deployment.elasticsearch_username
     elastic_password  = ec_deployment.elastic_deployment.elasticsearch_password
     elastic_json_body = templatefile("${path.module}/../json_templates/azure-billing-integration.json", 
@@ -106,7 +107,7 @@ data "external" "elastic_add_billing_integration" {
 
 data "external" "elastic_add_logs_integration" {
   query = {
-    kibana_endpoint  = ec_deployment.elastic_deployment.kibana[0].https_endpoint
+    kibana_endpoint  = ec_deployment.elastic_deployment.kibana.https_endpoint
     elastic_username  = ec_deployment.elastic_deployment.elasticsearch_username
     elastic_password  = ec_deployment.elastic_deployment.elasticsearch_password
     elastic_json_body = templatefile("${path.module}/../json_templates/azure-logs-integration.json", 
@@ -134,7 +135,7 @@ data "external" "elastic_add_logs_integration" {
 
 data "external" "elastic_load_rules" {
   query = {
-    kibana_endpoint  = ec_deployment.elastic_deployment.kibana[0].https_endpoint
+    kibana_endpoint  = ec_deployment.elastic_deployment.kibana.https_endpoint
     elastic_username  = ec_deployment.elastic_deployment.elasticsearch_username
     elastic_password  = ec_deployment.elastic_deployment.elasticsearch_password
   }
@@ -144,7 +145,7 @@ data "external" "elastic_load_rules" {
 
 data "external" "elastic_enable_rules" {
   query = {
-    kibana_endpoint  = ec_deployment.elastic_deployment.kibana[0].https_endpoint
+    kibana_endpoint  = ec_deployment.elastic_deployment.kibana.https_endpoint
     elastic_username  = ec_deployment.elastic_deployment.elasticsearch_username
     elastic_password  = ec_deployment.elastic_deployment.elasticsearch_password
     elastic_json_body = templatefile("${path.module}/../json_templates/es_rule_activation.json",{})
@@ -160,7 +161,7 @@ data "external" "elastic_enable_rules" {
 
 data "external" "elastic_create_transforms" {
   query = {
-    elastic_endpoint  = ec_deployment.elastic_deployment.elasticsearch[0].https_endpoint
+    elastic_endpoint  = ec_deployment.elastic_deployment.elasticsearch.https_endpoint
     elastic_username  = ec_deployment.elastic_deployment.elasticsearch_username
     elastic_password  = ec_deployment.elastic_deployment.elasticsearch_password
     transform_name    = "azure-billing-transform"
@@ -172,7 +173,7 @@ data "external" "elastic_create_transforms" {
 
 data "external" "elastic_start_transforms" {
   query = {
-    elastic_endpoint  = ec_deployment.elastic_deployment.elasticsearch[0].https_endpoint
+    elastic_endpoint  = ec_deployment.elastic_deployment.elasticsearch.https_endpoint
     elastic_username  = ec_deployment.elastic_deployment.elasticsearch_username
     elastic_password  = ec_deployment.elastic_deployment.elasticsearch_password
     transform_name    = "azure-billing-transform"
@@ -188,7 +189,7 @@ data "external" "elastic_start_transforms" {
 data "external" "elastic_upload_saved_objects" {
   query = {
 	elastic_http_method = "POST"
-    kibana_endpoint  = ec_deployment.elastic_deployment.kibana[0].https_endpoint
+    kibana_endpoint  = ec_deployment.elastic_deployment.kibana.https_endpoint
     elastic_username  = ec_deployment.elastic_deployment.elasticsearch_username
     elastic_password  = ec_deployment.elastic_deployment.elasticsearch_password
     so_file      		= "${path.module}/../dashboards/Azure-dashboards.ndjson"

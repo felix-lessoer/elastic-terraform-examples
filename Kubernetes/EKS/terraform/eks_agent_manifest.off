@@ -19,7 +19,7 @@ provider "kubectl" {
 resource "kubectl_manifest" "deploy_agent" {
   yaml_body = templatefile("${path.module}/../json_templates/k8s_agent.yaml", 
   {
-    "fleet_url": ec_deployment.elastic_deployment.integrations_server[0].https_endpoint,
+    "fleet_url": ec_deployment.elastic_deployment.integrations_server.https_endpoint,
     "enrollment_token": "xxx"
   }
   )

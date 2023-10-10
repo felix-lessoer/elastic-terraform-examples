@@ -12,7 +12,7 @@ export FLEET_URL=$${integration_server_endpoint//apm/fleet}
 export HOST_POLICY_ID=${policy_id}
 
 
-echo "deb http://us.archive.ubuntu.com/ubuntu vivid main universe" | sudo tee -a /etc/apt/sources.list
+echo "deb http://us.archive.ubuntu.com/ubuntu focal main universe" | sudo tee -a /etc/apt/sources.list
 sudo apt-get update
 sudo apt-get --assume-yes install jq
 

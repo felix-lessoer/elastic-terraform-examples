@@ -45,6 +45,11 @@ variable "azure_region" {
   default = "West Europe"
 }
 
+variable "azure_resource_group" {
+  type = string
+  default = "tf-elastic-group"
+}
+
 variable  "azure_subscription_id" {
  type = string   
 }

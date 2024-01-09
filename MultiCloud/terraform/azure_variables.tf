@@ -17,12 +17,17 @@ variable "elastic_azure_deployment_template_id" {
 }
 
 # -------------------------------------------------------------
-# AWS configuration
+# Azure configuration
 # -------------------------------------------------------------
 
 variable "azure_region" {
   type = string
   default = "West Europe"
+}
+
+variable "azure_resource_group" {
+  type = string
+  default = "tf-elastic-group"
 }
 
 variable  "azure_subscription_id" {

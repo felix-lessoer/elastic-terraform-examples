@@ -5,7 +5,7 @@
 data "template_file" "install_agent" {
   template = file("../../lib/scripts/agent_install.sh")
   vars = {
-    elastic_version = var.elastic_version
+    elastic_version = var.elastic_version == "latest" ? data.ec_stack.latest.version : var.elastic_version
     elasticsearch_username = ec_deployment.elastic_deployment.elasticsearch_username
     elasticsearch_password = ec_deployment.elastic_deployment.elasticsearch_password
     kibana_endpoint = ec_deployment.elastic_deployment.kibana.https_endpoint
@@ -19,7 +19,7 @@ resource "azurerm_virtual_machine_extension" "elastic-agent" {
   virtual_machine_id = "${azurerm_linux_virtual_machine.agent.id}"
   publisher            = "Microsoft.Azure.Extensions"
   type                 = "CustomScript"
-  type_handler_version = "2.0"
+  type_handler_version = "2.1"
 
   settings = <<SETTINGS
     {"script": "${base64encode(data.template_file.install_agent.rendered)}"}

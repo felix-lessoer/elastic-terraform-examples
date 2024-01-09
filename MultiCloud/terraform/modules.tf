@@ -71,6 +71,7 @@ module "azure_environment" {
   elastic_agent_vm_name = var.elastic_agent_vm_name
 
   azure_region = var.azure_region
+  azure_resource_group = var.azure_resource_group
   azure_client_id = var.azure_client_id
   azure_client_secret = var.azure_client_secret
   azure_subscription_id = var.azure_subscription_id

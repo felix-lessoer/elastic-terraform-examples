@@ -1,5 +1,5 @@
 resource "azurerm_resource_group" "main" {
-  name     = "tf-elastic-group"
+  name     = var.azure_resource_group
   location = var.azure_region
 }
 

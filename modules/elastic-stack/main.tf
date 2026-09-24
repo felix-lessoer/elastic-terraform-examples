@@ -99,7 +99,8 @@ resource "elasticstack_fleet_integration_policy" "agent" {
   integration_name    = each.value.package_name
   integration_version = elasticstack_fleet_integration.packages[each.value.package_name].version
 
-  inputs = try(each.value.inputs, {})
+  vars_json = try(each.value.vars_json, null)
+  inputs    = try(each.value.inputs, {})
 
   kibana_connection {
     endpoints = [local.kibana_url]

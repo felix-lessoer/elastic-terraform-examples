@@ -53,25 +53,7 @@ variable "detection_rule_tags" {
 }
 
 variable "integrations" {
-  type = list(object({
-    name                 = string
-    description          = optional(string, "")
-    package_name         = string
-    prerelease           = optional(bool, false)
-    package_version      = optional(string, null)
-    agent_policy         = optional(bool, true)
-    managed              = optional(bool, false)
-    policy_template      = optional(string, null)
-    vars_json            = optional(string, null)
-    var_group_selections = optional(map(string), {})
-    inputs               = optional(any, {})
-    cloud_connector = optional(object({
-      enabled            = bool
-      cloud_connector_id = optional(string)
-      name               = optional(string)
-      target_csp         = optional(string)
-    }), null)
-  }))
-  description = "Fleet integrations to install. Prefer managed=true for agentless when supported."
+  type        = any
+  description = "Fleet integrations to install (list of objects). Prefer managed=true for agentless when supported."
   default     = []
 }

@@ -62,22 +62,22 @@ module "gcp_cloud" {
 }
 
 locals {
+  # Fleet input keys are "{input_type}-{policy_template}" (e.g. gcp-pubsub-audit).
+  # Keep a single object shape so Terraform can type the list.
   gcp_integrations = concat(
     var.enable_cspm ? [
       {
-        name            = "cspm-gcp"
-        description     = "Agentless CSPM for GCP"
-        package_name    = "cloud_security_posture"
-        managed         = true
-        agent_policy    = false
-        policy_template = "cspm"
-        vars_json = jsonencode({
-          posture    = "cspm"
-          deployment = "gcp"
-        })
-        var_group_selections = {
-          deployment = "gcp"
-        }
+        name                 = "cspm-gcp"
+        description          = "Agentless CSPM for GCP"
+        package_name         = "cloud_security_posture"
+        managed              = true
+        agent_policy         = false
+        prerelease           = false
+        package_version      = null
+        policy_template      = "cspm"
+        vars_json            = jsonencode({ posture = "cspm", deployment = "gcp" })
+        var_group_selections = { deployment = "gcp" }
+        cloud_connector      = null
         inputs = {
           "cspm-cloudbeat/cis_gcp" = {
             enabled = true
@@ -85,7 +85,8 @@ locals {
               "cloud_security_posture.findings" = {
                 enabled = true
                 vars = jsonencode({
-                  "gcp.project_id"       = module.gcp_cloud.project_id
+                  "gcp.account_type"      = "single-account"
+                  "gcp.project_id"        = module.gcp_cloud.project_id
                   "gcp.credentials.type" = "credentials-json"
                   "gcp.credentials.json" = module.gcp_cloud.credentials_json
                 })
@@ -97,70 +98,96 @@ locals {
     ] : [],
     [
       {
-        name         = "gcp-observe"
-        description  = "GCP audit/firewall/vpcflow/dns/lb logs + metrics via Pub/Sub"
-        package_name = "gcp"
-        managed      = false
-        agent_policy = true
+        name                 = "gcp-observe"
+        description          = "GCP audit/firewall/vpcflow/dns/lb logs + metrics via Pub/Sub"
+        package_name         = "gcp"
+        managed              = false
+        agent_policy         = true
+        prerelease           = false
+        package_version      = null
+        policy_template      = null
+        vars_json = jsonencode({
+          project_id       = module.gcp_cloud.project_id
+          credentials_json = module.gcp_cloud.credentials_json
+        })
+        var_group_selections = {}
+        cloud_connector      = null
         inputs = {
-          "gcp-pubsub" = {
+          "gcp-pubsub-audit" = {
             enabled = true
-            vars = jsonencode({
-              credentials_json = module.gcp_cloud.credentials_json
-              project_id       = module.gcp_cloud.project_id
-            })
             streams = {
               "gcp.audit" = {
                 enabled = true
-                vars = jsonencode({
-                  topic = module.gcp_cloud.topic_names["audit"]
-                })
-              }
-              "gcp.firewall" = {
-                enabled = true
-                vars = jsonencode({
-                  topic = module.gcp_cloud.topic_names["firewall"]
-                })
-              }
-              "gcp.vpcflow" = {
-                enabled = true
-                vars = jsonencode({
-                  topic = module.gcp_cloud.topic_names["vpcflow"]
-                })
-              }
-              "gcp.dns" = {
-                enabled = true
-                vars = jsonencode({
-                  topic = module.gcp_cloud.topic_names["dns"]
-                })
-              }
-              "gcp.loadbalancing_logs" = {
-                enabled = true
-                vars = jsonencode({
-                  topic = module.gcp_cloud.topic_names["lb"]
-                })
+                vars    = jsonencode({ topic = module.gcp_cloud.topic_names["audit"] })
               }
             }
           }
-          "gcp/metrics" = {
+          "gcp-pubsub-firewall" = {
             enabled = true
-            vars = jsonencode({
-              credentials_json = module.gcp_cloud.credentials_json
-              project_id       = module.gcp_cloud.project_id
-            })
+            streams = {
+              "gcp.firewall" = {
+                enabled = true
+                vars    = jsonencode({ topic = module.gcp_cloud.topic_names["firewall"] })
+              }
+            }
+          }
+          "gcp-pubsub-vpcflow" = {
+            enabled = true
+            streams = {
+              "gcp.vpcflow" = {
+                enabled = true
+                vars    = jsonencode({ topic = module.gcp_cloud.topic_names["vpcflow"] })
+              }
+            }
+          }
+          "gcp-pubsub-dns" = {
+            enabled = true
+            streams = {
+              "gcp.dns" = {
+                enabled = true
+                vars    = jsonencode({ topic = module.gcp_cloud.topic_names["dns"] })
+              }
+            }
+          }
+          "gcp-pubsub-loadbalancing" = {
+            enabled = true
+            streams = {
+              "gcp.loadbalancing_logs" = {
+                enabled = true
+                vars    = jsonencode({ topic = module.gcp_cloud.topic_names["lb"] })
+              }
+            }
+          }
+          "gcp/metrics-compute" = {
+            enabled = true
             streams = {
               "gcp.compute" = {
                 enabled = true
                 vars    = jsonencode({ period = "5m" })
               }
-              "gcp.loadbalancing" = {
+            }
+          }
+          "gcp/metrics-loadbalancing" = {
+            enabled = true
+            streams = {
+              "gcp.loadbalancing_metrics" = {
                 enabled = true
                 vars    = jsonencode({ period = "5m" })
               }
+            }
+          }
+          "gcp/metrics-storage" = {
+            enabled = true
+            streams = {
               "gcp.storage" = {
                 enabled = true
                 vars    = jsonencode({ period = "15m" })
               }
+            }
+          }
+          "gcp/metrics-billing" = {
+            enabled = var.enable_billing_metrics
+            streams = {
               "gcp.billing" = {
                 enabled = var.enable_billing_metrics
                 vars    = jsonencode({ period = "24h" })

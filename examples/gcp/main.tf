@@ -62,8 +62,20 @@ module "gcp_cloud" {
 }
 
 locals {
-  # Fleet input keys are "{input_type}-{policy_template}" (e.g. gcp-pubsub-audit).
-  # Keep a single object shape so Terraform can type the list.
+  # elasticstack input map keys are "{policy_template}-{input_type}"
+  # (e.g. audit-gcp-pubsub). Required stream vars must be set explicitly;
+  # the provider does not merge package defaults into the create payload.
+  gcp_pubsub_stream = {
+    for k, topic in module.gcp_cloud.topic_names : k => {
+      topic                     = topic
+      subscription_name         = module.gcp_cloud.subscription_names[k]
+      subscription_create       = false
+      tags                      = ["forwarded", "gcp-${k}"]
+      preserve_original_event   = false
+      keep_json                 = false
+    }
+  }
+
   gcp_integrations = concat(
     var.enable_cspm ? [
       {
@@ -112,89 +124,105 @@ locals {
         })
         var_group_selections = {}
         cloud_connector      = null
-        inputs = {
-          "gcp-pubsub-audit" = {
-            enabled = true
-            streams = {
-              "gcp.audit" = {
-                enabled = true
-                vars    = jsonencode({ topic = module.gcp_cloud.topic_names["audit"] })
+        inputs = merge(
+          {
+            "audit-gcp-pubsub" = {
+              enabled = true
+              streams = {
+                "gcp.audit" = {
+                  enabled = true
+                  vars    = jsonencode(merge(local.gcp_pubsub_stream["audit"], { tags = ["forwarded", "gcp-audit"] }))
+                }
               }
             }
-          }
-          "gcp-pubsub-firewall" = {
-            enabled = true
-            streams = {
-              "gcp.firewall" = {
-                enabled = true
-                vars    = jsonencode({ topic = module.gcp_cloud.topic_names["firewall"] })
+            "firewall-gcp-pubsub" = {
+              enabled = true
+              streams = {
+                "gcp.firewall" = {
+                  enabled = true
+                  vars    = jsonencode(merge(local.gcp_pubsub_stream["firewall"], { tags = ["forwarded", "gcp-firewall"] }))
+                }
               }
             }
-          }
-          "gcp-pubsub-vpcflow" = {
-            enabled = true
-            streams = {
-              "gcp.vpcflow" = {
-                enabled = true
-                vars    = jsonencode({ topic = module.gcp_cloud.topic_names["vpcflow"] })
+            "vpcflow-gcp-pubsub" = {
+              enabled = true
+              streams = {
+                "gcp.vpcflow" = {
+                  enabled = true
+                  vars    = jsonencode(merge(local.gcp_pubsub_stream["vpcflow"], { tags = ["forwarded", "gcp-vpcflow"] }))
+                }
               }
             }
-          }
-          "gcp-pubsub-dns" = {
-            enabled = true
-            streams = {
-              "gcp.dns" = {
-                enabled = true
-                vars    = jsonencode({ topic = module.gcp_cloud.topic_names["dns"] })
+            "dns-gcp-pubsub" = {
+              enabled = true
+              streams = {
+                "gcp.dns" = {
+                  enabled = true
+                  vars    = jsonencode(merge(local.gcp_pubsub_stream["dns"], { tags = ["forwarded", "gcp-dns"] }))
+                }
               }
             }
-          }
-          "gcp-pubsub-loadbalancing" = {
-            enabled = true
-            streams = {
-              "gcp.loadbalancing_logs" = {
-                enabled = true
-                vars    = jsonencode({ topic = module.gcp_cloud.topic_names["lb"] })
+            "loadbalancing-gcp-pubsub" = {
+              enabled = true
+              streams = {
+                "gcp.loadbalancing_logs" = {
+                  enabled = true
+                  vars = jsonencode({
+                    topic                   = module.gcp_cloud.topic_names["lb"]
+                    subscription_name       = module.gcp_cloud.subscription_names["lb"]
+                    subscription_create     = false
+                    tags                    = ["forwarded", "gcp-loadbalancing_logs"]
+                    preserve_original_event = false
+                  })
+                }
               }
             }
-          }
-          "gcp/metrics-compute" = {
-            enabled = true
-            streams = {
-              "gcp.compute" = {
-                enabled = true
-                vars    = jsonencode({ period = "5m" })
+            "compute-gcp/metrics" = {
+              enabled = true
+              streams = {
+                "gcp.compute" = {
+                  enabled = true
+                  vars    = jsonencode({ period = "5m", tags = ["gcp-compute"] })
+                }
               }
             }
-          }
-          "gcp/metrics-loadbalancing" = {
-            enabled = true
-            streams = {
-              "gcp.loadbalancing_metrics" = {
-                enabled = true
-                vars    = jsonencode({ period = "5m" })
+            "loadbalancing-gcp/metrics" = {
+              enabled = true
+              streams = {
+                "gcp.loadbalancing_metrics" = {
+                  enabled = true
+                  vars    = jsonencode({ period = "5m", tags = ["gcp-loadbalancing-metrics"] })
+                }
               }
             }
-          }
-          "gcp/metrics-storage" = {
-            enabled = true
-            streams = {
-              "gcp.storage" = {
-                enabled = true
-                vars    = jsonencode({ period = "15m" })
+            "storage-gcp/metrics" = {
+              enabled = true
+              streams = {
+                "gcp.storage" = {
+                  enabled = true
+                  vars    = jsonencode({ period = "15m", tags = ["gcp-storage"] })
+                }
               }
             }
-          }
-          "gcp/metrics-billing" = {
-            enabled = var.enable_billing_metrics
-            streams = {
-              "gcp.billing" = {
-                enabled = var.enable_billing_metrics
-                vars    = jsonencode({ period = "24h" })
+          },
+          var.enable_billing_metrics ? {
+            "billing-gcp/metrics" = {
+              enabled = true
+              streams = {
+                "gcp.billing" = {
+                  enabled = true
+                  vars = jsonencode({
+                    period        = "24h"
+                    dataset_id    = var.billing_dataset_id
+                    table_pattern = "gcp_billing_export_v1"
+                    cost_type     = "regular"
+                    tags          = ["gcp-billing"]
+                  })
+                }
               }
             }
-          }
-        }
+          } : {}
+        )
       }
     ]
   )

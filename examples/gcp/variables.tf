@@ -70,8 +70,15 @@ variable "enable_cspm" {
 }
 
 variable "enable_billing_metrics" {
-  type    = bool
-  default = true
+  type        = bool
+  description = "Enable GCP billing metrics stream (requires billing_dataset_id)."
+  default     = false
+}
+
+variable "billing_dataset_id" {
+  type        = string
+  description = "BigQuery dataset id for GCP billing export (required when enable_billing_metrics is true)."
+  default     = ""
 }
 
 variable "enable_detection_rules" {

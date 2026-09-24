@@ -1,0 +1,8 @@
+deployment_mode              = "serverless"
+elastic_project_name         = "GCP Observe and Protect"
+elastic_region               = "gcp-europe-west3"
+google_cloud_project         = "my-gcp-project"
+google_cloud_region          = "europe-west3"
+google_cloud_credentials_file = ""
+enable_cspm                  = true
+enable_detection_rules       = true

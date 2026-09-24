@@ -1,0 +1,10 @@
+deployment_mode        = "serverless"
+elastic_project_name   = "Azure Observe and Protect"
+elastic_region         = "azure-westeurope"
+azure_region           = "westeurope"
+azure_subscription_id  = "00000000-0000-0000-0000-000000000000"
+azure_tenant_id        = "00000000-0000-0000-0000-000000000000"
+azure_client_id        = "00000000-0000-0000-0000-000000000000"
+azure_client_secret    = "REPLACE_ME"
+enable_cspm            = true
+enable_detection_rules = true

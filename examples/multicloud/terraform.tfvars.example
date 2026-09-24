@@ -1,0 +1,19 @@
+deployment_mode = "serverless"
+cps_hub         = "aws"
+product_tier    = "complete"
+
+deploy_aws   = true
+deploy_azure = false
+deploy_gcp   = false
+
+aws_region         = "eu-west-1"
+elastic_aws_region = "aws-eu-west-1"
+
+# azure_subscription_id = "..."
+# azure_tenant_id       = "..."
+# azure_client_id       = "..."
+# azure_client_secret   = "..."
+# deploy_azure          = true
+
+# google_cloud_project = "my-project"
+# deploy_gcp           = true

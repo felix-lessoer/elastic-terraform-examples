@@ -1,0 +1,6 @@
+deployment_mode          = "serverless"
+elastic_project_name     = "AWS Observe and Protect"
+elastic_region           = "aws-eu-west-1"
+aws_region               = "eu-west-1"
+enable_cspm              = true
+enable_detection_rules   = true

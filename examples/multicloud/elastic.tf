@@ -3,11 +3,11 @@ locals {
   deploy_azure = var.deploy_azure
   deploy_gcp   = var.deploy_gcp
 
-  # Elastic Cloud metadata tags: lowercase, [a-z0-9_-], key ≤ 32 chars
+  # Elastic Cloud metadata tags: lowercase, prefer [a-z0-9_-]
   elastic_tags = {
     for k, v in var.company_tags :
-    substr(regexreplace(regexreplace(lower(k), "[^a-z0-9_-]", "-"), "^[^a-z]+", "x"), 0, 32) =>
-    substr(regexreplace(lower(tostring(v)), "[^a-z0-9_-]", "-"), 0, 32)
+    substr(lower(replace(replace(replace(replace(k, " ", "-"), "/", "-"), ".", "-"), ":", "-")), 0, 32) =>
+    substr(lower(replace(replace(replace(replace(tostring(v), " ", "-"), "/", "-"), ".", "-"), ":", "-")), 0, 32)
   }
 }
 

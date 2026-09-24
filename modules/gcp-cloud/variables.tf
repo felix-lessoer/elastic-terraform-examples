@@ -39,6 +39,12 @@ variable "additional_labels" {
   default     = {}
 }
 
+variable "fetch_project_number" {
+  type        = bool
+  description = "Look up project number via resourcemanager.projects.get (requires that IAM permission)."
+  default     = false
+}
+
 variable "audit_filter" {
   type    = string
   default = "logName:\"cloudaudit.googleapis.com\""

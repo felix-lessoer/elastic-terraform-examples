@@ -3,7 +3,7 @@ output "project_id" {
 }
 
 output "project_number" {
-  value = data.google_project.current.number
+  value = try(data.google_project.current[0].number, null)
 }
 
 output "region" {

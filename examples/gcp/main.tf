@@ -40,11 +40,11 @@ module "elastic" {
   product_tier           = var.product_tier
   elastic_version        = var.elastic_version
   deployment_template_id = var.deployment_template_id
-  # Elastic Cloud metadata tags: lowercase, [a-z0-9_-], key ≤ 32 chars
+  # Elastic Cloud metadata tags: lowercase, prefer [a-z0-9_-]
   tags = {
     for k, v in var.company_labels :
-    substr(regexreplace(regexreplace(lower(k), "[^a-z0-9_-]", "-"), "^[^a-z]+", "x"), 0, 32) =>
-    substr(regexreplace(lower(tostring(v)), "[^a-z0-9_-]", "-"), 0, 32)
+    substr(lower(replace(replace(replace(replace(k, " ", "-"), "/", "-"), ".", "-"), ":", "-")), 0, 32) =>
+    substr(lower(replace(replace(replace(replace(tostring(v), " ", "-"), "/", "-"), ".", "-"), ":", "-")), 0, 32)
   }
 }
 

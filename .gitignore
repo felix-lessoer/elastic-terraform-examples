@@ -8,3 +8,7 @@ override.tf
 *_override.tf
 .DS_Store
 examples/*/local_env/
+
+# local secrets
+**/creds.json
+**/*credentials*.json

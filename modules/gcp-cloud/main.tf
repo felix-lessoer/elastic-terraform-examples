@@ -1,4 +1,6 @@
+# Project number is optional — many collector SAs lack resourcemanager.projects.get.
 data "google_project" "current" {
+  count      = var.fetch_project_number ? 1 : 0
   project_id = var.project_id
 }
 
@@ -10,41 +12,26 @@ locals {
   suffix = random_id.suffix.hex
   sa_id  = substr(lower(replace("${var.name_prefix}-collector-${local.suffix}", "_", "-")), 0, 30)
 
-  # GCP labels: lowercase letters, digits, underscores, dashes; keys/values ≤ 63 chars;
-  # keys must start with a lowercase letter.
+  # Normalize labels with replace()/lower() (no regexreplace — not available in all Terraform builds).
+  # Prefer already-valid GCP labels: lowercase [a-z0-9_-], key starts with a letter.
   raw_labels = merge(var.company_labels, var.additional_labels)
   normalize = {
     for k, v in local.raw_labels :
-    substr(
-      regexreplace(
-        regexreplace(lower(k), "[^a-z0-9_-]", "-"),
-        "^[^a-z]+",
-        "x"
-      ),
-      0,
-      63
-    ) => substr(regexreplace(lower(tostring(v)), "[^a-z0-9_-]", "-"), 0, 63)
+    substr(lower(replace(replace(replace(replace(k, " ", "-"), "/", "-"), ".", "-"), ":", "-")), 0, 63) =>
+    substr(lower(replace(replace(replace(replace(tostring(v), " ", "-"), "/", "-"), ".", "-"), ":", "-")), 0, 63)
   }
 
   base_labels = merge(
     {
       "managed-by" = "terraform"
-      project      = "elastic-cloud-poc"
+      "stack"      = "elastic-cloud-poc"
     },
     local.normalize
   )
 
   required_normalized = [
     for key in var.required_label_keys :
-    substr(
-      regexreplace(
-        regexreplace(lower(key), "[^a-z0-9_-]", "-"),
-        "^[^a-z]+",
-        "x"
-      ),
-      0,
-      63
-    )
+    substr(lower(replace(replace(replace(replace(key, " ", "-"), "/", "-"), ".", "-"), ":", "-")), 0, 63)
   ]
 
   missing_required_keys = [

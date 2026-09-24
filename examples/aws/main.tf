@@ -40,6 +40,11 @@ module "elastic" {
 
   elastic_version        = var.elastic_version
   deployment_template_id = var.deployment_template_id
+  tags = {
+    for k, v in var.company_tags :
+    substr(regexreplace(regexreplace(lower(k), "[^a-z0-9_-]", "-"), "^[^a-z]+", "x"), 0, 32) =>
+    substr(regexreplace(lower(tostring(v)), "[^a-z0-9_-]", "-"), 0, 32)
+  }
 }
 
 module "aws_cloud" {
@@ -49,10 +54,10 @@ module "aws_cloud" {
   bucket_name          = var.bucket_name
   enable_cloudtrail    = var.enable_cloudtrail
   enable_vpc_flow_logs = var.enable_vpc_flow_logs
-
-  tags = {
-    Environment = "poc"
-    Cloud       = "aws"
+  company_tags         = var.company_tags
+  required_tag_keys    = var.required_tag_keys
+  additional_tags = {
+    Cloud = "aws"
   }
 }
 

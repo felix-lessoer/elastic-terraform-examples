@@ -8,3 +8,9 @@ azure_client_id        = "00000000-0000-0000-0000-000000000000"
 azure_client_secret    = "REPLACE_ME"
 enable_cspm            = true
 enable_detection_rules = true
+
+company_tags = {
+  CostCenter  = "platform"
+  Owner       = "sre-team"
+  Environment = "poc"
+}

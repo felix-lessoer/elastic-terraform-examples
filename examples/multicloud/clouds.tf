@@ -6,10 +6,11 @@ module "aws_cloud" {
   source = "../../modules/aws-cloud"
   count  = local.deploy_aws ? 1 : 0
 
-  name_prefix = "${var.name_prefix}-aws"
-  tags = {
-    Environment = "poc"
-    Cloud       = "aws"
+  name_prefix       = "${var.name_prefix}-aws"
+  company_tags      = var.company_tags
+  required_tag_keys = var.required_tag_keys
+  additional_tags = {
+    Cloud = "aws"
   }
 }
 
@@ -105,9 +106,10 @@ module "azure_cloud" {
   name_prefix         = "${var.name_prefix}-az"
   location            = var.azure_region
   resource_group_name = var.azure_resource_group
-  tags = {
-    Environment = "poc"
-    Cloud       = "azure"
+  company_tags        = var.company_tags
+  required_tag_keys   = var.required_tag_keys
+  additional_tags = {
+    Cloud = "azure"
   }
 }
 
@@ -210,12 +212,13 @@ module "gcp_cloud" {
   source = "../../modules/gcp-cloud"
   count  = local.deploy_gcp ? 1 : 0
 
-  project_id  = var.google_cloud_project
-  name_prefix = "${var.name_prefix}-gcp"
-  region      = var.google_cloud_region
-  labels = {
-    environment = "poc"
-    cloud       = "gcp"
+  project_id          = var.google_cloud_project
+  name_prefix         = "${var.name_prefix}-gcp"
+  region              = var.google_cloud_region
+  company_labels      = var.company_tags
+  required_label_keys = length(var.required_label_keys) > 0 ? var.required_label_keys : var.required_tag_keys
+  additional_labels = {
+    cloud = "gcp"
   }
 }
 

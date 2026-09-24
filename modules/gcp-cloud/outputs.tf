@@ -26,3 +26,9 @@ output "topic_names" {
 output "subscription_names" {
   value = { for k, s in google_pubsub_subscription.logs : k => s.name }
 }
+
+output "applied_labels" {
+  description = "Normalized labels applied to GCP resources."
+  value       = local.base_labels
+}
+

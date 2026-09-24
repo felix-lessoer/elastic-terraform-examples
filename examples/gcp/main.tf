@@ -40,18 +40,24 @@ module "elastic" {
   product_tier           = var.product_tier
   elastic_version        = var.elastic_version
   deployment_template_id = var.deployment_template_id
+  # Elastic Cloud metadata tags: lowercase, [a-z0-9_-], key ≤ 32 chars
+  tags = {
+    for k, v in var.company_labels :
+    substr(regexreplace(regexreplace(lower(k), "[^a-z0-9_-]", "-"), "^[^a-z]+", "x"), 0, 32) =>
+    substr(regexreplace(lower(tostring(v)), "[^a-z0-9_-]", "-"), 0, 32)
+  }
 }
 
 module "gcp_cloud" {
   source = "../../modules/gcp-cloud"
 
-  project_id  = var.google_cloud_project
-  name_prefix = var.name_prefix
-  region      = var.google_cloud_region
-
-  labels = {
-    environment = "poc"
-    cloud       = "gcp"
+  project_id          = var.google_cloud_project
+  name_prefix         = var.name_prefix
+  region              = var.google_cloud_region
+  company_labels      = var.company_labels
+  required_label_keys = var.required_label_keys
+  additional_labels = {
+    cloud = "gcp"
   }
 }
 

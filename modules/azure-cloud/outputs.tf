@@ -39,3 +39,8 @@ output "client_secret" {
   sensitive = true
   value     = azuread_application_password.elastic.value
 }
+
+output "applied_tags" {
+  description = "Tags applied to Azure resources."
+  value       = local.common_tags
+}

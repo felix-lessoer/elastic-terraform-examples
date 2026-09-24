@@ -30,3 +30,8 @@ output "external_id" {
   sensitive = true
   value     = local.external_id
 }
+
+output "applied_tags" {
+  description = "Tags applied to AWS resources."
+  value       = local.common_tags
+}

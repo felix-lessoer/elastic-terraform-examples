@@ -45,6 +45,21 @@ Open the `kibana_url` output. CSPM findings, integration dashboards, and Securit
 - `enable_detection_rules = true`
 - AWS IAM **assume_role + external id** (no static keys in Fleet policies)
 - Latest Fleet package versions via `data.elasticstack_fleet_integration`
+- **Company tags/labels are required** — set `company_labels` (GCP) or `company_tags` (AWS/Azure/multicloud)
+
+### Company tagging
+
+```hcl
+# examples/gcp
+company_labels = {
+  cost-center = "platform"
+  owner       = "sre-team"
+  environment = "poc"
+}
+required_label_keys = ["cost-center", "owner", "environment"]  # optional guardrail
+```
+
+Labels are normalized for GCP / Elastic Cloud metadata rules and applied to Pub/Sub topics, subscriptions, and (sanitized) to the Elastic project.
 
 ## Enrolling an agent (optional)
 

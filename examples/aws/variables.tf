@@ -38,6 +38,22 @@ variable "name_prefix" {
   default = "elastic-poc"
 }
 
+variable "company_tags" {
+  type        = map(string)
+  description = "Company-policy tags applied to all AWS resources (and sanitized onto the Elastic project)."
+
+  validation {
+    condition     = length(var.company_tags) > 0
+    error_message = "Set company_tags according to your company tagging policy."
+  }
+}
+
+variable "required_tag_keys" {
+  type        = list(string)
+  description = "Optional list of tag keys that must appear in company_tags."
+  default     = []
+}
+
 variable "bucket_name" {
   type    = string
   default = "elastic-cloud-logs"

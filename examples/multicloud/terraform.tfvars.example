@@ -1,19 +1,21 @@
 deployment_mode = "serverless"
-cps_hub         = "aws"
+cps_hub         = "gcp"
 product_tier    = "complete"
 
-deploy_aws   = true
+deploy_aws   = false
 deploy_azure = false
-deploy_gcp   = false
+deploy_gcp   = true
 
-aws_region         = "eu-west-1"
-elastic_aws_region = "aws-eu-west-1"
+google_cloud_project = "my-gcp-project"
+google_cloud_region  = "europe-west3"
+elastic_gcp_region   = "gcp-europe-west3"
 
-# azure_subscription_id = "..."
-# azure_tenant_id       = "..."
-# azure_client_id       = "..."
-# azure_client_secret   = "..."
-# deploy_azure          = true
+# Required: company policy tags/labels for every cloud resource
+company_tags = {
+  cost-center = "platform"
+  owner       = "sre-team"
+  environment = "poc"
+}
 
-# google_cloud_project = "my-project"
-# deploy_gcp           = true
+# Optional hard requirement on keys
+# required_tag_keys = ["cost-center", "owner", "environment"]

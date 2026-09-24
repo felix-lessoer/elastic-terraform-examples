@@ -27,6 +27,10 @@ output "pubsub_topics" {
   value = module.gcp_cloud.topic_names
 }
 
+output "applied_labels" {
+  value = module.gcp_cloud.applied_labels
+}
+
 output "fleet_agent_policy_id" {
   value = module.stack.agent_policy_id
 }

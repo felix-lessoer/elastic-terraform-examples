@@ -52,6 +52,11 @@ module "elastic" {
   product_tier           = var.product_tier
   elastic_version        = var.elastic_version
   deployment_template_id = var.deployment_template_id
+  tags = {
+    for k, v in var.company_tags :
+    substr(regexreplace(regexreplace(lower(k), "[^a-z0-9_-]", "-"), "^[^a-z]+", "x"), 0, 32) =>
+    substr(regexreplace(lower(tostring(v)), "[^a-z0-9_-]", "-"), 0, 32)
+  }
 }
 
 module "azure_cloud" {
@@ -60,10 +65,10 @@ module "azure_cloud" {
   name_prefix         = var.name_prefix
   location            = var.azure_region
   resource_group_name = var.azure_resource_group
-
-  tags = {
-    Environment = "poc"
-    Cloud       = "azure"
+  company_tags        = var.company_tags
+  required_tag_keys   = var.required_tag_keys
+  additional_tags = {
+    Cloud = "azure"
   }
 }
 

@@ -48,6 +48,22 @@ variable "name_prefix" {
   default = "elastic-poc"
 }
 
+variable "company_labels" {
+  type        = map(string)
+  description = "Company-policy labels applied to all GCP resources (and sanitized onto the Elastic project)."
+
+  validation {
+    condition     = length(var.company_labels) > 0
+    error_message = "Set company_labels according to your company tagging policy."
+  }
+}
+
+variable "required_label_keys" {
+  type        = list(string)
+  description = "Optional list of label keys that must appear in company_labels."
+  default     = []
+}
+
 variable "enable_cspm" {
   type    = bool
   default = true

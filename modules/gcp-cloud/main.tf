@@ -8,8 +8,49 @@ resource "random_id" "suffix" {
 
 locals {
   suffix = random_id.suffix.hex
-  labels = merge({ project = "elastic-cloud-poc", managed-by = "terraform" }, var.labels)
   sa_id  = substr(lower(replace("${var.name_prefix}-collector-${local.suffix}", "_", "-")), 0, 30)
+
+  # GCP labels: lowercase letters, digits, underscores, dashes; keys/values ≤ 63 chars;
+  # keys must start with a lowercase letter.
+  raw_labels = merge(var.company_labels, var.additional_labels)
+  normalize = {
+    for k, v in local.raw_labels :
+    substr(
+      regexreplace(
+        regexreplace(lower(k), "[^a-z0-9_-]", "-"),
+        "^[^a-z]+",
+        "x"
+      ),
+      0,
+      63
+    ) => substr(regexreplace(lower(tostring(v)), "[^a-z0-9_-]", "-"), 0, 63)
+  }
+
+  base_labels = merge(
+    {
+      "managed-by" = "terraform"
+      project      = "elastic-cloud-poc"
+    },
+    local.normalize
+  )
+
+  required_normalized = [
+    for key in var.required_label_keys :
+    substr(
+      regexreplace(
+        regexreplace(lower(key), "[^a-z0-9_-]", "-"),
+        "^[^a-z]+",
+        "x"
+      ),
+      0,
+      63
+    )
+  ]
+
+  missing_required_keys = [
+    for key in local.required_normalized : key
+    if !contains(keys(local.normalize), key)
+  ]
 
   topics = {
     audit    = { filter = var.audit_filter }
@@ -20,9 +61,17 @@ locals {
   }
 }
 
+check "required_company_labels" {
+  assert {
+    condition     = length(local.missing_required_keys) == 0
+    error_message = "company_labels is missing required keys: ${join(", ", local.missing_required_keys)}"
+  }
+}
+
 resource "google_service_account" "elastic" {
   account_id   = local.sa_id
   display_name = "Elastic Cloud PoC collector"
+  description  = "Collector SA for Elastic observe-and-protect PoC"
   project      = var.project_id
 }
 
@@ -53,7 +102,7 @@ resource "google_pubsub_topic" "logs" {
 
   name    = "${var.name_prefix}-${each.key}-${local.suffix}"
   project = var.project_id
-  labels  = merge(local.labels, { "elastic-log" = each.key })
+  labels  = merge(local.base_labels, { "elastic-log" = each.key })
 }
 
 resource "google_logging_project_sink" "logs" {
@@ -83,5 +132,5 @@ resource "google_pubsub_subscription" "logs" {
   name    = "${var.name_prefix}-${each.key}-sub-${local.suffix}"
   project = var.project_id
   topic   = google_pubsub_topic.logs[each.key].name
-  labels  = local.labels
+  labels  = local.base_labels
 }

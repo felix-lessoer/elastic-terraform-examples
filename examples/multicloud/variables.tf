@@ -163,3 +163,25 @@ variable "name_prefix" {
   type    = string
   default = "elastic-poc"
 }
+
+variable "company_tags" {
+  type        = map(string)
+  description = "Company-policy tags/labels applied to all cloud resources (GCP keys/values are normalized)."
+
+  validation {
+    condition     = length(var.company_tags) > 0
+    error_message = "Set company_tags according to your company tagging policy."
+  }
+}
+
+variable "required_tag_keys" {
+  type        = list(string)
+  description = "Optional list of tag keys that must appear in company_tags (AWS/Azure exact match; GCP after normalization)."
+  default     = []
+}
+
+variable "required_label_keys" {
+  type        = list(string)
+  description = "Optional GCP-specific required keys (normalized). Defaults to required_tag_keys when empty."
+  default     = []
+}

@@ -6,11 +6,30 @@ resource "random_id" "suffix" {
 }
 
 locals {
-  suffix      = random_id.suffix.hex
-  common_tags = merge({ Project = "elastic-cloud-poc", ManagedBy = "terraform" }, var.tags)
+  suffix = random_id.suffix.hex
+  common_tags = merge(
+    {
+      Project   = "elastic-cloud-poc"
+      ManagedBy = "terraform"
+    },
+    var.company_tags,
+    var.additional_tags
+  )
   # Storage account names: 3-24 lowercase alphanumeric
   storage_name = substr(lower(replace("${var.name_prefix}${local.suffix}", "-", "")), 0, 24)
   eh_ns_name   = substr(lower("${var.name_prefix}-eh-${local.suffix}"), 0, 50)
+
+  missing_required_keys = [
+    for key in var.required_tag_keys : key
+    if !contains(keys(var.company_tags), key)
+  ]
+}
+
+check "required_company_tags" {
+  assert {
+    condition     = length(local.missing_required_keys) == 0
+    error_message = "company_tags is missing required keys: ${join(", ", local.missing_required_keys)}"
+  }
 }
 
 resource "azurerm_resource_group" "main" {

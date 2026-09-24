@@ -22,8 +22,21 @@ locals {
       Project   = "elastic-cloud-poc"
       ManagedBy = "terraform"
     },
-    var.tags
+    var.company_tags,
+    var.additional_tags
   )
+
+  missing_required_keys = [
+    for key in var.required_tag_keys : key
+    if !contains(keys(var.company_tags), key)
+  ]
+}
+
+check "required_company_tags" {
+  assert {
+    condition     = length(local.missing_required_keys) == 0
+    error_message = "company_tags is missing required keys: ${join(", ", local.missing_required_keys)}"
+  }
 }
 
 # -----------------------------------------------------------------------------

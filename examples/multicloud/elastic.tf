@@ -2,6 +2,13 @@ locals {
   deploy_aws   = var.deploy_aws
   deploy_azure = var.deploy_azure
   deploy_gcp   = var.deploy_gcp
+
+  # Elastic Cloud metadata tags: lowercase, [a-z0-9_-], key ≤ 32 chars
+  elastic_tags = {
+    for k, v in var.company_tags :
+    substr(regexreplace(regexreplace(lower(k), "[^a-z0-9_-]", "-"), "^[^a-z]+", "x"), 0, 32) =>
+    substr(regexreplace(lower(tostring(v)), "[^a-z0-9_-]", "-"), 0, 32)
+  }
 }
 
 # -----------------------------------------------------------------------------
@@ -18,6 +25,7 @@ module "elastic_aws" {
   product_tier           = var.product_tier
   elastic_version        = var.elastic_version
   deployment_template_id = var.aws_deployment_template_id
+  tags                   = local.elastic_tags
 }
 
 module "elastic_azure" {
@@ -30,6 +38,7 @@ module "elastic_azure" {
   product_tier           = var.product_tier
   elastic_version        = var.elastic_version
   deployment_template_id = var.azure_deployment_template_id
+  tags                   = local.elastic_tags
 }
 
 module "elastic_gcp" {
@@ -42,6 +51,7 @@ module "elastic_gcp" {
   product_tier           = var.product_tier
   elastic_version        = var.elastic_version
   deployment_template_id = var.gcp_deployment_template_id
+  tags                   = local.elastic_tags
 }
 
 # -----------------------------------------------------------------------------
@@ -74,6 +84,7 @@ module "elastic_hub_aws" {
   deployment_template_id = var.aws_deployment_template_id
   linked_projects        = local.hub_linked_projects
   remote_clusters        = local.hub_remote_clusters
+  tags                   = local.elastic_tags
 
   depends_on = [module.elastic_azure, module.elastic_gcp]
 }
@@ -90,6 +101,7 @@ module "elastic_hub_azure" {
   deployment_template_id = var.azure_deployment_template_id
   linked_projects        = local.hub_linked_projects
   remote_clusters        = local.hub_remote_clusters
+  tags                   = local.elastic_tags
 
   depends_on = [module.elastic_aws, module.elastic_gcp]
 }
@@ -106,6 +118,7 @@ module "elastic_hub_gcp" {
   deployment_template_id = var.gcp_deployment_template_id
   linked_projects        = local.hub_linked_projects
   remote_clusters        = local.hub_remote_clusters
+  tags                   = local.elastic_tags
 
   depends_on = [module.elastic_aws, module.elastic_azure]
 }

@@ -251,7 +251,8 @@ module "stack_gcp" {
               "cloud_security_posture.findings" = {
                 enabled = true
                 vars = jsonencode({
-                  "gcp.project_id"       = module.gcp_cloud[0].project_id
+                  "gcp.account_type"      = "single-account"
+                  "gcp.project_id"        = module.gcp_cloud[0].project_id
                   "gcp.credentials.type" = "credentials-json"
                   "gcp.credentials.json" = module.gcp_cloud[0].credentials_json
                 })
@@ -267,33 +268,96 @@ module "stack_gcp" {
         package_name = "gcp"
         managed      = false
         agent_policy = true
+        vars_json = jsonencode({
+          project_id       = module.gcp_cloud[0].project_id
+          credentials_json = module.gcp_cloud[0].credentials_json
+        })
         inputs = {
-          "gcp-pubsub" = {
+          "audit-gcp-pubsub" = {
             enabled = true
-            vars = jsonencode({
-              credentials_json = module.gcp_cloud[0].credentials_json
-              project_id       = module.gcp_cloud[0].project_id
-            })
             streams = {
               "gcp.audit" = {
                 enabled = true
-                vars    = jsonencode({ topic = module.gcp_cloud[0].topic_names["audit"] })
+                vars = jsonencode({
+                  topic                   = module.gcp_cloud[0].topic_names["audit"]
+                  subscription_name       = module.gcp_cloud[0].subscription_names["audit"]
+                  subscription_create     = false
+                  tags                    = ["forwarded", "gcp-audit"]
+                  preserve_original_event = false
+                  keep_json               = false
+                })
               }
+            }
+          }
+          "firewall-gcp-pubsub" = {
+            enabled = true
+            streams = {
               "gcp.firewall" = {
                 enabled = true
-                vars    = jsonencode({ topic = module.gcp_cloud[0].topic_names["firewall"] })
+                vars = jsonencode({
+                  topic                   = module.gcp_cloud[0].topic_names["firewall"]
+                  subscription_name       = module.gcp_cloud[0].subscription_names["firewall"]
+                  subscription_create     = false
+                  tags                    = ["forwarded", "gcp-firewall"]
+                  preserve_original_event = false
+                  keep_json               = false
+                })
               }
+            }
+          }
+          "vpcflow-gcp-pubsub" = {
+            enabled = true
+            streams = {
               "gcp.vpcflow" = {
                 enabled = true
-                vars    = jsonencode({ topic = module.gcp_cloud[0].topic_names["vpcflow"] })
+                vars = jsonencode({
+                  topic                   = module.gcp_cloud[0].topic_names["vpcflow"]
+                  subscription_name       = module.gcp_cloud[0].subscription_names["vpcflow"]
+                  subscription_create     = false
+                  tags                    = ["forwarded", "gcp-vpcflow"]
+                  preserve_original_event = false
+                  keep_json               = false
+                })
               }
+            }
+          }
+          "dns-gcp-pubsub" = {
+            enabled = true
+            streams = {
               "gcp.dns" = {
                 enabled = true
-                vars    = jsonencode({ topic = module.gcp_cloud[0].topic_names["dns"] })
+                vars = jsonencode({
+                  topic                   = module.gcp_cloud[0].topic_names["dns"]
+                  subscription_name       = module.gcp_cloud[0].subscription_names["dns"]
+                  subscription_create     = false
+                  tags                    = ["forwarded", "gcp-dns"]
+                  preserve_original_event = false
+                  keep_json               = false
+                })
               }
+            }
+          }
+          "loadbalancing-gcp-pubsub" = {
+            enabled = true
+            streams = {
               "gcp.loadbalancing_logs" = {
                 enabled = true
-                vars    = jsonencode({ topic = module.gcp_cloud[0].topic_names["lb"] })
+                vars = jsonencode({
+                  topic                   = module.gcp_cloud[0].topic_names["lb"]
+                  subscription_name       = module.gcp_cloud[0].subscription_names["lb"]
+                  subscription_create     = false
+                  tags                    = ["forwarded", "gcp-loadbalancing_logs"]
+                  preserve_original_event = false
+                })
+              }
+            }
+          }
+          "compute-gcp/metrics" = {
+            enabled = true
+            streams = {
+              "gcp.compute" = {
+                enabled = true
+                vars    = jsonencode({ period = "5m", tags = ["gcp-compute"] })
               }
             }
           }

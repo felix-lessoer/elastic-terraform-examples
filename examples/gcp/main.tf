@@ -124,8 +124,7 @@ locals {
         })
         var_group_selections = {}
         cloud_connector      = null
-        inputs = merge(
-          {
+        inputs = {
             "audit-gcp-pubsub" = {
               enabled = true
               streams = {
@@ -204,16 +203,15 @@ locals {
                 }
               }
             }
-          },
-          var.enable_billing_metrics ? {
+            # Always declare billing: Fleet validates required vars even when omitted.
             "billing-gcp/metrics" = {
-              enabled = true
+              enabled = var.enable_billing_metrics
               streams = {
                 "gcp.billing" = {
-                  enabled = true
+                  enabled = var.enable_billing_metrics
                   vars = jsonencode({
                     period        = "24h"
-                    dataset_id    = var.billing_dataset_id
+                    dataset_id    = var.enable_billing_metrics ? var.billing_dataset_id : "unused"
                     table_pattern = "gcp_billing_export_v1"
                     cost_type     = "regular"
                     tags          = ["gcp-billing"]
@@ -221,8 +219,7 @@ locals {
                 }
               }
             }
-          } : {}
-        )
+        }
       }
     ]
   )

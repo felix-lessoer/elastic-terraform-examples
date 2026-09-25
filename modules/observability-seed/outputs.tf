@@ -34,12 +34,32 @@ output "ml_jobs" {
     length(elasticstack_elasticsearch_ml_anomaly_detection_job.gcp_event_rate) > 0 ? [{
       id          = elasticstack_elasticsearch_ml_anomaly_detection_job.gcp_event_rate[0].job_id
       description = "Unusual drops/spikes in GCP telemetry volume"
-      state       = "Configured (lazy open)"
+      state       = try(elasticstack_elasticsearch_ml_job_state.gcp_event_rate[0].state, "configured")
     }] : [],
     length(elasticstack_elasticsearch_ml_anomaly_detection_job.gcp_cspm_findings_rate) > 0 ? [{
       id          = elasticstack_elasticsearch_ml_anomaly_detection_job.gcp_cspm_findings_rate[0].job_id
       description = "Unusual rate of CSPM findings documents"
-      state       = "Configured (lazy open)"
+      state       = try(elasticstack_elasticsearch_ml_job_state.gcp_cspm_findings_rate[0].state, "configured")
+    }] : [],
+  )
+}
+
+output "ml_datafeed_ids" {
+  value = concat(
+    length(elasticstack_elasticsearch_ml_datafeed.gcp_event_rate) > 0 ? [elasticstack_elasticsearch_ml_datafeed.gcp_event_rate[0].datafeed_id] : [],
+    length(elasticstack_elasticsearch_ml_datafeed.gcp_cspm_findings_rate) > 0 ? [elasticstack_elasticsearch_ml_datafeed.gcp_cspm_findings_rate[0].datafeed_id] : [],
+  )
+}
+
+output "ml_datafeed_states" {
+  value = concat(
+    length(elasticstack_elasticsearch_ml_datafeed_state.gcp_event_rate) > 0 ? [{
+      id    = elasticstack_elasticsearch_ml_datafeed.gcp_event_rate[0].datafeed_id
+      state = elasticstack_elasticsearch_ml_datafeed_state.gcp_event_rate[0].state
+    }] : [],
+    length(elasticstack_elasticsearch_ml_datafeed_state.gcp_cspm_findings_rate) > 0 ? [{
+      id    = elasticstack_elasticsearch_ml_datafeed.gcp_cspm_findings_rate[0].datafeed_id
+      state = elasticstack_elasticsearch_ml_datafeed_state.gcp_cspm_findings_rate[0].state
     }] : [],
   )
 }

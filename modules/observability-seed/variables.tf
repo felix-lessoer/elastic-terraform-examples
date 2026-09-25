@@ -34,3 +34,21 @@ variable "enable_observability_alerts" {
   type    = bool
   default = true
 }
+
+# Optional: run the CSPM findings ML job on the Security project ES
+# (where CSPM data lives). When empty, CSPM ML uses the Observability ES.
+variable "security_elasticsearch_endpoint" {
+  type    = string
+  default = ""
+}
+
+variable "security_elasticsearch_username" {
+  type    = string
+  default = ""
+}
+
+variable "security_elasticsearch_password" {
+  type      = string
+  sensitive = true
+  default   = ""
+}

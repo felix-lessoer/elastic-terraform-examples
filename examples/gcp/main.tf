@@ -75,15 +75,18 @@ module "observability_seed" {
   count  = length(module.observability) > 0 ? 1 : 0
   source = "../../modules/observability-seed"
 
-  kibana_endpoint               = module.observability[0].kibana_endpoint
-  elasticsearch_endpoint        = module.observability[0].elasticsearch_endpoint
-  elasticsearch_username        = module.observability[0].username
-  elasticsearch_password        = module.observability[0].password
-  enable_ml_jobs                = var.enable_ml_jobs
-  enable_ai_agents              = var.enable_ai_agents
-  enable_observability_alerts   = var.enable_observability_alerts
+  kibana_endpoint                   = module.observability[0].kibana_endpoint
+  elasticsearch_endpoint            = module.observability[0].elasticsearch_endpoint
+  elasticsearch_username            = module.observability[0].username
+  elasticsearch_password            = module.observability[0].password
+  security_elasticsearch_endpoint   = module.elastic.elasticsearch_endpoint
+  security_elasticsearch_username   = module.elastic.username
+  security_elasticsearch_password   = module.elastic.password
+  enable_ml_jobs                    = var.enable_ml_jobs
+  enable_ai_agents                  = var.enable_ai_agents
+  enable_observability_alerts       = var.enable_observability_alerts
 
-  depends_on = [module.observability]
+  depends_on = [module.observability, module.elastic]
 }
 
 module "cockpit" {

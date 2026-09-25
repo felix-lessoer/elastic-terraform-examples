@@ -1,6 +1,12 @@
 locals {
   kibana_url = trimsuffix(var.kibana_endpoint, "/")
   es_url     = trimsuffix(var.elasticsearch_endpoint, "/")
+
+  # CSPM findings are ingested into the Security project; run that ML job there when credentials are provided.
+  cspm_es_url = var.security_elasticsearch_endpoint != "" ? trimsuffix(var.security_elasticsearch_endpoint, "/") : local.es_url
+  cspm_es_username = var.security_elasticsearch_username != "" ? var.security_elasticsearch_username : var.elasticsearch_username
+  cspm_es_password = var.security_elasticsearch_password != "" ? var.security_elasticsearch_password : var.elasticsearch_password
+  cspm_on_security = var.security_elasticsearch_endpoint != ""
 }
 
 # -----------------------------------------------------------------------------
@@ -151,10 +157,135 @@ resource "elasticstack_elasticsearch_ml_anomaly_detection_job" "gcp_cspm_finding
   allow_lazy_open = true
 
   elasticsearch_connection {
+    endpoints = [local.cspm_es_url]
+    username  = local.cspm_es_username
+    password  = local.cspm_es_password
+  }
+}
+
+resource "elasticstack_elasticsearch_ml_datafeed" "gcp_cspm_findings_rate" {
+  count = var.enable_ml_jobs ? 1 : 0
+
+  datafeed_id = "datafeed-gcp-cspm-findings-rate"
+  job_id      = elasticstack_elasticsearch_ml_anomaly_detection_job.gcp_cspm_findings_rate[0].job_id
+  # CSPM findings may lag; scores land first. Wildcard + allow_no_indices lets the
+  # datafeed start before findings indices exist.
+  indices = ["logs-cloud_security_posture.*"]
+
+  indices_options = {
+    allow_no_indices   = true
+    ignore_unavailable = true
+    expand_wildcards   = ["open"]
+  }
+
+  query = jsonencode({
+    bool = {
+      filter = [
+        { range = { "@timestamp" = { gte = "now-7d" } } }
+      ]
+    }
+  })
+
+  elasticsearch_connection {
+    endpoints = [local.cspm_es_url]
+    username  = local.cspm_es_username
+    password  = local.cspm_es_password
+  }
+
+  depends_on = [elasticstack_elasticsearch_ml_anomaly_detection_job.gcp_cspm_findings_rate]
+}
+
+# -----------------------------------------------------------------------------
+# Start ML jobs + datafeeds after create (open job, then start datafeed)
+# -----------------------------------------------------------------------------
+
+resource "elasticstack_elasticsearch_ml_job_state" "gcp_event_rate" {
+  count = var.enable_ml_jobs ? 1 : 0
+
+  job_id      = elasticstack_elasticsearch_ml_anomaly_detection_job.gcp_event_rate[0].job_id
+  state       = "opened"
+  job_timeout = "5m"
+
+  timeouts = {
+    create = "10m"
+    update = "10m"
+  }
+
+  elasticsearch_connection {
     endpoints = [local.es_url]
     username  = var.elasticsearch_username
     password  = var.elasticsearch_password
   }
+
+  depends_on = [
+    elasticstack_elasticsearch_ml_anomaly_detection_job.gcp_event_rate,
+    elasticstack_elasticsearch_ml_datafeed.gcp_event_rate,
+  ]
+}
+
+resource "elasticstack_elasticsearch_ml_datafeed_state" "gcp_event_rate" {
+  count = var.enable_ml_jobs ? 1 : 0
+
+  datafeed_id = elasticstack_elasticsearch_ml_datafeed.gcp_event_rate[0].datafeed_id
+  # Omit start/end so the datafeed runs real-time (avoids provider start-alignment drift).
+  state = "started"
+
+  timeouts = {
+    create = "10m"
+    update = "10m"
+  }
+
+  elasticsearch_connection {
+    endpoints = [local.es_url]
+    username  = var.elasticsearch_username
+    password  = var.elasticsearch_password
+  }
+
+  depends_on = [elasticstack_elasticsearch_ml_job_state.gcp_event_rate]
+}
+
+resource "elasticstack_elasticsearch_ml_job_state" "gcp_cspm_findings_rate" {
+  count = var.enable_ml_jobs ? 1 : 0
+
+  job_id      = elasticstack_elasticsearch_ml_anomaly_detection_job.gcp_cspm_findings_rate[0].job_id
+  state       = "opened"
+  job_timeout = "5m"
+
+  timeouts = {
+    create = "10m"
+    update = "10m"
+  }
+
+  elasticsearch_connection {
+    endpoints = [local.cspm_es_url]
+    username  = local.cspm_es_username
+    password  = local.cspm_es_password
+  }
+
+  depends_on = [
+    elasticstack_elasticsearch_ml_anomaly_detection_job.gcp_cspm_findings_rate,
+    elasticstack_elasticsearch_ml_datafeed.gcp_cspm_findings_rate,
+  ]
+}
+
+resource "elasticstack_elasticsearch_ml_datafeed_state" "gcp_cspm_findings_rate" {
+  count = var.enable_ml_jobs ? 1 : 0
+
+  datafeed_id = elasticstack_elasticsearch_ml_datafeed.gcp_cspm_findings_rate[0].datafeed_id
+  state       = "started"
+
+  timeouts = {
+    create = "10m"
+    update = "10m"
+  }
+
+  elasticsearch_connection {
+    endpoints = [local.cspm_es_url]
+    username  = local.cspm_es_username
+    password  = local.cspm_es_password
+  }
+
+  depends_on = [elasticstack_elasticsearch_ml_job_state.gcp_cspm_findings_rate]
 }
 
 # -----------------------------------------------------------------------------

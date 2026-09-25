@@ -111,41 +111,64 @@ resource "elasticstack_elasticsearch_ml_anomaly_detection_job" "gcp_event_rate" 
   }
 }
 
-# Serverless ML rejects allow_no_indices when nothing matches; seed bootstrap
-# indices so greenfield datafeed start succeeds before agents enroll.
-resource "elasticstack_elasticsearch_index" "ml_bootstrap_logs" {
+# Serverless rejects plain indices under the logs-* data-stream template.
+# Create bootstrap *data streams* so ML datafeeds can start greenfield.
+resource "terraform_data" "ml_bootstrap_logs" {
   count = var.enable_ml_jobs ? 1 : 0
 
-  name = "logs-ml-bootstrap"
+  input = {
+    es_url  = local.es_url
+    user    = var.elasticsearch_username
+    stream  = "logs-ml.bootstrap-default"
+  }
 
-  mappings = jsonencode({
-    properties = {
-      "@timestamp" = { type = "date" }
+  provisioner "local-exec" {
+    interpreter = ["/bin/bash", "-c"]
+    command     = <<-EOT
+      set -euo pipefail
+      code=$(curl -sS -o /tmp/ml-boot-logs.json -w '%{http_code}' -u "${self.input.user}:$ES_PASSWORD" \
+        -X PUT "${self.input.es_url}/_data_stream/${self.input.stream}" \
+        -H 'Content-Type: application/json' || true)
+      # 200/201 created, 400 already exists are OK
+      if [[ "$code" != "200" && "$code" != "201" ]]; then
+        if ! grep -qi 'resource_already_exists\|already exists' /tmp/ml-boot-logs.json; then
+          echo "bootstrap data stream failed ($code): $(cat /tmp/ml-boot-logs.json)" >&2
+          exit 1
+        fi
+      fi
+    EOT
+    environment = {
+      ES_PASSWORD = var.elasticsearch_password
     }
-  })
-
-  elasticsearch_connection {
-    endpoints = [local.es_url]
-    username  = var.elasticsearch_username
-    password  = var.elasticsearch_password
   }
 }
 
-resource "elasticstack_elasticsearch_index" "ml_bootstrap_cspm" {
+resource "terraform_data" "ml_bootstrap_cspm" {
   count = var.enable_ml_jobs ? 1 : 0
 
-  name = "logs-cloud_security_posture.bootstrap"
+  input = {
+    es_url = local.cspm_es_url
+    user   = local.cspm_es_username
+    stream = "logs-cloud_security_posture.bootstrap-default"
+  }
 
-  mappings = jsonencode({
-    properties = {
-      "@timestamp" = { type = "date" }
+  provisioner "local-exec" {
+    interpreter = ["/bin/bash", "-c"]
+    command     = <<-EOT
+      set -euo pipefail
+      code=$(curl -sS -o /tmp/ml-boot-cspm.json -w '%{http_code}' -u "${self.input.user}:$ES_PASSWORD" \
+        -X PUT "${self.input.es_url}/_data_stream/${self.input.stream}" \
+        -H 'Content-Type: application/json' || true)
+      if [[ "$code" != "200" && "$code" != "201" ]]; then
+        if ! grep -qi 'resource_already_exists\|already exists' /tmp/ml-boot-cspm.json; then
+          echo "bootstrap data stream failed ($code): $(cat /tmp/ml-boot-cspm.json)" >&2
+          exit 1
+        fi
+      fi
+    EOT
+    environment = {
+      ES_PASSWORD = local.cspm_es_password
     }
-  })
-
-  elasticsearch_connection {
-    endpoints = [local.cspm_es_url]
-    username  = local.cspm_es_username
-    password  = local.cspm_es_password
   }
 }
 
@@ -179,7 +202,7 @@ resource "elasticstack_elasticsearch_ml_datafeed" "gcp_event_rate" {
 
   depends_on = [
     elasticstack_elasticsearch_ml_anomaly_detection_job.gcp_event_rate,
-    elasticstack_elasticsearch_index.ml_bootstrap_logs,
+    terraform_data.ml_bootstrap_logs,
   ]
 }
 
@@ -243,7 +266,10 @@ resource "elasticstack_elasticsearch_ml_datafeed" "gcp_cspm_findings_rate" {
     password  = local.cspm_es_password
   }
 
-  depends_on = [elasticstack_elasticsearch_ml_anomaly_detection_job.gcp_cspm_findings_rate]
+  depends_on = [
+    elasticstack_elasticsearch_ml_anomaly_detection_job.gcp_cspm_findings_rate,
+    terraform_data.ml_bootstrap_cspm,
+  ]
 }
 
 # -----------------------------------------------------------------------------

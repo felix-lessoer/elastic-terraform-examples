@@ -154,10 +154,10 @@ data "aws_guardduty_detector" "this" {
 }
 
 locals {
-  # Agent EC2 uses an IAM instance profile (IMDS). Do not set role_arn here —
-  # the aws package dropped external_id assume-role support; IMDS is the path.
+  # Package-level only (default_region is an aws package var, not an input var).
+  # Agents use IAM instance profile / IMDS — no role_arn or static keys.
   # elasticstack input map keys are "{policy_template}-{input_type}".
-  aws_agent_vars = {
+  aws_package_vars = {
     default_region = var.aws_region
   }
 
@@ -211,16 +211,13 @@ locals {
         var_group_selections = { deployment = "aws" }
         cloud_connector      = null
         inputs = {
+          # vuln_mgmt_aws stream has no credential vars; agentless CNVM expects
+          # CloudFormation / cloud connectors. Enable the stream only.
           "vuln_mgmt-cloudbeat/vuln_mgmt_aws" = {
             enabled = true
             streams = {
               "cloud_security_posture.vulnerabilities" = {
                 enabled = true
-                vars = jsonencode({
-                  role_arn                      = module.aws_cloud.elastic_role_arn
-                  "aws.credentials.type"        = "assume_role"
-                  "aws.credentials.external_id" = module.aws_cloud.external_id
-                })
               }
             }
           }
@@ -237,14 +234,13 @@ locals {
         prerelease           = false
         package_version      = null
         policy_template      = null
-        vars_json            = jsonencode(local.aws_agent_vars)
+        vars_json            = jsonencode(local.aws_package_vars)
         var_group_selections = {}
         cloud_connector      = null
         inputs = merge(
           var.enable_cloudtrail && module.aws_cloud.cloudtrail_queue_url != null ? {
             "cloudtrail-aws-s3" = {
               enabled = true
-              vars    = jsonencode(local.aws_agent_vars)
               streams = {
                 "aws.cloudtrail" = {
                   enabled = true
@@ -261,38 +257,37 @@ locals {
           var.enable_security_hub ? {
             "securityhub-httpjson" = {
               enabled = true
-              vars    = jsonencode(local.aws_agent_vars)
               streams = {
                 "aws.securityhub_findings" = {
                   enabled = true
                   vars = jsonencode({
-                    interval                        = "1h"
-                    initial_interval                = "24h"
-                    aws_region                      = var.aws_region
-                    tld                             = "amazonaws.com"
-                    tags                            = ["forwarded", "aws_securityhub_findings"]
-                    preserve_original_event         = false
+                    interval                         = "1h"
+                    initial_interval                 = "24h"
+                    aws_region                       = var.aws_region
+                    tld                              = "amazonaws.com"
+                    tags                             = ["forwarded", "aws_securityhub_findings"]
+                    preserve_original_event          = false
                     preserve_duplicate_custom_fields = false
                   })
                 }
                 "aws.securityhub_insights" = {
                   enabled = true
                   vars = jsonencode({
-                    interval                        = "1h"
-                    aws_region                      = var.aws_region
-                    tld                             = "amazonaws.com"
-                    tags                            = ["forwarded", "aws_securityhub_insights"]
-                    preserve_original_event         = false
+                    interval                         = "1h"
+                    aws_region                       = var.aws_region
+                    tld                              = "amazonaws.com"
+                    tags                             = ["forwarded", "aws_securityhub_insights"]
+                    preserve_original_event          = false
                     preserve_duplicate_custom_fields = false
                   })
                 }
                 "aws.securityhub_findings_full_posture" = {
                   enabled = true
                   vars = jsonencode({
-                    aws_region                      = var.aws_region
-                    tld                             = "amazonaws.com"
-                    tags                            = ["forwarded", "aws_securityhub_findings_full_posture"]
-                    preserve_original_event         = false
+                    aws_region                       = var.aws_region
+                    tld                              = "amazonaws.com"
+                    tags                             = ["forwarded", "aws_securityhub_findings_full_posture"]
+                    preserve_original_event          = false
                     preserve_duplicate_custom_fields = false
                   })
                 }
@@ -302,19 +297,18 @@ locals {
           var.enable_guardduty ? {
             "guardduty-httpjson" = {
               enabled = true
-              vars    = jsonencode(local.aws_agent_vars)
               streams = {
                 "aws.guardduty" = {
                   enabled = true
                   vars = jsonencode({
-                    interval                        = "1h"
-                    initial_interval                = "24h"
-                    detector_id                     = data.aws_guardduty_detector.this[0].id
-                    aws_region                      = var.aws_region
-                    tld                             = "amazonaws.com"
-                    http_client_timeout             = "30s"
-                    tags                            = ["forwarded", "aws-guardduty"]
-                    preserve_original_event         = false
+                    interval                         = "1h"
+                    initial_interval                 = "24h"
+                    detector_id                      = data.aws_guardduty_detector.this[0].id
+                    aws_region                       = var.aws_region
+                    tld                              = "amazonaws.com"
+                    http_client_timeout              = "30s"
+                    tags                             = ["forwarded", "aws-guardduty"]
+                    preserve_original_event          = false
                     preserve_duplicate_custom_fields = false
                   })
                 }
@@ -324,7 +318,6 @@ locals {
           var.enable_aws_health ? {
             "awshealth-aws/metrics" = {
               enabled = true
-              vars    = jsonencode(local.aws_agent_vars)
               streams = {
                 "aws.awshealth" = {
                   enabled = true
@@ -354,14 +347,13 @@ locals {
       prerelease           = false
       package_version      = null
       policy_template      = null
-      vars_json            = jsonencode(local.aws_agent_vars)
+      vars_json            = jsonencode(local.aws_package_vars)
       var_group_selections = {}
       cloud_connector      = null
       inputs = merge(
         var.enable_vpc_flow_logs && module.aws_cloud.vpcflow_queue_url != null ? {
           "vpcflow-aws-s3" = {
             enabled = true
-            vars    = jsonencode(local.aws_agent_vars)
             streams = {
               "aws.vpcflow" = {
                 enabled = true
@@ -378,7 +370,6 @@ locals {
         {
           "cloudwatch-aws/metrics" = {
             enabled = true
-            vars    = jsonencode(local.aws_agent_vars)
             streams = {
               "aws.cloudwatch_metrics" = {
                 enabled = true
@@ -388,8 +379,6 @@ locals {
                     latency = "5m"
                     regions = [var.aws_region]
                   },
-                  # Trusted Advisor publishes check status to AWS/TrustedAdvisor.
-                  # There is no first-class Elastic TA data stream; CloudWatch is the path.
                   var.enable_trusted_advisor ? {
                     metrics = <<-YAML
                       - namespace: AWS/TrustedAdvisor
@@ -408,7 +397,6 @@ locals {
           }
           "ec2-aws/metrics" = {
             enabled = true
-            vars    = jsonencode(local.aws_agent_vars)
             streams = {
               "aws.ec2_metrics" = {
                 enabled = true
@@ -421,7 +409,6 @@ locals {
           }
           "s3-aws/metrics" = {
             enabled = true
-            vars    = jsonencode(local.aws_agent_vars)
             streams = {
               "aws.s3_daily_storage" = {
                 enabled = true
@@ -441,7 +428,6 @@ locals {
           }
           "billing-aws/metrics" = {
             enabled = var.enable_billing_metrics
-            vars    = jsonencode(local.aws_agent_vars)
             streams = {
               "aws.billing" = {
                 enabled = var.enable_billing_metrics

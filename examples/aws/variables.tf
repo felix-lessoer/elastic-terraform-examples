@@ -55,8 +55,26 @@ variable "deployment_template_id" {
 }
 
 variable "aws_region" {
-  type    = string
-  default = "eu-west-1"
+  type        = string
+  description = "Primary AWS region for infra (S3/SQS/EC2 agents) and the first metrics collection region."
+  default     = "eu-west-1"
+}
+
+variable "aws_regions" {
+  type        = list(string)
+  description = <<-EOT
+    Regions for Elastic Managed Integrations metrics collection (EC2/S3/CloudWatch/Health).
+    Extra regions with no resources simply contribute zero documents — cockpit queries and
+    recommendations stay valid. Include us-east-1 when collecting Billing / Trusted Advisor /
+    AWS Health (those APIs are home-region scoped).
+  EOT
+  default     = ["eu-west-1", "us-east-1"]
+}
+
+variable "enable_managed_aws_metrics" {
+  type        = bool
+  description = "Collect EC2/S3/billing/CloudWatch/Health via Elastic Managed Integrations (agentless) instead of the Observability EC2 agent."
+  default     = true
 }
 
 variable "name_prefix" {

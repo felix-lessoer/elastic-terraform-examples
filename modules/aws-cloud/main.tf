@@ -233,8 +233,11 @@ resource "aws_flow_log" "default_vpc" {
 # IAM role for Elastic (assume-role / cloud connector style)
 # -----------------------------------------------------------------------------
 
+# Elastic agentless / Managed Integrations assume this role via Identity Federation
+# (Elastic Cloud Connectors account). External-id assume stays for CSPM/agent paths.
 data "aws_iam_policy_document" "elastic_trust" {
   statement {
+    sid     = "AccountRootExternalId"
     effect  = "Allow"
     actions = ["sts:AssumeRole"]
 
@@ -247,6 +250,18 @@ data "aws_iam_policy_document" "elastic_trust" {
       test     = "StringEquals"
       variable = "sts:ExternalId"
       values   = [local.external_id]
+    }
+  }
+
+  statement {
+    sid     = "ElasticCloudConnectorsFederation"
+    effect  = "Allow"
+    actions = ["sts:AssumeRole"]
+
+    principals {
+      type = "AWS"
+      # Elastic's cloud-connectors super-role (see aws package Identity Federation CFT).
+      identifiers = ["arn:${data.aws_partition.current.partition}:iam::254766567737:role/cloud_connectors"]
     }
   }
 }
@@ -265,6 +280,7 @@ data "aws_iam_policy_document" "elastic_permissions" {
       "cloudwatch:GetMetricData",
       "cloudwatch:ListMetrics",
       "ec2:Describe*",
+      "ec2:DescribeRegions",
       "rds:Describe*",
       "rds:List*",
       "s3:GetBucketLocation",
@@ -330,7 +346,7 @@ data "aws_iam_policy_document" "elastic_permissions" {
     resources = length(compact(concat(
       aws_sqs_queue.cloudtrail[*].arn,
       aws_sqs_queue.vpcflow[*].arn,
-    ))) > 0 ? compact(concat(
+      ))) > 0 ? compact(concat(
       aws_sqs_queue.cloudtrail[*].arn,
       aws_sqs_queue.vpcflow[*].arn,
     )) : ["arn:${data.aws_partition.current.partition}:sqs:${local.region}:${local.account_id}:elastic-poc-disabled"]

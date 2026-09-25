@@ -505,9 +505,13 @@ def build(gcp_path: Path) -> dict:
             "`metrics-aws.ec2_metrics-*` / `logs-*` filtered to `cloud.instance.name`. |\n"
             "| **S3 bucket** | Filter by bucket; size table below shows stored bytes. Cross-check "
             "CSPM findings (once populated) for misconfigurations. |\n"
-            "| **Billing service** | Top estimated charges by service — pivot to Cost Explorer "
-            "or Trusted Advisor for savings plans. |\n\n"
-            "All figures reflect the dashboard's selected time range."
+                            "| **Billing service** | Top estimated charges by service — often only populated from "
+                            "**us-east-1** even when `aws_regions` lists more. Empty other regions are expected. |\n"
+                            "| **Trusted Advisor / Health** | Same home-region pattern — panels stay valid when only "
+                            "one region in `aws_regions` has data. |\n\n"
+                            "Metrics are collected across every region in Terraform `aws_regions`; charts aggregate "
+                            "whatever `cloud.region` values exist (no region is required to have data). "
+                            "All figures reflect the dashboard's selected time range."
         ),
         grid={"x": 0, "y": 0, "w": 48, "h": 7},
     )
@@ -605,7 +609,23 @@ def build(gcp_path: Path) -> dict:
                 "| LIMIT 15"
             ),
             index=f"{ec2_idx}-@timestamp",
-            grid={"x": 0, "y": 12, "w": 24, "h": 10},
+            grid={"x": 0, "y": 12, "w": 16, "h": 10},
+            section_id=live_section_id,
+        ),
+        esql_xy_panel(
+            title="Resources observed by region",
+            x_field="Region",
+            y_field="Instances",
+            esql=(
+                f"FROM {ec2_idx}\n"
+                "| WHERE @timestamp >= ?_tstart AND @timestamp < ?_tend\n"
+                "| STATS `Instances` = COUNT_DISTINCT(COALESCE(cloud.instance.name, cloud.instance.id)) "
+                "BY `Region` = cloud.region\n"
+                "| SORT `Instances` DESC\n"
+                "| LIMIT 15"
+            ),
+            index=f"{ec2_idx}-@timestamp",
+            grid={"x": 16, "y": 12, "w": 16, "h": 10},
             section_id=live_section_id,
         ),
         esql_xy_panel(
@@ -621,7 +641,7 @@ def build(gcp_path: Path) -> dict:
                 "| LIMIT 15"
             ),
             index=f"{bill_idx}-@timestamp",
-            grid={"x": 24, "y": 12, "w": 24, "h": 10},
+            grid={"x": 32, "y": 12, "w": 16, "h": 10},
             section_id=live_section_id,
         ),
         esql_table_panel(

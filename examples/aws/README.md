@@ -3,7 +3,7 @@
 Mirrors the GCP dual-project pattern for AWS:
 
 1. **Elastic Security** serverless (Complete) — agentless CSPM (+ optional CNVM), agent CloudTrail + console-home security, AWS detection rules
-2. **Elastic Observability** serverless — CPS-linked hub with agent vpcflow + CloudWatch/EC2/S3/billing + Trusted Advisor metrics
+2. **Elastic Observability** serverless — CPS-linked hub with **Managed Integrations** (agentless) for multi-region EC2/S3/billing/CloudWatch/Health metrics + agent vpcflow
 3. **Cockpit dashboard** on Observability — pinned NDJSON (`modules/cockpit-dashboard/cockpit-aws.ndjson`) with CSPM asset inventory (via CPS `misconfiguration_latest`), live AWS metrics inventory, and `aws-cockpit-recommendations`
 4. **Kibana Workflows** — YAML under `examples/aws/workflows/` (optional execute-on-apply)
 
@@ -17,9 +17,21 @@ Mirrors the GCP dual-project pattern for AWS:
 | Security Hub findings | **Agent** | httpjson streams; agentless available in package but this PoC uses IMDS on EC2 |
 | GuardDuty findings | **Agent** | same pattern as Security Hub |
 | AWS Health | **Agent** | `awshealth` metricset via agent IMDS |
-| Trusted Advisor | **Agent** | CloudWatch `AWS/TrustedAdvisor` (no dedicated Elastic data stream) |
+| CloudWatch / EC2 / S3 / billing / Health metrics | **Managed Integration (agentless)** | Multi-region via `aws_regions`; Identity Federation cloud connector |
+| Trusted Advisor | **Managed Integration** | CloudWatch `AWS/TrustedAdvisor` (often only `us-east-1`) |
 | VPC Flow Logs | **Agent** | S3/SQS package input not available agentless |
-| CloudWatch / EC2 / S3 / billing metrics | **Agent** | AWS metrics streams require Elastic Agent |
+
+## Multi-region metrics
+
+Set `aws_regions` to every region you want Managed Integrations to poll. The primary `aws_region` is always included (infra + first collection region).
+
+```hcl
+aws_region  = "eu-west-1"
+aws_regions = ["eu-west-1", "us-east-1"]  # TA / Billing / Health home region
+enable_managed_aws_metrics = true
+```
+
+Regions with no resources simply yield empty CloudWatch results — cockpit ES|QL and recommendations stay valid (they aggregate whatever `cloud.region` values exist). Include `us-east-1` when you care about Billing, Trusted Advisor, or AWS Health.
 
 Two EC2 Elastic Agents enroll into the Security and Observability Fleet policies. Agents use an **IAM instance profile** (IMDS) — no static AWS access keys in Fleet policies. Agentless CSPM/CNVM still assume the collector role with external id.
 

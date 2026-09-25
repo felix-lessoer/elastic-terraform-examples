@@ -18,6 +18,10 @@ terraform {
       source  = "hashicorp/random"
       version = ">= 3.5"
     }
+    external = {
+      source  = "hashicorp/external"
+      version = ">= 2.3"
+    }
   }
 }
 
@@ -159,64 +163,77 @@ data "aws_guardduty_detector" "this" {
 }
 
 locals {
+  # Always include the primary infra region; extras are collection-only.
+  # Empty regions contribute zero docs — queries must tolerate partial coverage
+  # (Billing/TA/Health often only exist in us-east-1).
+  aws_metric_regions = distinct(concat([var.aws_region], var.aws_regions))
+
+  aws_cloud_connector_name = "${var.name_prefix}-managed-aws"
+
   aws_package_vars = {
     default_region = var.aws_region
+  }
+
+  aws_managed_package_vars = {
+    default_region               = var.aws_region
+    role_arn                     = module.aws_cloud.elastic_role_arn
+    supports_identity_federation = true
   }
 
   # The aws package enables EVERY policy template by default. Explicitly disable
   # unused inputs (same pattern as examples/gcp extra metrics).
   aws_all_input_datasets = {
-    "awshealth-aws/metrics"             = ["aws.awshealth"]
-    "billing-aws/metrics"               = ["aws.billing"]
-    "cloudtrail-aws-s3"                 = ["aws.cloudtrail"]
-    "cloudtrail-aws-cloudwatch"          = ["aws.cloudtrail"]
-    "cloudwatch-aws-cloudwatch"          = ["aws.cloudwatch_logs"]
-    "cloudwatch-aws/metrics"             = ["aws.cloudwatch_metrics"]
-    "config-cel"                        = ["aws.config"]
-    "dynamodb-aws/metrics"              = ["aws.dynamodb"]
-    "ebs-aws/metrics"                   = ["aws.ebs"]
-    "ec2-aws-s3"                        = ["aws.ec2_logs"]
-    "ec2-aws-cloudwatch"                = ["aws.ec2_logs"]
-    "ec2-aws/metrics"                   = ["aws.ec2_metrics"]
-    "ecs-aws/metrics"                   = ["aws.ecs_metrics"]
-    "elb-aws-s3"                        = ["aws.elb_logs"]
-    "elb-aws-cloudwatch"                = ["aws.elb_logs"]
-    "elb-aws/metrics"                   = ["aws.elb_metrics"]
-    "lambda-aws/metrics"                = ["aws.lambda"]
-    "lambda-aws-cloudwatch"             = ["aws.lambda_logs"]
-    "natgateway-aws/metrics"            = ["aws.natgateway"]
-    "firewall-aws-s3"                   = ["aws.firewall_logs"]
-    "firewall-aws-cloudwatch"           = ["aws.firewall_logs"]
-    "firewall-aws/metrics"              = ["aws.firewall_metrics"]
-    "rds-aws/metrics"                   = ["aws.rds"]
-    "s3-aws-s3"                         = ["aws.s3access"]
-    "s3-aws/metrics"                    = ["aws.s3_daily_storage", "aws.s3_request"]
-    "s3_storage_lens-aws/metrics"       = ["aws.s3_storage_lens"]
-    "sns-aws/metrics"                   = ["aws.sns"]
-    "sqs-aws/metrics"                   = ["aws.sqs"]
-    "transitgateway-aws/metrics"        = ["aws.transitgateway"]
-    "usage-aws/metrics"                 = ["aws.usage"]
-    "vpcflow-aws-s3"                    = ["aws.vpcflow"]
-    "vpcflow-aws-cloudwatch"            = ["aws.vpcflow"]
-    "vpn-aws/metrics"                   = ["aws.vpn"]
-    "waf-aws-s3"                        = ["aws.waf"]
-    "waf-aws-cloudwatch"                = ["aws.waf"]
-    "route53-aws-cloudwatch"            = ["aws.route53_public_logs", "aws.route53_resolver_logs"]
-    "route53-aws-s3"                    = ["aws.route53_resolver_logs"]
-    "cloudfront-aws-s3"                 = ["aws.cloudfront_logs"]
-    "redshift-aws/metrics"              = ["aws.redshift"]
-    "kinesis-aws/metrics"               = ["aws.kinesis"]
-    "securityhub-httpjson"              = ["aws.securityhub_findings", "aws.securityhub_findings_full_posture", "aws.securityhub_insights"]
-    "inspector-httpjson"                = ["aws.inspector"]
-    "guardduty-httpjson"                = ["aws.guardduty"]
-    "guardduty-aws-s3"                  = ["aws.guardduty"]
-    "apigateway-aws/metrics"            = ["aws.apigateway_metrics"]
-    "apigateway-aws-s3"                 = ["aws.apigateway_logs"]
-    "apigateway-aws-cloudwatch"         = ["aws.apigateway_logs"]
-    "emr-aws/metrics"                   = ["aws.emr_metrics"]
-    "emr-aws-s3"                        = ["aws.emr_logs"]
-    "emr-aws-cloudwatch"                = ["aws.emr_logs"]
-    "kafka-aws/metrics"                 = ["aws.kafka_metrics"]
+    "awshealth-aws/metrics"       = ["aws.awshealth"]
+    "billing-aws/metrics"         = ["aws.billing"]
+    "cloudtrail-aws-s3"           = ["aws.cloudtrail"]
+    "cloudtrail-aws-cloudwatch"   = ["aws.cloudtrail"]
+    "cloudwatch-aws-cloudwatch"   = ["aws.cloudwatch_logs"]
+    "cloudwatch-aws/metrics"      = ["aws.cloudwatch_metrics"]
+    "config-cel"                  = ["aws.config"]
+    "dynamodb-aws/metrics"        = ["aws.dynamodb"]
+    "ebs-aws/metrics"             = ["aws.ebs"]
+    "ec2-aws-s3"                  = ["aws.ec2_logs"]
+    "ec2-aws-cloudwatch"          = ["aws.ec2_logs"]
+    "ec2-aws/metrics"             = ["aws.ec2_metrics"]
+    "ecs-aws/metrics"             = ["aws.ecs_metrics"]
+    "elb-aws-s3"                  = ["aws.elb_logs"]
+    "elb-aws-cloudwatch"          = ["aws.elb_logs"]
+    "elb-aws/metrics"             = ["aws.elb_metrics"]
+    "lambda-aws/metrics"          = ["aws.lambda"]
+    "lambda-aws-cloudwatch"       = ["aws.lambda_logs"]
+    "natgateway-aws/metrics"      = ["aws.natgateway"]
+    "firewall-aws-s3"             = ["aws.firewall_logs"]
+    "firewall-aws-cloudwatch"     = ["aws.firewall_logs"]
+    "firewall-aws/metrics"        = ["aws.firewall_metrics"]
+    "rds-aws/metrics"             = ["aws.rds"]
+    "s3-aws-s3"                   = ["aws.s3access"]
+    "s3-aws/metrics"              = ["aws.s3_daily_storage", "aws.s3_request"]
+    "s3_storage_lens-aws/metrics" = ["aws.s3_storage_lens"]
+    "sns-aws/metrics"             = ["aws.sns"]
+    "sqs-aws/metrics"             = ["aws.sqs"]
+    "transitgateway-aws/metrics"  = ["aws.transitgateway"]
+    "usage-aws/metrics"           = ["aws.usage"]
+    "vpcflow-aws-s3"              = ["aws.vpcflow"]
+    "vpcflow-aws-cloudwatch"      = ["aws.vpcflow"]
+    "vpn-aws/metrics"             = ["aws.vpn"]
+    "waf-aws-s3"                  = ["aws.waf"]
+    "waf-aws-cloudwatch"          = ["aws.waf"]
+    "route53-aws-cloudwatch"      = ["aws.route53_public_logs", "aws.route53_resolver_logs"]
+    "route53-aws-s3"              = ["aws.route53_resolver_logs"]
+    "cloudfront-aws-s3"           = ["aws.cloudfront_logs"]
+    "redshift-aws/metrics"        = ["aws.redshift"]
+    "kinesis-aws/metrics"         = ["aws.kinesis"]
+    "securityhub-httpjson"        = ["aws.securityhub_findings", "aws.securityhub_findings_full_posture", "aws.securityhub_insights"]
+    "inspector-httpjson"          = ["aws.inspector"]
+    "guardduty-httpjson"          = ["aws.guardduty"]
+    "guardduty-aws-s3"            = ["aws.guardduty"]
+    "apigateway-aws/metrics"      = ["aws.apigateway_metrics"]
+    "apigateway-aws-s3"           = ["aws.apigateway_logs"]
+    "apigateway-aws-cloudwatch"   = ["aws.apigateway_logs"]
+    "emr-aws/metrics"             = ["aws.emr_metrics"]
+    "emr-aws-s3"                  = ["aws.emr_logs"]
+    "emr-aws-cloudwatch"          = ["aws.emr_logs"]
+    "kafka-aws/metrics"           = ["aws.kafka_metrics"]
   }
 
   aws_disabled_input_stubs = {
@@ -382,7 +399,7 @@ locals {
         }
       }
     } : {},
-    var.enable_aws_health ? {
+    var.enable_aws_health && !var.enable_managed_aws_metrics ? {
       "awshealth-aws/metrics" = {
         enabled = true
         streams = {
@@ -390,7 +407,7 @@ locals {
             enabled = true
             vars = jsonencode({
               period  = "24h"
-              regions = ["us-east-1", var.aws_region]
+              regions = local.aws_metric_regions
             })
           }
         }
@@ -415,7 +432,9 @@ locals {
         }
       }
     } : {},
-    {
+    # Metrics move to Managed Integrations when enable_managed_aws_metrics=true.
+    # Keep agent-based multi-region metrics as a fallback path.
+    !var.enable_managed_aws_metrics ? {
       "cloudwatch-aws/metrics" = {
         enabled = true
         streams = {
@@ -425,7 +444,7 @@ locals {
               {
                 period  = "5m"
                 latency = "5m"
-                regions = [var.aws_region]
+                regions = local.aws_metric_regions
               },
               var.enable_trusted_advisor ? {
                 metrics = <<-YAML
@@ -450,7 +469,7 @@ locals {
             enabled = true
             vars = jsonencode({
               period  = "5m"
-              regions = [var.aws_region]
+              regions = local.aws_metric_regions
             })
           }
         }
@@ -462,14 +481,14 @@ locals {
             enabled = true
             vars = jsonencode({
               period  = "24h"
-              regions = [var.aws_region]
+              regions = local.aws_metric_regions
             })
           }
           "aws.s3_request" = {
             enabled = true
             vars = jsonencode({
               period  = "5m"
-              regions = [var.aws_region]
+              regions = local.aws_metric_regions
             })
           }
         }
@@ -485,8 +504,212 @@ locals {
           }
         }
       }
-    }
+    } : {}
   )
+
+  # Elastic Managed Integrations (agentless) — one policy template per service,
+  # each collecting across aws_metric_regions. Regions without resources return
+  # empty CloudWatch results; the integration keeps running.
+  aws_managed_metric_integrations = var.enable_managed_aws_metrics ? concat(
+    [
+      {
+        name                 = "aws-managed-ec2"
+        description          = "Managed (agentless) EC2 metrics across ${join(", ", local.aws_metric_regions)}"
+        package_name         = "aws"
+        managed              = true
+        agent_policy         = false
+        prerelease           = false
+        package_version      = null
+        policy_template      = "ec2"
+        vars_json            = jsonencode(local.aws_managed_package_vars)
+        var_group_selections = { credential_type = "identity_federation" }
+        cloud_connector = {
+          enabled            = true
+          cloud_connector_id = data.external.aws_cloud_connector[0].result.id
+          target_csp         = "aws"
+        }
+        inputs = {
+          "ec2-aws/metrics" = {
+            enabled = true
+            streams = {
+              "aws.ec2_metrics" = {
+                enabled = true
+                vars = jsonencode({
+                  period  = "5m"
+                  regions = local.aws_metric_regions
+                })
+              }
+            }
+          }
+          "ec2-aws-s3" = {
+            enabled = false
+            streams = { "aws.ec2_logs" = { enabled = false } }
+          }
+          "ec2-aws-cloudwatch" = {
+            enabled = false
+            streams = { "aws.ec2_logs" = { enabled = false } }
+          }
+        }
+      },
+      {
+        name                 = "aws-managed-s3"
+        description          = "Managed (agentless) S3 metrics across ${join(", ", local.aws_metric_regions)}"
+        package_name         = "aws"
+        managed              = true
+        agent_policy         = false
+        prerelease           = false
+        package_version      = null
+        policy_template      = "s3"
+        vars_json            = jsonencode(local.aws_managed_package_vars)
+        var_group_selections = { credential_type = "identity_federation" }
+        cloud_connector = {
+          enabled            = true
+          cloud_connector_id = data.external.aws_cloud_connector[0].result.id
+          target_csp         = "aws"
+        }
+        inputs = {
+          "s3-aws/metrics" = {
+            enabled = true
+            streams = {
+              "aws.s3_daily_storage" = {
+                enabled = true
+                vars = jsonencode({
+                  period  = "24h"
+                  regions = local.aws_metric_regions
+                })
+              }
+              "aws.s3_request" = {
+                enabled = true
+                vars = jsonencode({
+                  period  = "5m"
+                  regions = local.aws_metric_regions
+                })
+              }
+            }
+          }
+          "s3-aws-s3" = {
+            enabled = false
+            streams = { "aws.s3access" = { enabled = false } }
+          }
+        }
+      },
+      {
+        name                 = "aws-managed-cloudwatch"
+        description          = "Managed CloudWatch metrics (Trusted Advisor) across ${join(", ", local.aws_metric_regions)}"
+        package_name         = "aws"
+        managed              = true
+        agent_policy         = false
+        prerelease           = false
+        package_version      = null
+        policy_template      = "cloudwatch"
+        vars_json            = jsonencode(local.aws_managed_package_vars)
+        var_group_selections = { credential_type = "identity_federation" }
+        cloud_connector = {
+          enabled            = true
+          cloud_connector_id = data.external.aws_cloud_connector[0].result.id
+          target_csp         = "aws"
+        }
+        inputs = {
+          "cloudwatch-aws/metrics" = {
+            enabled = true
+            streams = {
+              "aws.cloudwatch_metrics" = {
+                enabled = true
+                vars = jsonencode(merge(
+                  {
+                    period  = "5m"
+                    latency = "5m"
+                    regions = local.aws_metric_regions
+                  },
+                  var.enable_trusted_advisor ? {
+                    metrics = <<-YAML
+                      - namespace: AWS/TrustedAdvisor
+                        name:
+                          - RedResources
+                          - YellowResources
+                          - ServiceLimitUsage
+                        statistic:
+                          - Average
+                          - Maximum
+                    YAML
+                  } : tomap({})
+                ))
+              }
+            }
+          }
+          "cloudwatch-aws-cloudwatch" = {
+            enabled = false
+            streams = { "aws.cloudwatch_logs" = { enabled = false } }
+          }
+        }
+      }
+    ],
+    var.enable_billing_metrics ? [
+      {
+        name                 = "aws-managed-billing"
+        description          = "Managed (agentless) AWS billing metrics (Cost Explorer; global / us-east-1)"
+        package_name         = "aws"
+        managed              = true
+        agent_policy         = false
+        prerelease           = false
+        package_version      = null
+        policy_template      = "billing"
+        vars_json            = jsonencode(local.aws_managed_package_vars)
+        var_group_selections = { credential_type = "identity_federation" }
+        cloud_connector = {
+          enabled            = true
+          cloud_connector_id = data.external.aws_cloud_connector[0].result.id
+          target_csp         = "aws"
+        }
+        inputs = {
+          "billing-aws/metrics" = {
+            enabled = true
+            streams = {
+              "aws.billing" = {
+                enabled = true
+                vars = jsonencode({
+                  period = "12h"
+                })
+              }
+            }
+          }
+        }
+      }
+    ] : [],
+    var.enable_aws_health ? [
+      {
+        name                 = "aws-managed-awshealth"
+        description          = "Managed (agentless) AWS Health across ${join(", ", local.aws_metric_regions)}"
+        package_name         = "aws"
+        managed              = true
+        agent_policy         = false
+        prerelease           = false
+        package_version      = null
+        policy_template      = "awshealth"
+        vars_json            = jsonencode(local.aws_managed_package_vars)
+        var_group_selections = { credential_type = "identity_federation" }
+        cloud_connector = {
+          enabled            = true
+          cloud_connector_id = data.external.aws_cloud_connector[0].result.id
+          target_csp         = "aws"
+        }
+        inputs = {
+          "awshealth-aws/metrics" = {
+            enabled = true
+            streams = {
+              "aws.awshealth" = {
+                enabled = true
+                vars = jsonencode({
+                  period  = "24h"
+                  regions = local.aws_metric_regions
+                })
+              }
+            }
+          }
+        }
+      }
+    ] : []
+  ) : []
 
   security_integrations = concat(
     var.enable_cspm ? [
@@ -538,22 +761,26 @@ locals {
     ]
   )
 
-  observability_integrations = [
-    {
-      name                 = "aws-observe"
-      description          = "AWS observability (metrics + Trusted Advisor; vpcflow when SQS allowed)"
-      package_name         = "aws"
-      managed              = false
-      agent_policy         = true
-      prerelease           = false
-      package_version      = null
-      policy_template      = null
-      vars_json            = jsonencode(local.aws_package_vars)
-      var_group_selections = {}
-      cloud_connector      = null
-      inputs               = merge(local.aws_disabled_input_stubs, local.aws_httpjson_disabled_overrides, local.aws_observe_enabled_inputs)
-    }
-  ]
+  # Observability: Managed Integrations for multi-region metrics + optional agent for vpcflow.
+  observability_integrations = concat(
+    local.aws_managed_metric_integrations,
+    [
+      {
+        name                 = "aws-observe"
+        description          = var.enable_managed_aws_metrics ? "AWS observability agent (vpcflow via SQS; metrics via Managed Integrations)" : "AWS observability (multi-region metrics + Trusted Advisor; vpcflow when SQS allowed)"
+        package_name         = "aws"
+        managed              = false
+        agent_policy         = true
+        prerelease           = false
+        package_version      = null
+        policy_template      = null
+        vars_json            = jsonencode(local.aws_package_vars)
+        var_group_selections = {}
+        cloud_connector      = null
+        inputs               = merge(local.aws_disabled_input_stubs, local.aws_httpjson_disabled_overrides, local.aws_observe_enabled_inputs)
+      }
+    ]
+  )
 }
 
 # Security project Fleet: agentless CSPM/CNVM + agent CloudTrail + detection rules.
@@ -584,6 +811,26 @@ module "stack_obs" {
   policy_name            = "aws-observability"
   enable_detection_rules = false
   integrations           = local.observability_integrations
+
+  depends_on = [module.observability, module.aws_cloud, data.external.aws_cloud_connector]
+}
+
+# Resolve / create a single Fleet cloud connector for all Managed Integrations.
+data "external" "aws_cloud_connector" {
+  count = var.enable_managed_aws_metrics && length(module.observability) > 0 ? 1 : 0
+
+  program = [
+    "python3",
+    "${path.module}/../../modules/cockpit-dashboard/scripts/ensure_aws_cloud_connector_external.py",
+  ]
+
+  query = {
+    kb_url   = module.observability[0].kibana_endpoint
+    kb_user  = module.observability[0].username
+    kb_pass  = module.observability[0].password
+    name     = local.aws_cloud_connector_name
+    role_arn = module.aws_cloud.elastic_role_arn
+  }
 
   depends_on = [module.observability, module.aws_cloud]
 }

@@ -85,6 +85,8 @@ module "observability_seed" {
   enable_ml_jobs                    = var.enable_ml_jobs
   enable_ai_agents                  = var.enable_ai_agents
   enable_observability_alerts       = var.enable_observability_alerts
+  cloud_slug                        = "gcp"
+  cloud_display_name                = "GCP"
 
   depends_on = [module.observability, module.elastic]
 }

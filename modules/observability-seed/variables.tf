@@ -52,3 +52,15 @@ variable "security_elasticsearch_password" {
   sensitive = true
   default   = ""
 }
+
+variable "cloud_slug" {
+  type        = string
+  description = "Short cloud id used in ML job / Agent Builder ids (e.g. gcp, aws, azure)."
+  default     = "gcp"
+}
+
+variable "cloud_display_name" {
+  type        = string
+  description = "Human-readable cloud name used in alert/agent copy."
+  default     = "GCP"
+}

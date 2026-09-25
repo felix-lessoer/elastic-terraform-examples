@@ -22,6 +22,14 @@ output "cloudtrail_queue_arn" {
   value = aws_sqs_queue.cloudtrail.arn
 }
 
+output "vpcflow_queue_url" {
+  value = try(aws_sqs_queue.vpcflow[0].url, null)
+}
+
+output "vpcflow_queue_arn" {
+  value = try(aws_sqs_queue.vpcflow[0].arn, null)
+}
+
 output "elastic_role_arn" {
   value = aws_iam_role.elastic.arn
 }

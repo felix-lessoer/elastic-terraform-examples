@@ -23,7 +23,7 @@ Stand up an Elastic **Security Complete** environment and the cloud collectors n
 
 | Path | Use when |
 |---|---|
-| [`examples/aws`](../examples/aws) | AWS-only PoC (reference implementation) |
+| [`examples/aws`](../examples/aws) | AWS Security + Observability (CPS) + cockpit; agentless CSPM/CNVM + agent CloudTrail/metrics |
 | [`examples/azure`](../examples/azure) | Azure-only PoC |
 | [`examples/gcp`](../examples/gcp) | GCP Security + Observability (CPS) + cockpit dashboard |
 | [`examples/multicloud`](../examples/multicloud) | One or more clouds + CPS/CCS hub |
@@ -63,8 +63,9 @@ Labels are normalized for GCP / Elastic Cloud metadata rules and applied to Pub/
 
 ## Enrolling an agent
 
-- **GCP (`examples/gcp`)**: by default Terraform deploys a GCE VM (`enable_elastic_agent = true`) that enrolls into the Fleet policy automatically.
-- **AWS / Azure / multicloud**: Agentless CSPM works without a host agent. For S3/SQS, Event Hub, or Pub/Sub log inputs, enroll Elastic Agent into the created Fleet policy:
+- **GCP (`examples/gcp`)**: Terraform deploys GCE Elastic Agents (`enable_elastic_agent = true`) for Pub/Sub/metrics; CSPM is agentless.
+- **AWS (`examples/aws`)**: Terraform deploys EC2 Elastic Agents for CloudTrail/vpcflow/metrics; CSPM + CNVM are agentless.
+- **Azure / multicloud**: Agentless CSPM works without a host agent. For Event Hub or remaining log inputs, enroll Elastic Agent into the created Fleet policy:
 
 ```bash
 sudo elastic-agent install \
@@ -82,8 +83,10 @@ Use the `fleet_url` / `enrollment_token` outputs from the example.
 | `modules/elastic-project` | Serverless Security or Observability project (CPS links) / hosted fallback |
 | `modules/elastic-stack` | Fleet policies, integrations, managed/agentless, detection rules |
 | `modules/elastic-agent-gce` | GCE VM that installs and enrolls Elastic Agent |
+| `modules/elastic-agent-ec2` | EC2 VM that installs and enrolls Elastic Agent |
 | `modules/observability-seed` | Obs alerts, ML jobs, Agent Builder agents |
 | `modules/cockpit-dashboard` | Aggregated Security+Observability Kibana cockpit |
+| `modules/kibana-workflows` | Pin + deploy (+ optional execute) Kibana Workflow YAML |
 | `modules/aws-cloud` | S3, SQS, CloudTrail, VPC flow logs, collector IAM role |
 | `modules/azure-cloud` | Event Hub, diagnostics, app registration |
 | `modules/gcp-cloud` | Pub/Sub topics, logging sinks, collector SA |

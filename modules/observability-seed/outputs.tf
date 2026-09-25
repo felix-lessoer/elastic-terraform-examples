@@ -33,7 +33,7 @@ output "ml_jobs" {
   value = concat(
     length(elasticstack_elasticsearch_ml_anomaly_detection_job.gcp_event_rate) > 0 ? [{
       id          = elasticstack_elasticsearch_ml_anomaly_detection_job.gcp_event_rate[0].job_id
-      description = "Unusual drops/spikes in GCP telemetry volume"
+      description = "Unusual drops/spikes in ${local.cloud_name} telemetry volume"
       state       = try(elasticstack_elasticsearch_ml_job_state.gcp_event_rate[0].state, "configured")
     }] : [],
     length(elasticstack_elasticsearch_ml_anomaly_detection_job.gcp_cspm_findings_rate) > 0 ? [{

@@ -89,6 +89,33 @@ resource "aws_sqs_queue_policy" "cloudtrail" {
   })
 }
 
+resource "aws_sqs_queue" "vpcflow" {
+  count = var.enable_vpc_flow_logs ? 1 : 0
+
+  name                       = "${var.name_prefix}-vpcflow"
+  visibility_timeout_seconds = 900
+  tags                       = local.common_tags
+}
+
+resource "aws_sqs_queue_policy" "vpcflow" {
+  count = var.enable_vpc_flow_logs ? 1 : 0
+
+  queue_url = aws_sqs_queue.vpcflow[0].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = "*"
+      Action    = "sqs:SendMessage"
+      Resource  = aws_sqs_queue.vpcflow[0].arn
+      Condition = {
+        ArnEquals = { "aws:SourceArn" = aws_s3_bucket.logs.arn }
+      }
+    }]
+  })
+}
+
 resource "aws_s3_bucket_policy" "logs" {
   bucket = aws_s3_bucket.logs.id
 
@@ -141,7 +168,19 @@ resource "aws_s3_bucket_notification" "logs" {
     filter_prefix = "AWSLogs/${local.account_id}/CloudTrail/"
   }
 
-  depends_on = [aws_sqs_queue_policy.cloudtrail]
+  dynamic "queue" {
+    for_each = var.enable_vpc_flow_logs ? [1] : []
+    content {
+      queue_arn     = aws_sqs_queue.vpcflow[0].arn
+      events        = ["s3:ObjectCreated:*"]
+      filter_prefix = "AWSLogs/${local.account_id}/vpcflowlogs/"
+    }
+  }
+
+  depends_on = [
+    aws_sqs_queue_policy.cloudtrail,
+    aws_sqs_queue_policy.vpcflow,
+  ]
 }
 
 # -----------------------------------------------------------------------------
@@ -264,7 +303,10 @@ data "aws_iam_policy_document" "elastic_permissions" {
     sid       = "ReadCloudTrailQueue"
     effect    = "Allow"
     actions   = ["sqs:*"]
-    resources = [aws_sqs_queue.cloudtrail.arn]
+    resources = compact(concat(
+      [aws_sqs_queue.cloudtrail.arn],
+      aws_sqs_queue.vpcflow[*].arn,
+    ))
   }
 }
 

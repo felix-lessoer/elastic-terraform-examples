@@ -7,6 +7,9 @@ locals {
   cspm_es_username = var.security_elasticsearch_username != "" ? var.security_elasticsearch_username : var.elasticsearch_username
   cspm_es_password = var.security_elasticsearch_password != "" ? var.security_elasticsearch_password : var.elasticsearch_password
   cspm_on_security = var.security_elasticsearch_endpoint != ""
+
+  cloud      = var.cloud_slug
+  cloud_name = var.cloud_display_name
 }
 
 # -----------------------------------------------------------------------------
@@ -16,12 +19,12 @@ locals {
 resource "elasticstack_kibana_alerting_rule" "log_rate_spike" {
   count = var.enable_observability_alerts ? 1 : 0
 
-  name         = "GCP telemetry volume drop"
+  name         = "${local.cloud_name} telemetry volume drop"
   consumer     = "alerts"
   rule_type_id = ".index-threshold"
   interval     = "5m"
   enabled      = true
-  tags         = ["cockpit", "gcp", "observability", "Missing Elastic Cloud API Key"]
+  tags         = ["cockpit", local.cloud, "observability", "Missing Elastic Cloud API Key"]
   space_id     = var.space_id
 
   params = jsonencode({
@@ -51,7 +54,7 @@ resource "elasticstack_kibana_alerting_rule" "cspm_failed_findings" {
   rule_type_id = ".index-threshold"
   interval     = "15m"
   enabled      = true
-  tags         = ["cockpit", "gcp", "security-signal", "Missing Elastic Cloud API Key"]
+  tags         = ["cockpit", local.cloud, "security-signal", "Missing Elastic Cloud API Key"]
   space_id     = var.space_id
 
   params = jsonencode({
@@ -74,15 +77,15 @@ resource "elasticstack_kibana_alerting_rule" "cspm_failed_findings" {
 }
 
 # -----------------------------------------------------------------------------
-# Machine learning — anomaly detection on GCP telemetry rate
+# Machine learning — anomaly detection on cloud telemetry rate
 # -----------------------------------------------------------------------------
 
 resource "elasticstack_elasticsearch_ml_anomaly_detection_job" "gcp_event_rate" {
   count = var.enable_ml_jobs ? 1 : 0
 
-  job_id      = "gcp-event-rate"
-  description = "Detect unusual drops/spikes in GCP observe-and-protect telemetry volume"
-  groups      = ["gcp", "cockpit"]
+  job_id      = "${local.cloud}-event-rate"
+  description = "Detect unusual drops/spikes in ${local.cloud_name} observe-and-protect telemetry volume"
+  groups      = [local.cloud, "cockpit"]
 
   analysis_config = {
     bucket_span = "15m"
@@ -111,7 +114,7 @@ resource "elasticstack_elasticsearch_ml_anomaly_detection_job" "gcp_event_rate" 
 resource "elasticstack_elasticsearch_ml_datafeed" "gcp_event_rate" {
   count = var.enable_ml_jobs ? 1 : 0
 
-  datafeed_id = "datafeed-gcp-event-rate"
+  datafeed_id = "datafeed-${local.cloud}-event-rate"
   job_id      = elasticstack_elasticsearch_ml_anomaly_detection_job.gcp_event_rate[0].job_id
   indices     = ["logs-*", "metrics-*"]
 
@@ -142,9 +145,9 @@ resource "elasticstack_elasticsearch_ml_datafeed" "gcp_event_rate" {
 resource "elasticstack_elasticsearch_ml_anomaly_detection_job" "gcp_cspm_findings_rate" {
   count = var.enable_ml_jobs ? 1 : 0
 
-  job_id      = "gcp-cspm-findings-rate"
+  job_id      = "${local.cloud}-cspm-findings-rate"
   description = "Unusual rate of CSPM findings documents"
-  groups      = ["gcp", "cockpit", "cspm"]
+  groups      = [local.cloud, "cockpit", "cspm"]
 
   analysis_config = {
     bucket_span = "30m"
@@ -173,7 +176,7 @@ resource "elasticstack_elasticsearch_ml_anomaly_detection_job" "gcp_cspm_finding
 resource "elasticstack_elasticsearch_ml_datafeed" "gcp_cspm_findings_rate" {
   count = var.enable_ml_jobs ? 1 : 0
 
-  datafeed_id = "datafeed-gcp-cspm-findings-rate"
+  datafeed_id = "datafeed-${local.cloud}-cspm-findings-rate"
   job_id      = elasticstack_elasticsearch_ml_anomaly_detection_job.gcp_cspm_findings_rate[0].job_id
   # CSPM findings may lag; scores land first. Wildcard + allow_no_indices lets the
   # datafeed start before findings indices exist.
@@ -302,16 +305,16 @@ resource "elasticstack_elasticsearch_ml_datafeed_state" "gcp_cspm_findings_rate"
 resource "elasticstack_kibana_agentbuilder_agent" "security_analyst" {
   count = var.enable_ai_agents ? 1 : 0
 
-  agent_id      = "gcp-security-analyst"
-  name          = "GCP Security Analyst"
+  agent_id      = "${local.cloud}-security-analyst"
+  name          = "${local.cloud_name} Security Analyst"
   description   = "Triages CSPM findings and Security detection alerts across CPS-linked projects."
   space_id      = var.space_id
-  labels        = ["gcp", "security", "cockpit"]
+  labels        = [local.cloud, "security", "cockpit"]
   avatar_color  = "#0B64DD"
   avatar_symbol = "S"
 
   instructions = <<-EOT
-    You are an Elastic Security analyst for a GCP observe-and-protect PoC.
+    You are an Elastic Security analyst for a ${local.cloud_name} observe-and-protect PoC.
     Prefer aggregated posture over raw documents. Summarize:
     1) open security alerts and severity mix,
     2) failed CSPM findings by resource type,
@@ -329,17 +332,17 @@ resource "elasticstack_kibana_agentbuilder_agent" "security_analyst" {
 resource "elasticstack_kibana_agentbuilder_agent" "obs_triage" {
   count = var.enable_ai_agents ? 1 : 0
 
-  agent_id      = "gcp-obs-triage"
-  name          = "GCP Observability Triage"
-  description   = "Explains telemetry gaps, alert bursts, and ML anomalies for GCP pipelines."
+  agent_id      = "${local.cloud}-obs-triage"
+  name          = "${local.cloud_name} Observability Triage"
+  description   = "Explains telemetry gaps, alert bursts, and ML anomalies for ${local.cloud_name} pipelines."
   space_id      = var.space_id
-  labels        = ["gcp", "observability", "cockpit"]
+  labels        = [local.cloud, "observability", "cockpit"]
   avatar_color  = "#48EFCF"
   avatar_symbol = "O"
 
   instructions = <<-EOT
-    You are an Elastic Observability triage assistant for GCP.
-    Focus on whether configured pipelines (audit, firewall, vpcflow, dns, lb, metrics, CSPM) are delivering data,
+    You are an Elastic Observability triage assistant for ${local.cloud_name}.
+    Focus on whether configured pipelines (security logs, network logs, metrics, CSPM) are delivering data,
     which observability alerts fired, and ML job health. Give a cockpit-style briefing, not raw event dumps.
   EOT
 

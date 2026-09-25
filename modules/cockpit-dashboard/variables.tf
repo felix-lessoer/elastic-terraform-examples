@@ -40,6 +40,18 @@ variable "description" {
   default = "Aggregated security + observability posture across linked Elastic serverless projects."
 }
 
+variable "dashboard_id" {
+  type        = string
+  description = "Saved object id embedded in the pinned NDJSON (used for dashboard_url output)."
+  default     = "c51727b1-226a-4955-9cb2-fcd59f950d55"
+}
+
+variable "ndjson_path" {
+  type        = string
+  description = "Path to cockpit NDJSON export. Empty uses the module's default cockpit.ndjson."
+  default     = ""
+}
+
 variable "ml_jobs" {
   type = list(object({
     id          = string

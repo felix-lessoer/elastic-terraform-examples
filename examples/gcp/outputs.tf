@@ -105,6 +105,14 @@ output "observability_agent_external_ip" {
   value = try(module.elastic_agent_obs[0].external_ip, null)
 }
 
+output "workflow_ids" {
+  description = "Pinned Kibana workflow ids deployed to Observability (and Security when enabled)."
+  value = distinct(concat(
+    try(module.workflows_obs[0].workflow_ids, []),
+    try(module.workflows_security[0].workflow_ids, []),
+  ))
+}
+
 output "next_steps" {
   value = <<-EOT
     Security Kibana: ${module.elastic.kibana_endpoint}
@@ -117,5 +125,6 @@ output "next_steps" {
     - Cockpit dashboard: ${try(module.cockpit[0].dashboard_url, "(pending)")}
     - Agent Builder: gcp-security-analyst, gcp-obs-triage
     - ML jobs: gcp-event-rate, gcp-cspm-findings-rate
+    - Workflows: ${join(", ", distinct(concat(try(module.workflows_obs[0].workflow_ids, []), try(module.workflows_security[0].workflow_ids, []))))}
   EOT
 }

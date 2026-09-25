@@ -104,6 +104,33 @@ module "cockpit" {
   depends_on = [module.observability, module.observability_seed]
 }
 
+# Kibana Workflows pinned from examples/gcp/workflows/*.yaml (export from live Kibana).
+module "workflows_obs" {
+  count  = var.enable_workflows && length(module.observability) > 0 ? 1 : 0
+  source = "../../modules/kibana-workflows"
+
+  kibana_endpoint        = module.observability[0].kibana_endpoint
+  elasticsearch_username = module.observability[0].username
+  elasticsearch_password = module.observability[0].password
+  workflows_dir          = "${path.module}/workflows"
+  execute_on_apply       = var.execute_workflows_on_apply
+
+  depends_on = [module.observability, module.observability_seed, module.cockpit]
+}
+
+module "workflows_security" {
+  count  = var.enable_workflows && var.deploy_workflows_to_security ? 1 : 0
+  source = "../../modules/kibana-workflows"
+
+  kibana_endpoint        = module.elastic.kibana_endpoint
+  elasticsearch_username = module.elastic.username
+  elasticsearch_password = module.elastic.password
+  workflows_dir          = "${path.module}/workflows"
+  execute_on_apply       = var.execute_workflows_on_apply
+
+  depends_on = [module.elastic, module.stack]
+}
+
 module "gcp_cloud" {
   source = "../../modules/gcp-cloud"
 

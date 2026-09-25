@@ -5,6 +5,7 @@ Creates:
 1. **Elastic Security** serverless project (Complete) — Fleet agent for security data (audit/firewall), agentless CSPM, detection rules
 2. **Elastic Observability** serverless project (Complete) — Fleet agent for observability data (metrics, vpcflow/dns/lb), linked to Security via **Cross-Project Search**
 3. **Cockpit dashboard** on Observability — pinned Kibana NDJSON (`modules/cockpit-dashboard/cockpit.ndjson`) with aggregated alerts, data-flow, ML/AI inventory, and GCP inventory via CPS
+4. **Kibana Workflows** — YAML under `examples/gcp/workflows/` deployed via `elasticstack_kibana_agentbuilder_workflow` and executed once on apply
 4. GCP Pub/Sub topics + logging sinks, collector SA, company-policy labels
 5. Two GCE Elastic Agents — one enrolled to Security Fleet, one to Observability Fleet
 

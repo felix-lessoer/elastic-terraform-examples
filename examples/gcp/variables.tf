@@ -112,6 +112,24 @@ variable "enable_detection_rules" {
   default = true
 }
 
+variable "enable_workflows" {
+  type        = bool
+  description = "Deploy pinned Kibana Workflow YAML from examples/gcp/workflows/ after greenfield create."
+  default     = true
+}
+
+variable "execute_workflows_on_apply" {
+  type        = bool
+  description = "Manually execute each enabled workflow once after Terraform creates/updates it."
+  default     = true
+}
+
+variable "deploy_workflows_to_security" {
+  type        = bool
+  description = "Also deploy the same pinned workflows into the Security project Kibana (in addition to Observability)."
+  default     = false
+}
+
 variable "detection_rule_tags" {
   type = list(object({
     key   = string

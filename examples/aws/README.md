@@ -4,7 +4,7 @@ Mirrors the GCP dual-project pattern for AWS:
 
 1. **Elastic Security** serverless (Complete) — agentless CSPM (+ optional CNVM), agent CloudTrail + console-home security, AWS detection rules
 2. **Elastic Observability** serverless — CPS-linked hub with agent vpcflow + CloudWatch/EC2/S3/billing + Trusted Advisor metrics
-3. **Cockpit dashboard** on Observability — pinned NDJSON (`modules/cockpit-dashboard/cockpit-aws.ndjson`)
+3. **Cockpit dashboard** on Observability — pinned NDJSON (`modules/cockpit-dashboard/cockpit-aws.ndjson`) with CSPM asset inventory (via CPS `misconfiguration_latest`), live AWS metrics inventory, and `aws-cockpit-recommendations`
 4. **Kibana Workflows** — YAML under `examples/aws/workflows/` (optional execute-on-apply)
 
 ## Agentless vs agent

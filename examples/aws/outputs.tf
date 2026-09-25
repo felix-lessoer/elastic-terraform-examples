@@ -106,12 +106,14 @@ output "applied_tags" {
 output "next_steps" {
   value = <<-EOT
     Security Kibana: ${module.elastic.kibana_endpoint}
-    - Fleet > Agents: confirm ${try(module.elastic_agent[0].instance_name, "elastic-poc-agent")} is Healthy (CloudTrail)
+    - Fleet > Agents: confirm ${try(module.elastic_agent[0].instance_name, "elastic-poc-agent")} is Healthy (CloudTrail + Security Hub + GuardDuty + Health)
     - Security > Cloud Security Posture for agentless CSPM / CNVM
+    - Discover: logs-aws.securityhub_*, logs-aws.guardduty, metrics-aws.awshealth
     - Security > Rules for AWS detection rules
 
     Observability Kibana: ${try(module.observability[0].kibana_endpoint, "(disabled)")}
-    - Fleet > Agents: confirm ${try(module.elastic_agent_obs[0].instance_name, "elastic-poc-obs-agent")} is Healthy (vpcflow + metrics)
+    - Fleet > Agents: confirm ${try(module.elastic_agent_obs[0].instance_name, "elastic-poc-obs-agent")} is Healthy (vpcflow + metrics + Trusted Advisor)
+    - Discover: metrics-aws.cloudwatch_metrics (AWS/TrustedAdvisor)
     - Cockpit dashboard: ${try(module.cockpit[0].dashboard_url, "(pending)")}
     - Agent Builder: aws-security-analyst, aws-obs-triage
     - ML jobs: aws-event-rate, aws-cspm-findings-rate

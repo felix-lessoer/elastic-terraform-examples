@@ -5,6 +5,10 @@ aws_region           = "eu-west-1"
 
 enable_cspm              = true
 enable_cnvm              = true
+enable_security_hub      = true
+enable_guardduty         = true
+enable_aws_health        = true
+enable_trusted_advisor   = true
 enable_billing_metrics   = true
 enable_detection_rules   = true
 enable_elastic_agent     = true

@@ -147,17 +147,22 @@ module "aws_cloud" {
   }
 }
 
+# GuardDuty httpjson requires an explicit detector id (package does not auto-discover).
+data "aws_guardduty_detector" "this" {
+  count = var.enable_guardduty ? 1 : 0
+}
+
 locals {
-  # Shared assume-role vars for agent-based AWS package streams.
-  aws_assume_role_vars = {
-    "aws.credentials.type" = "assume_role"
-    role_arn               = module.aws_cloud.elastic_role_arn
-    external_id            = module.aws_cloud.external_id
+  # Agent EC2 uses an IAM instance profile (IMDS). Do not set role_arn here —
+  # the aws package dropped external_id assume-role support; IMDS is the path.
+  # elasticstack input map keys are "{policy_template}-{input_type}".
+  aws_agent_vars = {
+    default_region = var.aws_region
   }
 
   # ---------------------------------------------------------------------------
-  # Security Fleet: agentless CSPM (+ optional CNVM) + agent CloudTrail.
-  # Prefer agentless whenever Elastic supports it; keep agent for the rest.
+  # Security Fleet: agentless CSPM (+ optional CNVM) + agent CloudTrail /
+  # Security Hub / GuardDuty / AWS Health (console-home security widgets).
   # ---------------------------------------------------------------------------
   security_integrations = concat(
     var.enable_cspm ? [
@@ -180,10 +185,10 @@ locals {
               "cloud_security_posture.findings" = {
                 enabled = true
                 vars = jsonencode({
-                  role_arn               = module.aws_cloud.elastic_role_arn
-                  "aws.credentials.type" = "assume_role"
-                  "aws.account_type"     = "single-account"
-                  external_id            = module.aws_cloud.external_id
+                  role_arn                      = module.aws_cloud.elastic_role_arn
+                  "aws.credentials.type"        = "assume_role"
+                  "aws.account_type"            = "single-account"
+                  "aws.credentials.external_id" = module.aws_cloud.external_id
                 })
               }
             }
@@ -211,9 +216,9 @@ locals {
               "cloud_security_posture.vulnerabilities" = {
                 enabled = true
                 vars = jsonencode({
-                  role_arn               = module.aws_cloud.elastic_role_arn
-                  "aws.credentials.type" = "assume_role"
-                  external_id            = module.aws_cloud.external_id
+                  role_arn                      = module.aws_cloud.elastic_role_arn
+                  "aws.credentials.type"        = "assume_role"
+                  "aws.credentials.external_id" = module.aws_cloud.external_id
                 })
               }
             }
@@ -224,83 +229,185 @@ locals {
     [
       {
         name                 = "aws-security"
-        description          = "AWS security logs (CloudTrail via S3/SQS) — agent-based (not available agentless)"
+        description          = "AWS console-home security: CloudTrail, Security Hub, GuardDuty, AWS Health (agent + IMDS)"
         package_name         = "aws"
         managed              = false
         agent_policy         = true
         prerelease           = false
         package_version      = null
         policy_template      = null
-        vars_json            = jsonencode(local.aws_assume_role_vars)
+        vars_json            = jsonencode(local.aws_agent_vars)
         var_group_selections = {}
         cloud_connector      = null
-        inputs = {
-          "aws-s3-aws.cloudtrail" = {
-            enabled = true
-            vars    = jsonencode(local.aws_assume_role_vars)
-            streams = {
-              "aws.cloudtrail" = {
-                enabled = true
-                vars = jsonencode({
-                  queue_url = module.aws_cloud.cloudtrail_queue_url
-                })
+        inputs = merge(
+          {
+            "cloudtrail-aws-s3" = {
+              enabled = true
+              vars    = jsonencode(local.aws_agent_vars)
+              streams = {
+                "aws.cloudtrail" = {
+                  enabled = true
+                  vars = jsonencode({
+                    queue_url               = module.aws_cloud.cloudtrail_queue_url
+                    collect_s3_logs         = false
+                    preserve_original_event = false
+                    actor_target_mapping    = true
+                  })
+                }
               }
             }
-          }
-        }
+          },
+          var.enable_security_hub ? {
+            "securityhub-httpjson" = {
+              enabled = true
+              vars    = jsonencode(local.aws_agent_vars)
+              streams = {
+                "aws.securityhub_findings" = {
+                  enabled = true
+                  vars = jsonencode({
+                    interval                        = "1h"
+                    initial_interval                = "24h"
+                    aws_region                      = var.aws_region
+                    tld                             = "amazonaws.com"
+                    tags                            = ["forwarded", "aws_securityhub_findings"]
+                    preserve_original_event         = false
+                    preserve_duplicate_custom_fields = false
+                  })
+                }
+                "aws.securityhub_insights" = {
+                  enabled = true
+                  vars = jsonencode({
+                    interval                        = "1h"
+                    aws_region                      = var.aws_region
+                    tld                             = "amazonaws.com"
+                    tags                            = ["forwarded", "aws_securityhub_insights"]
+                    preserve_original_event         = false
+                    preserve_duplicate_custom_fields = false
+                  })
+                }
+                "aws.securityhub_findings_full_posture" = {
+                  enabled = true
+                  vars = jsonencode({
+                    aws_region                      = var.aws_region
+                    tld                             = "amazonaws.com"
+                    tags                            = ["forwarded", "aws_securityhub_findings_full_posture"]
+                    preserve_original_event         = false
+                    preserve_duplicate_custom_fields = false
+                  })
+                }
+              }
+            }
+          } : {},
+          var.enable_guardduty ? {
+            "guardduty-httpjson" = {
+              enabled = true
+              vars    = jsonencode(local.aws_agent_vars)
+              streams = {
+                "aws.guardduty" = {
+                  enabled = true
+                  vars = jsonencode({
+                    interval                        = "1h"
+                    initial_interval                = "24h"
+                    detector_id                     = data.aws_guardduty_detector.this[0].id
+                    aws_region                      = var.aws_region
+                    tld                             = "amazonaws.com"
+                    http_client_timeout             = "30s"
+                    tags                            = ["forwarded", "aws-guardduty"]
+                    preserve_original_event         = false
+                    preserve_duplicate_custom_fields = false
+                  })
+                }
+              }
+            }
+          } : {},
+          var.enable_aws_health ? {
+            "awshealth-aws/metrics" = {
+              enabled = true
+              vars    = jsonencode(local.aws_agent_vars)
+              streams = {
+                "aws.awshealth" = {
+                  enabled = true
+                  vars = jsonencode({
+                    period  = "24h"
+                    regions = ["us-east-1", var.aws_region]
+                  })
+                }
+              }
+            }
+          } : {}
+        )
       }
     ]
   )
 
   # ---------------------------------------------------------------------------
-  # Observability Fleet: agent-based VPC flow + CloudWatch/EC2/S3/billing metrics.
+  # Observability Fleet: vpcflow + metrics + Trusted Advisor (CloudWatch).
   # ---------------------------------------------------------------------------
   observability_integrations = [
     {
       name                 = "aws-observe"
-      description          = "AWS observability (vpcflow + metrics) — agent-based"
+      description          = "AWS observability (vpcflow + metrics + Trusted Advisor) — agent + IMDS"
       package_name         = "aws"
       managed              = false
       agent_policy         = true
       prerelease           = false
       package_version      = null
       policy_template      = null
-      vars_json            = jsonencode(local.aws_assume_role_vars)
+      vars_json            = jsonencode(local.aws_agent_vars)
       var_group_selections = {}
       cloud_connector      = null
       inputs = merge(
         var.enable_vpc_flow_logs && module.aws_cloud.vpcflow_queue_url != null ? {
-          "aws-s3-aws.vpcflow" = {
+          "vpcflow-aws-s3" = {
             enabled = true
-            vars    = jsonencode(local.aws_assume_role_vars)
+            vars    = jsonencode(local.aws_agent_vars)
             streams = {
               "aws.vpcflow" = {
                 enabled = true
                 vars = jsonencode({
-                  queue_url = module.aws_cloud.vpcflow_queue_url
+                  queue_url               = module.aws_cloud.vpcflow_queue_url
+                  collect_s3_logs         = false
+                  tags                    = ["forwarded", "aws-vpcflow"]
+                  preserve_original_event = false
                 })
               }
             }
           }
         } : {},
         {
-          "aws/metrics-cloudwatch" = {
+          "cloudwatch-aws/metrics" = {
             enabled = true
-            vars    = jsonencode(local.aws_assume_role_vars)
+            vars    = jsonencode(local.aws_agent_vars)
             streams = {
               "aws.cloudwatch_metrics" = {
                 enabled = true
-                vars = jsonencode({
-                  period  = "5m"
-                  latency = "5m"
-                  regions = [var.aws_region]
-                })
+                vars = jsonencode(merge(
+                  {
+                    period  = "5m"
+                    latency = "5m"
+                    regions = [var.aws_region]
+                  },
+                  # Trusted Advisor publishes check status to AWS/TrustedAdvisor.
+                  # There is no first-class Elastic TA data stream; CloudWatch is the path.
+                  var.enable_trusted_advisor ? {
+                    metrics = <<-YAML
+                      - namespace: AWS/TrustedAdvisor
+                        name:
+                          - RedResources
+                          - YellowResources
+                          - ServiceLimitUsage
+                        statistic:
+                          - Average
+                          - Maximum
+                    YAML
+                  } : {}
+                ))
               }
             }
           }
-          "aws/metrics-ec2" = {
+          "ec2-aws/metrics" = {
             enabled = true
-            vars    = jsonencode(local.aws_assume_role_vars)
+            vars    = jsonencode(local.aws_agent_vars)
             streams = {
               "aws.ec2_metrics" = {
                 enabled = true
@@ -311,9 +418,9 @@ locals {
               }
             }
           }
-          "aws/metrics-s3" = {
+          "s3-aws/metrics" = {
             enabled = true
-            vars    = jsonencode(local.aws_assume_role_vars)
+            vars    = jsonencode(local.aws_agent_vars)
             streams = {
               "aws.s3_daily_storage" = {
                 enabled = true
@@ -331,9 +438,9 @@ locals {
               }
             }
           }
-          "aws/metrics-billing" = {
+          "billing-aws/metrics" = {
             enabled = var.enable_billing_metrics
-            vars    = jsonencode(local.aws_assume_role_vars)
+            vars    = jsonencode(local.aws_agent_vars)
             streams = {
               "aws.billing" = {
                 enabled = var.enable_billing_metrics
@@ -385,12 +492,13 @@ module "elastic_agent" {
   count  = var.enable_elastic_agent ? 1 : 0
   source = "../../modules/elastic-agent-ec2"
 
-  name             = "${var.name_prefix}-agent"
-  instance_type    = var.elastic_agent_instance_type
-  company_tags     = merge(module.aws_cloud.applied_tags, { Role = "elastic-agent-security" })
-  fleet_url        = module.elastic.fleet_endpoint
-  enrollment_token = module.stack.enrollment_token
-  agent_version    = var.elastic_agent_version
+  name                 = "${var.name_prefix}-agent"
+  instance_type        = var.elastic_agent_instance_type
+  company_tags         = merge(module.aws_cloud.applied_tags, { Role = "elastic-agent-security" })
+  fleet_url            = module.elastic.fleet_endpoint
+  enrollment_token     = module.stack.enrollment_token
+  agent_version        = var.elastic_agent_version
+  iam_instance_profile = module.aws_cloud.agent_instance_profile_name
 
   depends_on = [module.stack]
 }
@@ -399,12 +507,13 @@ module "elastic_agent_obs" {
   count  = var.enable_elastic_agent && length(module.stack_obs) > 0 ? 1 : 0
   source = "../../modules/elastic-agent-ec2"
 
-  name             = "${var.name_prefix}-obs-agent"
-  instance_type    = var.elastic_agent_instance_type
-  company_tags     = merge(module.aws_cloud.applied_tags, { Role = "elastic-agent-observability" })
-  fleet_url        = module.observability[0].fleet_endpoint
-  enrollment_token = module.stack_obs[0].enrollment_token
-  agent_version    = var.elastic_agent_version
+  name                 = "${var.name_prefix}-obs-agent"
+  instance_type        = var.elastic_agent_instance_type
+  company_tags         = merge(module.aws_cloud.applied_tags, { Role = "elastic-agent-observability" })
+  fleet_url            = module.observability[0].fleet_endpoint
+  enrollment_token     = module.stack_obs[0].enrollment_token
+  agent_version        = var.elastic_agent_version
+  iam_instance_profile = module.aws_cloud.agent_instance_profile_name
 
   depends_on = [module.stack_obs]
 }

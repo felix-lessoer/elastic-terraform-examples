@@ -49,3 +49,9 @@ variable "associate_public_ip" {
   description = "Associate a public IP so the instance can reach Fleet and artifacts.elastic.co."
   default     = true
 }
+
+variable "iam_instance_profile" {
+  type        = string
+  description = "Optional IAM instance profile name for AWS API collection via IMDS (no static keys)."
+  default     = ""
+}

@@ -2,8 +2,8 @@
 
 Mirrors the GCP dual-project pattern for AWS:
 
-1. **Elastic Security** serverless (Complete) — agentless CSPM (+ optional CNVM), agent CloudTrail, AWS detection rules
-2. **Elastic Observability** serverless — CPS-linked hub with agent vpcflow + CloudWatch/EC2/S3/billing metrics
+1. **Elastic Security** serverless (Complete) — agentless CSPM (+ optional CNVM), agent CloudTrail + console-home security, AWS detection rules
+2. **Elastic Observability** serverless — CPS-linked hub with agent vpcflow + CloudWatch/EC2/S3/billing + Trusted Advisor metrics
 3. **Cockpit dashboard** on Observability — pinned NDJSON (`modules/cockpit-dashboard/cockpit-aws.ndjson`)
 4. **Kibana Workflows** — YAML under `examples/aws/workflows/` (optional execute-on-apply)
 
@@ -14,10 +14,22 @@ Mirrors the GCP dual-project pattern for AWS:
 | CSPM (CIS AWS) | **Agentless** | `cloud_security_posture` managed integration |
 | CNVM / vuln_mgmt | **Agentless** | same package, `vuln_mgmt` policy template |
 | CloudTrail | **Agent** | S3/SQS package input not available agentless |
+| Security Hub findings | **Agent** | httpjson streams; agentless available in package but this PoC uses IMDS on EC2 |
+| GuardDuty findings | **Agent** | same pattern as Security Hub |
+| AWS Health | **Agent** | `awshealth` metricset via agent IMDS |
+| Trusted Advisor | **Agent** | CloudWatch `AWS/TrustedAdvisor` (no dedicated Elastic data stream) |
 | VPC Flow Logs | **Agent** | S3/SQS package input not available agentless |
 | CloudWatch / EC2 / S3 / billing metrics | **Agent** | AWS metrics streams require Elastic Agent |
 
-Two EC2 Elastic Agents enroll into the Security and Observability Fleet policies respectively. No static AWS access keys are embedded; collection uses IAM assume-role + external id.
+Two EC2 Elastic Agents enroll into the Security and Observability Fleet policies. Agents use an **IAM instance profile** (IMDS) — no static AWS access keys in Fleet policies. Agentless CSPM/CNVM still assume the collector role with external id.
+
+## AWS console home → Elastic mapping
+
+| Console widget | Elastic dataset(s) |
+| --- | --- |
+| Security findings | `logs-aws.securityhub_*`, `logs-aws.guardduty` |
+| AWS Health | `metrics-aws.awshealth` |
+| Trusted Advisor | `metrics-aws.cloudwatch_metrics` filtered to `AWS/TrustedAdvisor` (`RedResources`, `YellowResources`, `ServiceLimitUsage`) |
 
 ## Prerequisites
 
@@ -50,6 +62,10 @@ terraform apply
 | `product_tier` | `complete` | required for Cross-Project Search |
 | `enable_cspm` | `true` | agentless CSPM |
 | `enable_cnvm` | `true` | agentless vulnerability management |
+| `enable_security_hub` | `true` | console Security findings |
+| `enable_guardduty` | `true` | GuardDuty findings |
+| `enable_aws_health` | `true` | console Health widget |
+| `enable_trusted_advisor` | `true` | TA via CloudWatch metrics |
 | `enable_billing_metrics` | `true` | agent-based Cost Explorer metrics |
 | `enable_detection_rules` | `true` | tag `Data Source: AWS` |
 | `enable_elastic_agent` | `true` | EC2 agents for non-agentless inputs |

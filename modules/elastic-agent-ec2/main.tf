@@ -19,7 +19,7 @@ data "aws_ami" "debian" {
 }
 
 data "aws_vpc" "default" {
-  count   = var.vpc_id == "" || var.subnet_id == "" ? 1 : 0
+  count   = var.vpc_id == "" ? 1 : 0
   default = true
 }
 
@@ -67,6 +67,7 @@ resource "aws_instance" "agent" {
   subnet_id                   = local.subnet_id
   vpc_security_group_ids      = [aws_security_group.agent.id]
   associate_public_ip_address = var.associate_public_ip
+  iam_instance_profile        = var.iam_instance_profile != "" ? var.iam_instance_profile : null
   user_data_replace_on_change = true
 
   user_data = templatefile("${path.module}/templates/install_agent.sh.tftpl", {

@@ -39,6 +39,15 @@ output "external_id" {
   value     = local.external_id
 }
 
+output "agent_instance_profile_name" {
+  description = "IAM instance profile for Elastic Agent EC2 instances (IMDS credentials)."
+  value       = aws_iam_instance_profile.agent.name
+}
+
+output "agent_role_arn" {
+  value = aws_iam_role.agent.arn
+}
+
 output "applied_tags" {
   description = "Tags applied to AWS resources."
   value       = local.common_tags

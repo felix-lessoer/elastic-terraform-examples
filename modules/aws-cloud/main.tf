@@ -281,7 +281,15 @@ data "aws_iam_policy_document" "elastic_permissions" {
       "guardduty:Get*",
       "guardduty:List*",
       "inspector2:List*",
-      "inspector2:Get*"
+      "inspector2:Get*",
+      # AWS Health (console home widget)
+      "health:DescribeEvents",
+      "health:DescribeEventDetails",
+      "health:DescribeAffectedEntities",
+      # Trusted Advisor check metrics land in CloudWatch (AWS/TrustedAdvisor)
+      "support:DescribeTrustedAdvisorChecks",
+      "support:DescribeTrustedAdvisorCheckResult",
+      "support:DescribeTrustedAdvisorCheckSummaries"
     ]
     resources = ["*"]
   }
@@ -300,9 +308,9 @@ data "aws_iam_policy_document" "elastic_permissions" {
   }
 
   statement {
-    sid       = "ReadCloudTrailQueue"
-    effect    = "Allow"
-    actions   = ["sqs:*"]
+    sid     = "ReadCloudTrailQueue"
+    effect  = "Allow"
+    actions = ["sqs:*"]
     resources = compact(concat(
       [aws_sqs_queue.cloudtrail.arn],
       aws_sqs_queue.vpcflow[*].arn,
@@ -325,4 +333,48 @@ resource "aws_iam_role_policy_attachment" "security_audit" {
 resource "aws_iam_role_policy_attachment" "view_only" {
   role       = aws_iam_role.elastic.name
   policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/job-function/ViewOnlyAccess"
+}
+
+# -----------------------------------------------------------------------------
+# EC2 instance profile for Elastic Agents (IMDS credentials — no static keys)
+# Same collector permissions; agents use the default AWS credential chain.
+# -----------------------------------------------------------------------------
+
+data "aws_iam_policy_document" "agent_trust" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "Service"
+      identifiers = ["ec2.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "agent" {
+  name               = "${var.name_prefix}-elastic-agent"
+  assume_role_policy = data.aws_iam_policy_document.agent_trust.json
+  tags               = local.common_tags
+}
+
+resource "aws_iam_role_policy" "agent" {
+  name   = "${var.name_prefix}-elastic-agent"
+  role   = aws_iam_role.agent.id
+  policy = data.aws_iam_policy_document.elastic_permissions.json
+}
+
+resource "aws_iam_role_policy_attachment" "agent_security_audit" {
+  role       = aws_iam_role.agent.name
+  policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/SecurityAudit"
+}
+
+resource "aws_iam_role_policy_attachment" "agent_view_only" {
+  role       = aws_iam_role.agent.name
+  policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/job-function/ViewOnlyAccess"
+}
+
+resource "aws_iam_instance_profile" "agent" {
+  name = "${var.name_prefix}-elastic-agent"
+  role = aws_iam_role.agent.name
+  tags = local.common_tags
 }

@@ -113,6 +113,30 @@ variable "enable_billing_metrics" {
   default     = true
 }
 
+variable "enable_security_hub" {
+  type        = bool
+  description = "Collect AWS Security Hub findings/insights (console Security findings widget)."
+  default     = true
+}
+
+variable "enable_guardduty" {
+  type        = bool
+  description = "Collect Amazon GuardDuty findings (feeds console security widgets / Security Hub)."
+  default     = true
+}
+
+variable "enable_aws_health" {
+  type        = bool
+  description = "Collect AWS Health events/metrics (console Health widget)."
+  default     = true
+}
+
+variable "enable_trusted_advisor" {
+  type        = bool
+  description = "Collect Trusted Advisor check metrics via CloudWatch namespace AWS/TrustedAdvisor (no first-class Elastic TA stream)."
+  default     = true
+}
+
 variable "enable_detection_rules" {
   type    = bool
   default = true

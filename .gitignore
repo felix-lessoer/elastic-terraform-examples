@@ -12,3 +12,10 @@ examples/*/local_env/
 # local secrets
 **/creds.json
 **/*credentials*.json
+
+# local AWS creds for PoC runs
+examples/aws/.env.aws
+**/.env.aws
+
+*.tfvars
+!*.tfvars.example

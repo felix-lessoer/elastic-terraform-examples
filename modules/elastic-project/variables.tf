@@ -9,6 +9,17 @@ variable "deployment_mode" {
   }
 }
 
+variable "project_kind" {
+  type        = string
+  description = "Serverless project kind: security (default) or observability."
+  default     = "security"
+
+  validation {
+    condition     = contains(["security", "observability"], var.project_kind)
+    error_message = "project_kind must be \"security\" or \"observability\"."
+  }
+}
+
 variable "name" {
   type        = string
   description = "Name of the Elastic Cloud project or hosted deployment."
@@ -21,7 +32,7 @@ variable "region" {
 
 variable "product_tier" {
   type        = string
-  description = "Security product tier for serverless (complete required for CPS)."
+  description = "Product tier for serverless (complete required for CPS)."
   default     = "complete"
 
   validation {
@@ -32,7 +43,7 @@ variable "product_tier" {
 
 variable "product_lines" {
   type        = list(string)
-  description = "Security product lines to enable on the serverless project."
+  description = "Security product lines to enable (security projects only)."
   default     = ["security", "cloud", "endpoint"]
 }
 
@@ -40,7 +51,7 @@ variable "linked_projects" {
   type = map(object({
     type = string
   }))
-  description = "Map of project_id => { type } for Cross-Project Search links (serverless hub only)."
+  description = "Map of project_id => { type } for Cross-Project Search links (serverless hub)."
   default     = {}
 }
 

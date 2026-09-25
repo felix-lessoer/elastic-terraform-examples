@@ -1,9 +1,11 @@
 output "kibana_url" {
-  value = module.elastic.kibana_endpoint
+  description = "Security project Kibana (Fleet, CSPM, detection rules)."
+  value       = module.elastic.kibana_endpoint
 }
 
 output "project_id" {
-  value = module.elastic.id
+  description = "Security project id."
+  value       = module.elastic.id
 }
 
 output "cloud_id" {
@@ -17,6 +19,37 @@ output "username" {
 output "password" {
   sensitive = true
   value     = module.elastic.password
+}
+
+output "observability_kibana_url" {
+  description = "Observability hub Kibana (cockpit dashboard)."
+  value       = try(module.observability[0].kibana_endpoint, null)
+}
+
+output "observability_project_id" {
+  value = try(module.observability[0].id, null)
+}
+
+output "observability_password" {
+  sensitive = true
+  value     = try(module.observability[0].password, null)
+}
+
+output "cockpit_dashboard_url" {
+  value = try(module.cockpit[0].dashboard_url, null)
+}
+
+output "cps_link_statuses" {
+  description = "Cross-Project Search link statuses from the Observability hub."
+  value       = try(module.observability[0].linked_statuses, {})
+}
+
+output "ai_agent_ids" {
+  value = try(module.observability_seed[0].ai_agent_ids, [])
+}
+
+output "ml_job_ids" {
+  value = try(module.observability_seed[0].ml_job_ids, [])
 }
 
 output "gcp_project_id" {
@@ -54,10 +87,14 @@ output "elastic_agent_external_ip" {
 
 output "next_steps" {
   value = <<-EOT
-    Open Kibana: ${module.elastic.kibana_endpoint}
-    - Fleet > Agents: confirm ${try(module.elastic_agent[0].instance_name, "elastic-agent")} is Healthy on policy gcp-observe-protect
+    Security Kibana: ${module.elastic.kibana_endpoint}
+    - Fleet > Agents: confirm ${try(module.elastic_agent[0].instance_name, "elastic-agent")} is Healthy
     - Security > Cloud Security Posture for GCP CSPM
-    - Discover for gcp.* data streams from Pub/Sub sinks
     - Security > Rules for Google Cloud detection rules
+
+    Observability Kibana: ${try(module.observability[0].kibana_endpoint, "(disabled)")}
+    - Cockpit dashboard: ${try(module.cockpit[0].dashboard_url, "(pending)")}
+    - Agent Builder: gcp-security-analyst, gcp-obs-triage
+    - ML jobs: gcp-event-rate, gcp-cspm-findings-rate
   EOT
 }

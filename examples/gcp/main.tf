@@ -35,6 +35,7 @@ module "elastic" {
   source = "../../modules/elastic-project"
 
   deployment_mode        = var.deployment_mode
+  project_kind           = "security"
   name                   = var.elastic_project_name
   region                 = var.elastic_region
   product_tier           = var.product_tier
@@ -46,6 +47,56 @@ module "elastic" {
     substr(lower(replace(replace(replace(replace(k, " ", "-"), "/", "-"), ".", "-"), ":", "-")), 0, 32) =>
     substr(lower(replace(replace(replace(replace(tostring(v), " ", "-"), "/", "-"), ".", "-"), ":", "-")), 0, 32)
   }
+}
+
+# Observability hub with Cross-Project Search into the Security project.
+module "observability" {
+  count  = var.enable_observability_project && var.deployment_mode == "serverless" ? 1 : 0
+  source = "../../modules/elastic-project"
+
+  deployment_mode = "serverless"
+  project_kind    = "observability"
+  name            = var.observability_project_name
+  region          = var.elastic_region
+  product_tier    = var.product_tier
+  linked_projects = {
+    (module.elastic.id) = { type = "security" }
+  }
+  tags = {
+    for k, v in var.company_labels :
+    substr(lower(replace(replace(replace(replace(k, " ", "-"), "/", "-"), ".", "-"), ":", "-")), 0, 32) =>
+    substr(lower(replace(replace(replace(replace(tostring(v), " ", "-"), "/", "-"), ".", "-"), ":", "-")), 0, 32)
+  }
+
+  depends_on = [module.elastic]
+}
+
+module "observability_seed" {
+  count  = length(module.observability) > 0 ? 1 : 0
+  source = "../../modules/observability-seed"
+
+  kibana_endpoint         = module.observability[0].kibana_endpoint
+  elasticsearch_endpoint  = module.observability[0].elasticsearch_endpoint
+  elasticsearch_username  = module.observability[0].username
+  elasticsearch_password  = module.observability[0].password
+  enable_ml_jobs                = var.enable_ml_jobs
+  enable_ai_agents              = var.enable_ai_agents
+  enable_observability_alerts   = var.enable_observability_alerts
+
+  depends_on = [module.observability]
+}
+
+module "cockpit" {
+  count  = length(module.observability) > 0 ? 1 : 0
+  source = "../../modules/cockpit-dashboard"
+
+  kibana_endpoint             = module.observability[0].kibana_endpoint
+  elasticsearch_username      = module.observability[0].username
+  elasticsearch_password      = module.observability[0].password
+  security_project_name       = module.elastic.name
+  observability_project_name  = module.observability[0].name
+
+  depends_on = [module.observability, module.observability_seed]
 }
 
 module "gcp_cloud" {

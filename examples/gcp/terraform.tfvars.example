@@ -20,5 +20,7 @@ enable_cspm            = true
 enable_detection_rules = true
 # Deploys a GCE VM with Elastic Agent (needed for Pub/Sub log/metrics collection)
 enable_elastic_agent   = true
+# Second serverless project + CPS + cockpit dashboard
+enable_observability_project = true
 # elastic_agent_zone = "europe-west3-b"
 # elastic_agent_version = "9.5.4"

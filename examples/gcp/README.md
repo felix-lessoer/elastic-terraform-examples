@@ -1,38 +1,47 @@
 # Google Cloud Observe and Protect (modern PoC)
 
-Creates Elastic Cloud Serverless Security Complete (or hosted), Pub/Sub topics + logging sinks (audit, firewall, VPC flow, DNS, LB), a collector service account, Fleet GCP integration at latest version, a GCE Elastic Agent enrolled into that policy, optional agentless CSPM, and GCP-tagged detection rules.
+Creates:
+
+1. **Elastic Security** serverless project (Complete) — Fleet, GCP Pub/Sub integrations, agentless CSPM, detection rules, GCE Elastic Agent
+2. **Elastic Observability** serverless project (Complete) — linked to Security via **Cross-Project Search**
+3. **Cockpit dashboard** on Observability — aggregated alerts, data-flow health, ML/AI agent posture, GCP inventory
+4. GCP Pub/Sub topics + logging sinks, collector SA, company-policy labels
 
 ## Company labels (required)
 
-Every labelable GCP resource gets your policy labels via `company_labels`. Values are normalized to GCP rules (lowercase, `[a-z0-9_-]`).
+Every labelable GCP resource gets your policy labels via `company_labels`. Values are normalized to GCP rules (lowercase, `[a-z0-9_-]`). Compute instances require a valid `division` label for org-policy constrained projects.
 
 ```hcl
 company_labels = {
+  division    = "field"
   cost-center = "platform"
   owner       = "sre-team"
   environment = "poc"
 }
-
-# Optional: fail terraform plan if keys are missing
-required_label_keys = ["cost-center", "owner", "environment"]
 ```
 
 ## Prerequisites
 
-Terraform credentials need permission to create Compute Engine instances (for the Elastic Agent VM), Pub/Sub, Logging sinks, and IAM bindings — e.g. `roles/compute.instanceAdmin.v1` in addition to Pub/Sub/Logging roles.
+Terraform credentials need permission to create Compute Engine instances (Elastic Agent VM), Pub/Sub, Logging sinks, and IAM bindings.
 
 ```bash
 export EC_API_KEY="..."
-# ADC or credentials file for Terraform
 export GOOGLE_APPLICATION_CREDENTIALS=/path/to/sa.json
 ```
 
 ```bash
 cd examples/gcp
 cp terraform.tfvars.example terraform.tfvars
-# edit company_labels + google_cloud_project
 terraform init
 terraform apply
 ```
 
-After apply, open Fleet → Agents and confirm the GCE agent is Healthy. Pub/Sub log and metrics streams require that agent; CSPM remains agentless.
+## What to open after apply
+
+| Surface | Where |
+| --- | --- |
+| Cockpit dashboard | `observability_kibana_url` → Dashboards → **GCP Observe & Protect Cockpit** (or `cockpit_dashboard_url`) |
+| Security / Fleet / CSPM | `kibana_url` |
+| AI agents | Observability → Agent Builder (`gcp-security-analyst`, `gcp-obs-triage`) |
+
+Toggle Observability hub with `enable_observability_project = false` if you only want Security.

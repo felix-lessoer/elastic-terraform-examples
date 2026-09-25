@@ -8,6 +8,32 @@ variable "elastic_project_name" {
   default = "GCP Observe and Protect"
 }
 
+variable "observability_project_name" {
+  type    = string
+  default = "GCP Observability Cockpit"
+}
+
+variable "enable_observability_project" {
+  type        = bool
+  description = "Create a serverless Observability project linked to Security via Cross-Project Search and deploy the cockpit dashboard."
+  default     = true
+}
+
+variable "enable_ml_jobs" {
+  type    = bool
+  default = true
+}
+
+variable "enable_ai_agents" {
+  type    = bool
+  default = true
+}
+
+variable "enable_observability_alerts" {
+  type    = bool
+  default = true
+}
+
 variable "elastic_region" {
   type    = string
   default = "gcp-europe-west3"

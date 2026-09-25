@@ -25,7 +25,7 @@ Stand up an Elastic **Security Complete** environment and the cloud collectors n
 |---|---|
 | [`examples/aws`](../examples/aws) | AWS-only PoC (reference implementation) |
 | [`examples/azure`](../examples/azure) | Azure-only PoC |
-| [`examples/gcp`](../examples/gcp) | GCP-only PoC |
+| [`examples/gcp`](../examples/gcp) | GCP Security + Observability (CPS) + cockpit dashboard |
 | [`examples/multicloud`](../examples/multicloud) | One or more clouds + CPS/CCS hub |
 
 ```bash
@@ -79,8 +79,11 @@ Use the `fleet_url` / `enrollment_token` outputs from the example.
 | Module | Role |
 |---|---|
 | `modules/elastic-project` | `ec_security_project` or `ec_deployment` |
+| `modules/elastic-project` | Serverless Security or Observability project (CPS links) / hosted fallback |
 | `modules/elastic-stack` | Fleet policies, integrations, managed/agentless, detection rules |
 | `modules/elastic-agent-gce` | GCE VM that installs and enrolls Elastic Agent |
+| `modules/observability-seed` | Obs alerts, ML jobs, Agent Builder agents |
+| `modules/cockpit-dashboard` | Aggregated Security+Observability Kibana cockpit |
 | `modules/aws-cloud` | S3, SQS, CloudTrail, VPC flow logs, collector IAM role |
 | `modules/azure-cloud` | Event Hub, diagnostics, app registration |
 | `modules/gcp-cloud` | Pub/Sub topics, logging sinks, collector SA |

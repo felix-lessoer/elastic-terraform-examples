@@ -67,13 +67,17 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "logs" {
 }
 
 resource "aws_sqs_queue" "cloudtrail" {
+  count = var.enable_sqs ? 1 : 0
+
   name                       = "${var.name_prefix}-cloudtrail"
   visibility_timeout_seconds = 900
   tags                       = local.common_tags
 }
 
 resource "aws_sqs_queue_policy" "cloudtrail" {
-  queue_url = aws_sqs_queue.cloudtrail.id
+  count = var.enable_sqs ? 1 : 0
+
+  queue_url = aws_sqs_queue.cloudtrail[0].id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -81,7 +85,7 @@ resource "aws_sqs_queue_policy" "cloudtrail" {
       Effect    = "Allow"
       Principal = "*"
       Action    = "sqs:SendMessage"
-      Resource  = aws_sqs_queue.cloudtrail.arn
+      Resource  = aws_sqs_queue.cloudtrail[0].arn
       Condition = {
         ArnEquals = { "aws:SourceArn" = aws_s3_bucket.logs.arn }
       }
@@ -90,7 +94,7 @@ resource "aws_sqs_queue_policy" "cloudtrail" {
 }
 
 resource "aws_sqs_queue" "vpcflow" {
-  count = var.enable_vpc_flow_logs ? 1 : 0
+  count = var.enable_sqs && var.enable_vpc_flow_logs ? 1 : 0
 
   name                       = "${var.name_prefix}-vpcflow"
   visibility_timeout_seconds = 900
@@ -98,7 +102,7 @@ resource "aws_sqs_queue" "vpcflow" {
 }
 
 resource "aws_sqs_queue_policy" "vpcflow" {
-  count = var.enable_vpc_flow_logs ? 1 : 0
+  count = var.enable_sqs && var.enable_vpc_flow_logs ? 1 : 0
 
   queue_url = aws_sqs_queue.vpcflow[0].id
 
@@ -160,10 +164,12 @@ resource "aws_s3_bucket_policy" "logs" {
 }
 
 resource "aws_s3_bucket_notification" "logs" {
+  count = var.enable_sqs ? 1 : 0
+
   bucket = aws_s3_bucket.logs.id
 
   queue {
-    queue_arn     = aws_sqs_queue.cloudtrail.arn
+    queue_arn     = aws_sqs_queue.cloudtrail[0].arn
     events        = ["s3:ObjectCreated:*"]
     filter_prefix = "AWSLogs/${local.account_id}/CloudTrail/"
   }
@@ -308,13 +314,24 @@ data "aws_iam_policy_document" "elastic_permissions" {
   }
 
   statement {
-    sid     = "ReadCloudTrailQueue"
-    effect  = "Allow"
-    actions = ["sqs:*"]
-    resources = compact(concat(
-      [aws_sqs_queue.cloudtrail.arn],
+    sid    = "ReadCloudTrailQueue"
+    effect = "Allow"
+    actions = [
+      "sqs:ReceiveMessage",
+      "sqs:DeleteMessage",
+      "sqs:ChangeMessageVisibility",
+      "sqs:GetQueueAttributes",
+      "sqs:GetQueueUrl",
+    ]
+    # When SQS is disabled (org SCP), keep a no-op resource so the policy
+    # document does not depend on queue creation.
+    resources = length(compact(concat(
+      aws_sqs_queue.cloudtrail[*].arn,
       aws_sqs_queue.vpcflow[*].arn,
-    ))
+    ))) > 0 ? compact(concat(
+      aws_sqs_queue.cloudtrail[*].arn,
+      aws_sqs_queue.vpcflow[*].arn,
+    )) : ["arn:${data.aws_partition.current.partition}:sqs:${local.region}:${local.account_id}:elastic-poc-disabled"]
   }
 }
 

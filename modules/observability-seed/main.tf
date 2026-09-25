@@ -111,6 +111,44 @@ resource "elasticstack_elasticsearch_ml_anomaly_detection_job" "gcp_event_rate" 
   }
 }
 
+# Serverless ML rejects allow_no_indices when nothing matches; seed bootstrap
+# indices so greenfield datafeed start succeeds before agents enroll.
+resource "elasticstack_elasticsearch_index" "ml_bootstrap_logs" {
+  count = var.enable_ml_jobs ? 1 : 0
+
+  name = "logs-ml-bootstrap"
+
+  mappings = jsonencode({
+    properties = {
+      "@timestamp" = { type = "date" }
+    }
+  })
+
+  elasticsearch_connection {
+    endpoints = [local.es_url]
+    username  = var.elasticsearch_username
+    password  = var.elasticsearch_password
+  }
+}
+
+resource "elasticstack_elasticsearch_index" "ml_bootstrap_cspm" {
+  count = var.enable_ml_jobs ? 1 : 0
+
+  name = "logs-cloud_security_posture.bootstrap"
+
+  mappings = jsonencode({
+    properties = {
+      "@timestamp" = { type = "date" }
+    }
+  })
+
+  elasticsearch_connection {
+    endpoints = [local.cspm_es_url]
+    username  = local.cspm_es_username
+    password  = local.cspm_es_password
+  }
+}
+
 resource "elasticstack_elasticsearch_ml_datafeed" "gcp_event_rate" {
   count = var.enable_ml_jobs ? 1 : 0
 
@@ -139,7 +177,10 @@ resource "elasticstack_elasticsearch_ml_datafeed" "gcp_event_rate" {
     password  = var.elasticsearch_password
   }
 
-  depends_on = [elasticstack_elasticsearch_ml_anomaly_detection_job.gcp_event_rate]
+  depends_on = [
+    elasticstack_elasticsearch_ml_anomaly_detection_job.gcp_event_rate,
+    elasticstack_elasticsearch_index.ml_bootstrap_logs,
+  ]
 }
 
 resource "elasticstack_elasticsearch_ml_anomaly_detection_job" "gcp_cspm_findings_rate" {

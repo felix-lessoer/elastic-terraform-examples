@@ -22,6 +22,12 @@ variable "enable_vpc_flow_logs" {
   default     = true
 }
 
+variable "enable_sqs" {
+  type        = bool
+  description = "Create SQS queues + S3 notifications for CloudTrail/vpcflow. Disable when org SCPs block sqs:CreateQueue."
+  default     = true
+}
+
 variable "company_tags" {
   type        = map(string)
   description = "Mandatory company-policy tags applied to every taggable AWS resource."

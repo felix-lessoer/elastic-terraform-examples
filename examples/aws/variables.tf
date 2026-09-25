@@ -95,6 +95,12 @@ variable "enable_vpc_flow_logs" {
   default = true
 }
 
+variable "enable_sqs" {
+  type        = bool
+  description = "Create SQS queues for CloudTrail/vpcflow. Set false when org SCPs deny sqs:CreateQueue."
+  default     = true
+}
+
 variable "enable_cspm" {
   type        = bool
   description = "Agentless CSPM (CIS AWS) via cloud_security_posture managed integration."

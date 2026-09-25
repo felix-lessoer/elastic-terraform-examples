@@ -140,6 +140,7 @@ module "aws_cloud" {
   bucket_name          = var.bucket_name
   enable_cloudtrail    = var.enable_cloudtrail
   enable_vpc_flow_logs = var.enable_vpc_flow_logs
+  enable_sqs           = var.enable_sqs
   company_tags         = var.company_tags
   required_tag_keys    = var.required_tag_keys
   additional_tags = {
@@ -240,7 +241,7 @@ locals {
         var_group_selections = {}
         cloud_connector      = null
         inputs = merge(
-          {
+          var.enable_cloudtrail && module.aws_cloud.cloudtrail_queue_url != null ? {
             "cloudtrail-aws-s3" = {
               enabled = true
               vars    = jsonencode(local.aws_agent_vars)
@@ -256,7 +257,7 @@ locals {
                 }
               }
             }
-          },
+          } : {},
           var.enable_security_hub ? {
             "securityhub-httpjson" = {
               enabled = true

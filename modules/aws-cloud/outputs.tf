@@ -15,11 +15,11 @@ output "logs_bucket_arn" {
 }
 
 output "cloudtrail_queue_url" {
-  value = aws_sqs_queue.cloudtrail.url
+  value = try(aws_sqs_queue.cloudtrail[0].url, null)
 }
 
 output "cloudtrail_queue_arn" {
-  value = aws_sqs_queue.cloudtrail.arn
+  value = try(aws_sqs_queue.cloudtrail[0].arn, null)
 }
 
 output "vpcflow_queue_url" {
@@ -28,6 +28,10 @@ output "vpcflow_queue_url" {
 
 output "vpcflow_queue_arn" {
   value = try(aws_sqs_queue.vpcflow[0].arn, null)
+}
+
+output "sqs_enabled" {
+  value = var.enable_sqs
 }
 
 output "elastic_role_arn" {

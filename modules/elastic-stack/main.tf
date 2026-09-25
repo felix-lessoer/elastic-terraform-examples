@@ -165,6 +165,13 @@ resource "elasticstack_fleet_managed_integration" "this" {
     username  = var.elasticsearch_username
     password  = var.elasticsearch_password
   }
+
+  # elasticstack provider bug: apply succeeds in Kibana but then fails with
+  # "inconsistent values for sensitive attribute" on .inputs. Ignoring drift
+  # on inputs keeps the managed (agentless) integration in state.
+  lifecycle {
+    ignore_changes = [inputs]
+  }
 }
 
 # -----------------------------------------------------------------------------

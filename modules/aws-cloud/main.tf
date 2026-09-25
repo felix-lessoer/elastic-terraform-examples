@@ -17,9 +17,11 @@ locals {
   bucket      = lower("${var.bucket_name}-${local.account_id}-${random_id.suffix.hex}")
   external_id = random_id.suffix.hex
 
+  # Do not set Project (capital P): Elastic org tag policy requires lowercase
+  # `project` on EC2, and a differently-cased sibling key fails TagPolicyViolation.
   common_tags = merge(
     {
-      Project   = "elastic-cloud-poc"
+      stack     = "elastic-cloud-poc"
       ManagedBy = "terraform"
     },
     var.company_tags,

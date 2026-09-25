@@ -65,7 +65,13 @@ output "applied_labels" {
 }
 
 output "fleet_agent_policy_id" {
-  value = module.stack.agent_policy_id
+  description = "Security Fleet agent policy id."
+  value       = module.stack.agent_policy_id
+}
+
+output "observability_fleet_agent_policy_id" {
+  description = "Observability Fleet agent policy id."
+  value       = try(module.stack_obs[0].agent_policy_id, null)
 }
 
 output "enrollment_token" {
@@ -77,22 +83,37 @@ output "fleet_url" {
   value = module.elastic.fleet_endpoint
 }
 
+output "observability_fleet_url" {
+  value = try(module.observability[0].fleet_endpoint, null)
+}
+
 output "elastic_agent_instance" {
-  value = try(module.elastic_agent[0].instance_name, null)
+  description = "Security Fleet GCE agent instance."
+  value       = try(module.elastic_agent[0].instance_name, null)
 }
 
 output "elastic_agent_external_ip" {
   value = try(module.elastic_agent[0].external_ip, null)
 }
 
+output "observability_agent_instance" {
+  description = "Observability Fleet GCE agent instance."
+  value       = try(module.elastic_agent_obs[0].instance_name, null)
+}
+
+output "observability_agent_external_ip" {
+  value = try(module.elastic_agent_obs[0].external_ip, null)
+}
+
 output "next_steps" {
   value = <<-EOT
     Security Kibana: ${module.elastic.kibana_endpoint}
-    - Fleet > Agents: confirm ${try(module.elastic_agent[0].instance_name, "elastic-agent")} is Healthy
+    - Fleet > Agents: confirm ${try(module.elastic_agent[0].instance_name, "elastic-poc-agent")} is Healthy (audit/firewall + CSPM)
     - Security > Cloud Security Posture for GCP CSPM
     - Security > Rules for Google Cloud detection rules
 
     Observability Kibana: ${try(module.observability[0].kibana_endpoint, "(disabled)")}
+    - Fleet > Agents: confirm ${try(module.elastic_agent_obs[0].instance_name, "elastic-poc-obs-agent")} is Healthy (metrics + vpcflow/dns/lb)
     - Cockpit dashboard: ${try(module.cockpit[0].dashboard_url, "(pending)")}
     - Agent Builder: gcp-security-analyst, gcp-obs-triage
     - ML jobs: gcp-event-rate, gcp-cspm-findings-rate

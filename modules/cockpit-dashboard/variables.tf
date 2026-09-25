@@ -35,3 +35,23 @@ variable "observability_project_name" {
   type        = string
   description = "Display name of the Observability hub project."
 }
+
+variable "ml_jobs" {
+  type = list(object({
+    id          = string
+    description = string
+    state       = string
+  }))
+  description = "Provisioned ML jobs to list in the cockpit inventory."
+  default     = []
+}
+
+variable "ai_agents" {
+  type = list(object({
+    id    = string
+    role  = string
+    state = string
+  }))
+  description = "Provisioned Agent Builder agents to list in the cockpit inventory."
+  default     = []
+}

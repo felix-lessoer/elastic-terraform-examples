@@ -11,39 +11,23 @@ resource "elasticstack_kibana_alerting_rule" "log_rate_spike" {
   count = var.enable_observability_alerts ? 1 : 0
 
   name         = "GCP telemetry volume drop"
-  consumer     = "logs"
-  rule_type_id = "observability.rules.custom_threshold"
+  consumer     = "alerts"
+  rule_type_id = ".index-threshold"
   interval     = "5m"
   enabled      = true
-  tags         = ["cockpit", "gcp", "observability"]
+  tags         = ["cockpit", "gcp", "observability", "Missing Elastic Cloud API Key"]
   space_id     = var.space_id
 
   params = jsonencode({
-    criteria = [
-      {
-        comparator = "<"
-        threshold  = [1]
-        timeSize   = 30
-        timeUnit   = "m"
-        metrics = [
-          {
-            name      = "A"
-            aggType   = "count"
-            field     = ""
-            filter    = ""
-          }
-        ]
-      }
-    ]
-    alertOnNoData                 = true
-    alertOnGroupDisappear         = false
-    searchConfiguration = {
-      query = {
-        query    = "data_stream.dataset: gcp.* or data_stream.dataset: cloud_security_posture.*"
-        language = "kuery"
-      }
-      index = "logs-*,metrics-*,*:logs-*,*:metrics-*"
-    }
+    index               = ["logs-*", "metrics-*"]
+    timeField           = "@timestamp"
+    aggType             = "count"
+    groupBy             = "all"
+    termSize            = 5
+    thresholdComparator = "<"
+    threshold           = [1]
+    timeWindowSize      = 30
+    timeWindowUnit      = "m"
   })
 
   kibana_connection {
@@ -56,40 +40,24 @@ resource "elasticstack_kibana_alerting_rule" "log_rate_spike" {
 resource "elasticstack_kibana_alerting_rule" "cspm_failed_findings" {
   count = var.enable_observability_alerts ? 1 : 0
 
-  name         = "CSPM failed findings surge"
-  consumer     = "logs"
-  rule_type_id = "observability.rules.custom_threshold"
+  name         = "CSPM findings activity"
+  consumer     = "alerts"
+  rule_type_id = ".index-threshold"
   interval     = "15m"
   enabled      = true
-  tags         = ["cockpit", "gcp", "security-signal"]
+  tags         = ["cockpit", "gcp", "security-signal", "Missing Elastic Cloud API Key"]
   space_id     = var.space_id
 
   params = jsonencode({
-    criteria = [
-      {
-        comparator = ">"
-        threshold  = [0]
-        timeSize   = 1
-        timeUnit   = "h"
-        metrics = [
-          {
-            name    = "A"
-            aggType = "count"
-            field   = ""
-            filter  = "result.evaluation: failed"
-          }
-        ]
-      }
-    ]
-    alertOnNoData         = false
-    alertOnGroupDisappear = false
-    searchConfiguration = {
-      query = {
-        query    = "data_stream.dataset: cloud_security_posture.findings"
-        language = "kuery"
-      }
-      index = "logs-cloud_security_posture.findings-*,*:logs-cloud_security_posture.findings-*"
-    }
+    index               = ["logs-cloud_security_posture.findings-*", "*:logs-cloud_security_posture.findings-*"]
+    timeField           = "@timestamp"
+    aggType             = "count"
+    groupBy             = "all"
+    termSize            = 5
+    thresholdComparator = ">"
+    threshold           = [0]
+    timeWindowSize      = 1
+    timeWindowUnit      = "h"
   })
 
   kibana_connection {
@@ -121,7 +89,8 @@ resource "elasticstack_elasticsearch_ml_anomaly_detection_job" "gcp_event_rate" 
   }
 
   data_description = {
-    time_field = "@timestamp"
+    time_field  = "@timestamp"
+    time_format = "epoch_ms"
   }
 
   allow_lazy_open = true
@@ -175,7 +144,8 @@ resource "elasticstack_elasticsearch_ml_anomaly_detection_job" "gcp_cspm_finding
   }
 
   data_description = {
-    time_field = "@timestamp"
+    time_field  = "@timestamp"
+    time_format = "epoch_ms"
   }
 
   allow_lazy_open = true
@@ -194,13 +164,13 @@ resource "elasticstack_elasticsearch_ml_anomaly_detection_job" "gcp_cspm_finding
 resource "elasticstack_kibana_agentbuilder_agent" "security_analyst" {
   count = var.enable_ai_agents ? 1 : 0
 
-  agent_id    = "gcp-security-analyst"
-  name        = "GCP Security Analyst"
-  description = "Triages CSPM findings and Security detection alerts across CPS-linked projects."
-  space_id    = var.space_id
-  labels      = ["gcp", "security", "cockpit"]
-  avatar_color = "#0B64DD"
-  avatar_symbol = "🛡️"
+  agent_id      = "gcp-security-analyst"
+  name          = "GCP Security Analyst"
+  description   = "Triages CSPM findings and Security detection alerts across CPS-linked projects."
+  space_id      = var.space_id
+  labels        = ["gcp", "security", "cockpit"]
+  avatar_color  = "#0B64DD"
+  avatar_symbol = "S"
 
   instructions = <<-EOT
     You are an Elastic Security analyst for a GCP observe-and-protect PoC.
@@ -227,7 +197,7 @@ resource "elasticstack_kibana_agentbuilder_agent" "obs_triage" {
   space_id      = var.space_id
   labels        = ["gcp", "observability", "cockpit"]
   avatar_color  = "#48EFCF"
-  avatar_symbol = "📡"
+  avatar_symbol = "O"
 
   instructions = <<-EOT
     You are an Elastic Observability triage assistant for GCP.

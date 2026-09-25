@@ -25,6 +25,22 @@ locals {
     index_pattern = ".alerts-observability.*,.alerts-default.*,*:.alerts-observability.*,*:.alerts-default.*"
     time_field    = "@timestamp"
   })
+
+  ml_anomalies_ds = jsonencode({
+    type          = "data_view_spec"
+    index_pattern = ".ml-anomalies-shared,*:ml-anomalies-shared"
+    time_field    = "@timestamp"
+  })
+
+  ml_jobs_markdown = length(var.ml_jobs) == 0 ? "| _(none provisioned)_ | — | — |" : join(
+    "\n",
+    [for j in var.ml_jobs : "| **${j.id}** | ${j.description} | ${j.state} |"]
+  )
+
+  ai_agents_markdown = length(var.ai_agents) == 0 ? "| _(none provisioned)_ | — | — |" : join(
+    "\n",
+    [for a in var.ai_agents : "| **${a.id}** | ${a.role} | ${a.state} |"]
+  )
 }
 
 resource "elasticstack_kibana_dashboard" "cockpit" {
@@ -57,302 +73,508 @@ resource "elasticstack_kibana_dashboard" "cockpit" {
     auto_apply_filters = true
   }
 
-  panels = []
-
-  sections = [
+  panels = [
+    # -------------------------------------------------------------------------
+    # Mission control
+    # -------------------------------------------------------------------------
     {
-      title     = "Mission control"
-      collapsed = false
-      grid      = { y = 0 }
-      panels = [
-        {
-          type = "markdown"
-          grid = { x = 0, y = 0, w = 48, h = 6 }
-          markdown_config = {
-            by_value = {
-              title = "GCP Observe & Protect"
-              content = <<-MD
-                ### Elastic cockpit
-                **${var.observability_project_name}** (Observability hub) · linked to **${var.security_project_name}** via Cross-Project Search
+      type = "markdown"
+      grid = { x = 0, y = 0, w = 48, h = 6 }
+      markdown_config = {
+        by_value = {
+          title = "GCP Observe & Protect"
+          content = <<-MD
+            ### Elastic cockpit
+            **${var.observability_project_name}** (Observability hub) · linked to **${var.security_project_name}** via Cross-Project Search
 
-                Aggregated posture only — not raw events. KPIs refresh every 60s.
-                <span style="color:#48EFCF">■</span> healthy signal &nbsp;
-                <span style="color:#FEC514">■</span> attention &nbsp;
-                <span style="color:#FF957D">■</span> security pressure
-              MD
-              settings = {
-                hide_title  = true
-                hide_border = true
-              }
-            }
-          }
-        },
-        {
-          type = "vis"
-          grid = { x = 0, y = 6, w = 12, h = 8 }
-          vis_config = {
-            by_value = {
-              metric_chart_config = {
-                title                 = "Security alerts (24h)"
-                description           = "Open / recent detection alerts from the Security project"
-                data_source_json      = local.alerts_security_ds
-                query                 = { expression = "" }
-                ignore_global_filters = false
-                metrics = [{
-                  config_json = jsonencode({
-                    type      = "primary"
-                    operation = "count"
-                    format    = { type = "number" }
-                  })
-                }]
-              }
-            }
-          }
-        },
-        {
-          type = "vis"
-          grid = { x = 12, y = 6, w = 12, h = 8 }
-          vis_config = {
-            by_value = {
-              metric_chart_config = {
-                title                 = "Observability alerts (24h)"
-                description           = "Threshold / log alerts in the Observability hub"
-                data_source_json      = local.alerts_obs_ds
-                query                 = { expression = "" }
-                ignore_global_filters = false
-                metrics = [{
-                  config_json = jsonencode({
-                    type      = "primary"
-                    operation = "count"
-                    format    = { type = "number" }
-                  })
-                }]
-              }
-            }
-          }
-        },
-        {
-          type = "vis"
-          grid = { x = 24, y = 6, w = 12, h = 8 }
-          vis_config = {
-            by_value = {
-              metric_chart_config = {
-                title                 = "Telemetry events (24h)"
-                description           = "Combined logs + metrics volume across linked projects"
-                data_source_json      = local.events_data_source
-                query                 = { expression = "" }
-                ignore_global_filters = false
-                metrics = [{
-                  config_json = jsonencode({
-                    type      = "primary"
-                    operation = "count"
-                    format    = { type = "compactNumber", decimals = 1 }
-                  })
-                }]
-              }
-            }
-          }
-        },
-        {
-          type = "vis"
-          grid = { x = 36, y = 6, w = 12, h = 8 }
-          vis_config = {
-            by_value = {
-              metric_chart_config = {
-                title                 = "CSPM findings (24h)"
-                description           = "Cloud security posture findings (GCP)"
-                data_source_json      = local.findings_data_source
-                query                 = { expression = "" }
-                ignore_global_filters = false
-                metrics = [{
-                  config_json = jsonencode({
-                    type      = "primary"
-                    operation = "count"
-                    format    = { type = "number" }
-                  })
-                }]
-              }
-            }
+            Security Fleet collects CSPM + audit/firewall. Observability Fleet collects metrics + network/LB logs. This view aggregates both.
+
+            <span style="color:#48EFCF">■</span> healthy signal &nbsp;
+            <span style="color:#FEC514">■</span> attention &nbsp;
+            <span style="color:#FF957D">■</span> security pressure
+          MD
+          settings = {
+            hide_title  = true
+            hide_border = true
           }
         }
-      ]
+      }
     },
     {
-      title     = "Data flow — what is delivering?"
-      collapsed = false
-      grid      = { y = 16 }
-      panels = [
-        {
-          type = "markdown"
-          grid = { x = 0, y = 0, w = 48, h = 3 }
-          markdown_config = {
-            by_value = {
-              title   = "Pipelines"
-              content = "Datasets with traffic in the selected window. Empty rows mean a configured integration is **not** shipping yet."
-              settings = {
-                hide_title  = true
-                hide_border = true
-              }
-            }
-          }
-        },
-        {
-          type = "esql"
-          grid = { x = 0, y = 3, w = 48, h = 14 }
-          esql_config = {
-            by_value = {
-              title = "Active data streams"
-              query = {
-                type  = "esql"
-                esql   = <<-ESQL
-                  FROM logs-*, metrics-*, *:logs-*, *:metrics-*
-                  | WHERE @timestamp > NOW() - 24 hours
-                  | STATS
-                      events = COUNT(*),
-                      last_seen = MAX(@timestamp),
-                      hosts = COUNT_DISTINCT(host.name)
-                    BY data_stream.type, data_stream.dataset
-                  | SORT events DESC
-                  | LIMIT 50
-                ESQL
-              }
-            }
+      type = "vis"
+      grid = { x = 0, y = 6, w = 12, h = 8 }
+      vis_config = {
+        by_value = {
+          metric_chart_config = {
+            title                 = "Security alerts (24h)"
+            description           = "Detection alerts from the Security project (CPS)"
+            data_source_json      = local.alerts_security_ds
+            query                 = { expression = "" }
+            ignore_global_filters = false
+            sampling              = 1
+            metrics = [{
+              config_json = jsonencode({
+                type      = "primary"
+                operation = "count"
+                format    = { type = "number" }
+              })
+            }]
           }
         }
-      ]
+      }
     },
     {
-      title     = "Detection intelligence — ML & AI agents"
-      collapsed = false
-      grid      = { y = 36 }
-      panels = [
-        {
-          type = "markdown"
-          grid = { x = 0, y = 0, w = 48, h = 3 }
-          markdown_config = {
-            by_value = {
-              title   = "Automation"
-              content = "Machine learning jobs and Agent Builder agents provisioned for this PoC. Status reflects the last 24h of results / runs when available."
-              settings = {
-                hide_title  = true
-                hide_border = true
-              }
-            }
+      type = "vis"
+      grid = { x = 12, y = 6, w = 12, h = 8 }
+      vis_config = {
+        by_value = {
+          metric_chart_config = {
+            title                 = "Observability alerts (24h)"
+            description           = "Threshold alerts in the Observability hub"
+            data_source_json      = local.alerts_obs_ds
+            query                 = { expression = "" }
+            ignore_global_filters = false
+            sampling              = 1
+            metrics = [{
+              config_json = jsonencode({
+                type      = "primary"
+                operation = "count"
+                format    = { type = "number" }
+              })
+            }]
           }
-        },
-        {
-          type = "esql"
-          grid = { x = 0, y = 3, w = 24, h = 12 }
-          esql_config = {
-            by_value = {
-              title = "ML jobs"
-              query = {
-                type = "esql"
-                esql = <<-ESQL
-                  FROM .ml-anomalies-shared, .ml-notifications-*, *:ml-anomalies-shared
-                  | WHERE @timestamp > NOW() - 24 hours
-                  | STATS
-                      records = COUNT(*),
-                      last_record = MAX(@timestamp)
-                    BY job_id
-                  | SORT records DESC
-                  | LIMIT 25
-                ESQL
-              }
-            }
+        }
+      }
+    },
+    {
+      type = "vis"
+      grid = { x = 24, y = 6, w = 12, h = 8 }
+      vis_config = {
+        by_value = {
+          metric_chart_config = {
+            title                 = "Telemetry events (24h)"
+            description           = "Combined logs + metrics across linked projects"
+            data_source_json      = local.events_data_source
+            query                 = { expression = "" }
+            ignore_global_filters = false
+            sampling              = 1
+            metrics = [{
+              config_json = jsonencode({
+                type      = "primary"
+                operation = "count"
+                format    = { type = "number" }
+              })
+            }]
           }
-        },
-        {
-          type = "esql"
-          grid = { x = 24, y = 3, w = 24, h = 12 }
-          esql_config = {
-            by_value = {
-              title = "AI agent activity"
-              query = {
-                type = "esql"
-                esql = <<-ESQL
-                  FROM logs-elastic_agent*, metrics-elastic_agent*, .kibana-event-log-*, *:.kibana-event-log-*
-                  | WHERE @timestamp > NOW() - 24 hours
-                  | WHERE event.action LIKE "*agent*" OR kibana.alert.rule.name LIKE "*agent*" OR message LIKE "*Agent Builder*"
-                  | STATS events = COUNT(*), last_seen = MAX(@timestamp) BY event.action, kibana.alert.rule.name
-                  | SORT events DESC
-                  | LIMIT 25
-                ESQL
-              }
-            }
+        }
+      }
+    },
+    {
+      type = "vis"
+      grid = { x = 36, y = 6, w = 12, h = 8 }
+      vis_config = {
+        by_value = {
+          metric_chart_config = {
+            title                 = "CSPM findings (24h)"
+            description           = "Cloud security posture findings (GCP)"
+            data_source_json      = local.findings_data_source
+            query                 = { expression = "" }
+            ignore_global_filters = false
+            sampling              = 1
+            metrics = [{
+              config_json = jsonencode({
+                type      = "primary"
+                operation = "count"
+                format    = { type = "number" }
+              })
+            }]
           }
-        },
-        {
-          type = "markdown"
-          grid = { x = 0, y = 15, w = 48, h = 5 }
-          markdown_config = {
-            by_value = {
-              title = "Provisioned AI agents"
-              content = <<-MD
-                | Agent | Role | Expected state |
-                | --- | --- | --- |
-                | **gcp-security-analyst** | Triage CSPM + detection alerts across CPS | Ready in Agent Builder |
-                | **gcp-obs-triage** | Explain telemetry gaps and alert bursts | Ready in Agent Builder |
+        }
+      }
+    },
 
-                Open **Agent Builder** in this Observability project to chat with them. ML jobs are listed above once anomaly records exist.
-              MD
-              settings = {
-                hide_border = false
-              }
-            }
+    # -------------------------------------------------------------------------
+    # Data flow
+    # -------------------------------------------------------------------------
+    {
+      type = "markdown"
+      grid = { x = 0, y = 14, w = 48, h = 3 }
+      markdown_config = {
+        by_value = {
+          title   = "Data flow"
+          content = "### Data flow — what is delivering?\nDatasets and hosts with traffic in the selected window. Empty charts mean a configured integration is **not** shipping yet."
+          settings = {
+            hide_title  = true
+            hide_border = true
           }
         }
-      ]
+      }
     },
     {
-      title     = "GCP inventory"
-      collapsed = false
-      grid      = { y = 60 }
-      panels = [
-        {
-          type = "markdown"
-          grid = { x = 0, y = 0, w = 48, h = 3 }
-          markdown_config = {
-            by_value = {
-              title   = "Inventory"
-              content = "Observed GCP resources from CSPM findings and cloud telemetry (aggregated, not raw document dump)."
-              settings = {
-                hide_title  = true
-                hide_border = true
-              }
+      type = "vis"
+      grid = { x = 0, y = 17, w = 24, h = 14 }
+      vis_config = {
+        by_value = {
+          xy_chart_config = {
+            title = "Active datasets (by volume)"
+            axis = {
+              y = { domain_json = jsonencode({ type = "fit" }) }
             }
-          }
-        },
-        {
-          type = "esql"
-          grid = { x = 0, y = 3, w = 48, h = 16 }
-          esql_config = {
-            by_value = {
-              title = "Observed GCP assets"
-              query = {
-                type = "esql"
-                esql = <<-ESQL
-                  FROM logs-cloud_security_posture.findings-*, *:logs-cloud_security_posture.findings-*, metrics-gcp.*, *:metrics-gcp.*
-                  | WHERE @timestamp > NOW() - 7 days
-                  | EVAL
-                      asset_id = COALESCE(resource.id, cloud.instance.id, host.id, agent.id),
-                      asset_name = COALESCE(resource.name, host.name, agent.name, cloud.instance.id),
-                      asset_type = COALESCE(resource.type, cloud.service.name, data_stream.dataset),
-                      provider = COALESCE(cloud.provider, "gcp")
-                  | WHERE asset_id IS NOT NULL
-                  | STATS
-                      signals = COUNT(*),
-                      last_seen = MAX(@timestamp),
-                      critical = COUNT(*) WHERE result.evaluation == "failed" OR kibana.alert.severity == "critical"
-                    BY provider, asset_type, asset_name, asset_id
-                  | SORT signals DESC
-                  | LIMIT 100
-                ESQL
-              }
+            decorations = {
+              minimum_bar_height = 1
+              show_value_labels  = false
             }
+            fitting = { type = "none" }
+            legend  = {}
+            query   = { expression = "" }
+            layers = [{
+              type = "bar_horizontal"
+              data_layer = {
+                data_source_json = local.events_data_source
+                x_json = jsonencode({
+                  operation = "terms"
+                  fields    = ["data_stream.dataset"]
+                  limit     = 15
+                  rank_by = {
+                    type         = "metric"
+                    metric_index = 0
+                    direction    = "desc"
+                  }
+                })
+                y = [{
+                  config_json = jsonencode({
+                    operation     = "count"
+                    empty_as_null = true
+                  })
+                }]
+              }
+            }]
           }
         }
-      ]
+      }
+    },
+    {
+      type = "vis"
+      grid = { x = 24, y = 17, w = 24, h = 14 }
+      vis_config = {
+        by_value = {
+          xy_chart_config = {
+            title = "Hosts / agents delivering"
+            axis = {
+              y = { domain_json = jsonencode({ type = "fit" }) }
+            }
+            decorations = {
+              minimum_bar_height = 1
+              show_value_labels  = false
+            }
+            fitting = { type = "none" }
+            legend  = {}
+            query   = { expression = "" }
+            layers = [{
+              type = "bar_horizontal"
+              data_layer = {
+                data_source_json = local.events_data_source
+                x_json = jsonencode({
+                  operation = "terms"
+                  fields    = ["host.name"]
+                  limit     = 15
+                  rank_by = {
+                    type         = "metric"
+                    metric_index = 0
+                    direction    = "desc"
+                  }
+                })
+                y = [{
+                  config_json = jsonencode({
+                    operation     = "count"
+                    empty_as_null = true
+                  })
+                }]
+              }
+            }]
+          }
+        }
+      }
+    },
+    {
+      type = "vis"
+      grid = { x = 0, y = 31, w = 48, h = 12 }
+      vis_config = {
+        by_value = {
+          xy_chart_config = {
+            title = "Telemetry volume over time"
+            axis = {
+              y = {
+                domain_json = jsonencode({ type = "fit" })
+                title       = { value = "Events", visible = true }
+              }
+              x = {
+                title = { value = "@timestamp", visible = true }
+              }
+            }
+            decorations = {}
+            fitting     = { type = "none" }
+            legend      = {}
+            query       = { expression = "" }
+            layers = [{
+              type = "line"
+              data_layer = {
+                data_source_json = local.events_data_source
+                x_json = jsonencode({
+                  operation               = "date_histogram"
+                  field                   = "@timestamp"
+                  suggested_interval      = "auto"
+                  use_original_time_range = false
+                  include_empty_rows      = true
+                  drop_partial_intervals  = false
+                })
+                y = [{
+                  config_json = jsonencode({
+                    operation     = "count"
+                    empty_as_null = true
+                  })
+                }]
+              }
+            }]
+          }
+        }
+      }
+    },
+
+    # -------------------------------------------------------------------------
+    # ML & AI agents
+    # -------------------------------------------------------------------------
+    {
+      type = "markdown"
+      grid = { x = 0, y = 43, w = 48, h = 3 }
+      markdown_config = {
+        by_value = {
+          title   = "Detection intelligence"
+          content = "### Detection intelligence — ML & AI agents\nProvisioned automation for this PoC. Live anomaly volume appears when ML jobs have produced records."
+          settings = {
+            hide_title  = true
+            hide_border = true
+          }
+        }
+      }
+    },
+    {
+      type = "markdown"
+      grid = { x = 0, y = 46, w = 24, h = 10 }
+      markdown_config = {
+        by_value = {
+          title = "ML jobs (provisioned)"
+          content = <<-MD
+            | Job | Purpose | State |
+            | --- | --- | --- |
+            ${local.ml_jobs_markdown}
+          MD
+          settings = {
+            hide_border = false
+          }
+        }
+      }
+    },
+    {
+      type = "markdown"
+      grid = { x = 24, y = 46, w = 24, h = 10 }
+      markdown_config = {
+        by_value = {
+          title = "AI agents (provisioned)"
+          content = <<-MD
+            | Agent | Role | State |
+            | --- | --- | --- |
+            ${local.ai_agents_markdown}
+
+            Open **Agent Builder** in this Observability project to chat with them.
+          MD
+          settings = {
+            hide_border = false
+          }
+        }
+      }
+    },
+    {
+      type = "vis"
+      grid = { x = 0, y = 56, w = 48, h = 12 }
+      vis_config = {
+        by_value = {
+          xy_chart_config = {
+            title = "ML anomaly records by job"
+            axis = {
+              y = { domain_json = jsonencode({ type = "fit" }) }
+            }
+            decorations = {
+              minimum_bar_height = 1
+              show_value_labels  = true
+            }
+            fitting = { type = "none" }
+            legend  = {}
+            query   = { expression = "" }
+            layers = [{
+              type = "bar_horizontal"
+              data_layer = {
+                data_source_json = local.ml_anomalies_ds
+                x_json = jsonencode({
+                  operation = "terms"
+                  fields    = ["job_id"]
+                  limit     = 15
+                  rank_by = {
+                    type         = "metric"
+                    metric_index = 0
+                    direction    = "desc"
+                  }
+                })
+                y = [{
+                  config_json = jsonencode({
+                    operation     = "count"
+                    empty_as_null = true
+                  })
+                }]
+              }
+            }]
+          }
+        }
+      }
+    },
+
+    # -------------------------------------------------------------------------
+    # GCP inventory
+    # -------------------------------------------------------------------------
+    {
+      type = "markdown"
+      grid = { x = 0, y = 68, w = 48, h = 3 }
+      markdown_config = {
+        by_value = {
+          title   = "GCP inventory"
+          content = "### GCP inventory\nObserved GCP resources from CSPM findings (aggregated counts — not raw documents)."
+          settings = {
+            hide_title  = true
+            hide_border = true
+          }
+        }
+      }
+    },
+    {
+      type = "vis"
+      grid = { x = 0, y = 71, w = 16, h = 14 }
+      vis_config = {
+        by_value = {
+          xy_chart_config = {
+            title = "Assets by type"
+            axis = {
+              y = { domain_json = jsonencode({ type = "fit" }) }
+            }
+            decorations = {
+              minimum_bar_height = 1
+              show_value_labels  = false
+            }
+            fitting = { type = "none" }
+            legend  = {}
+            query   = { expression = "" }
+            layers = [{
+              type = "bar_horizontal"
+              data_layer = {
+                data_source_json = local.findings_data_source
+                x_json = jsonencode({
+                  operation = "terms"
+                  fields    = ["resource.type"]
+                  limit     = 15
+                  rank_by = {
+                    type         = "metric"
+                    metric_index = 0
+                    direction    = "desc"
+                  }
+                })
+                y = [{
+                  config_json = jsonencode({
+                    operation     = "count"
+                    empty_as_null = true
+                  })
+                }]
+              }
+            }]
+          }
+        }
+      }
+    },
+    {
+      type = "vis"
+      grid = { x = 16, y = 71, w = 16, h = 14 }
+      vis_config = {
+        by_value = {
+          xy_chart_config = {
+            title = "Top assets by name"
+            axis = {
+              y = { domain_json = jsonencode({ type = "fit" }) }
+            }
+            decorations = {
+              minimum_bar_height = 1
+              show_value_labels  = false
+            }
+            fitting = { type = "none" }
+            legend  = {}
+            query   = { expression = "" }
+            layers = [{
+              type = "bar_horizontal"
+              data_layer = {
+                data_source_json = local.findings_data_source
+                x_json = jsonencode({
+                  operation = "terms"
+                  fields    = ["resource.name"]
+                  limit     = 15
+                  rank_by = {
+                    type         = "metric"
+                    metric_index = 0
+                    direction    = "desc"
+                  }
+                })
+                y = [{
+                  config_json = jsonencode({
+                    operation     = "count"
+                    empty_as_null = true
+                  })
+                }]
+              }
+            }]
+          }
+        }
+      }
+    },
+    {
+      type = "vis"
+      grid = { x = 32, y = 71, w = 16, h = 14 }
+      vis_config = {
+        by_value = {
+          pie_chart_config = {
+            title                 = "Findings by evaluation"
+            donut_hole            = "s"
+            label_position        = "outside"
+            data_source_json      = local.findings_data_source
+            ignore_global_filters = false
+            sampling              = 1
+            query                 = { expression = "" }
+            metrics = [{
+              config_json = jsonencode({
+                operation = "count"
+                format    = { type = "number" }
+              })
+            }]
+            group_by = [{
+              config_json = jsonencode({
+                operation = "terms"
+                fields    = ["result.evaluation"]
+                limit     = 10
+                rank_by = {
+                  type         = "metric"
+                  metric_index = 0
+                  direction    = "desc"
+                }
+              })
+            }]
+          }
+        }
+      }
     }
   ]
 

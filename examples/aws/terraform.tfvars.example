@@ -12,11 +12,24 @@ enable_trusted_advisor   = true
 enable_billing_metrics   = true
 enable_detection_rules   = true
 enable_elastic_agent     = true
+enable_sqs               = true
 
-# Required: company policy tags (applied to every taggable AWS resource)
+# Required: Elastic org tags (same keys as GCP company_labels).
+# Org SCPs deny create for taggable services (SQS, etc.) when these are missing.
 company_tags = {
-  CostCenter  = "platform"
-  Owner       = "sre-team"
-  Environment = "poc"
-  # KeepUntil = "2026-10-01"
+  division    = "field"
+  org         = "sa"
+  keep-until  = "2026-10-01"
+  team        = "emea_central_area"
+  project     = "felixroessel"
+  environment = "poc"
 }
+
+required_tag_keys = [
+  "division",
+  "org",
+  "keep-until",
+  "team",
+  "project",
+  "environment",
+]

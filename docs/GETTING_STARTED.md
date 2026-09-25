@@ -50,16 +50,28 @@ Open the `kibana_url` output. CSPM findings, integration dashboards, and Securit
 ### Company tagging
 
 ```hcl
-# examples/gcp
+# examples/gcp — company_labels
 company_labels = {
-  cost-center = "platform"
-  owner       = "sre-team"
+  division    = "field"
+  org         = "sa"
+  keep-until  = "2026-10-01"
+  team        = "emea_central_area"
+  project     = "felixroessel"
   environment = "poc"
 }
-required_label_keys = ["cost-center", "owner", "environment"]  # optional guardrail
+
+# examples/aws — company_tags (same keys; required by org SCP for SQS etc.)
+company_tags = {
+  division    = "field"
+  org         = "sa"
+  keep-until  = "2026-10-01"
+  team        = "emea_central_area"
+  project     = "felixroessel"
+  environment = "poc"
+}
 ```
 
-Labels are normalized for GCP / Elastic Cloud metadata rules and applied to Pub/Sub topics, subscriptions, and (sanitized) to the Elastic project.
+Labels/tags are applied to all taggable cloud resources. On AWS, missing org tags cause SCP denies (e.g. `sqs:CreateQueue`).
 
 ## Enrolling an agent
 

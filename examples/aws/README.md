@@ -23,6 +23,30 @@ Mirrors the GCP dual-project pattern for AWS:
 
 Two EC2 Elastic Agents enroll into the Security and Observability Fleet policies. Agents use an **IAM instance profile** (IMDS) — no static AWS access keys in Fleet policies. Agentless CSPM/CNVM still assume the collector role with external id.
 
+## Company tags (required)
+
+Every taggable AWS resource gets your policy tags via `company_tags`, and the AWS provider also sets them as `default_tags`. Use the **same keys as GCP `company_labels`** — Elastic org SCPs deny creates (notably `sqs:CreateQueue`) when required tags are missing.
+
+```hcl
+company_tags = {
+  division    = "field"
+  org         = "sa"
+  keep-until  = "2026-10-01"
+  team        = "emea_central_area"
+  project     = "felixroessel"
+  environment = "poc"
+}
+
+required_tag_keys = [
+  "division",
+  "org",
+  "keep-until",
+  "team",
+  "project",
+  "environment",
+]
+```
+
 ## AWS console home → Elastic mapping
 
 | Console widget | Elastic dataset(s) |

@@ -114,4 +114,4 @@ terraform apply
 | Security Fleet / CSPM | `kibana_url` — agent `${name_prefix}-agent` |
 | Observability Fleet | `observability_kibana_url` — agent `${name_prefix}-obs-agent` |
 | AI agents | Observability → Agent Builder (`aws-security-analyst`, `aws-obs-triage`) |
-| Kibana Workflows | YAML in `examples/aws/workflows/` |
+| Kibana Workflows | `examples/aws/workflows/*.yaml` → `aws-cockpit-recommendations` (EC2, S3) |

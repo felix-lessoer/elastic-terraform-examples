@@ -115,6 +115,13 @@ resource "elasticstack_elasticsearch_ml_datafeed" "gcp_event_rate" {
   job_id      = elasticstack_elasticsearch_ml_anomaly_detection_job.gcp_event_rate[0].job_id
   indices     = ["logs-*", "metrics-*"]
 
+  # Greenfield projects have no logs/metrics until agents enroll; allow empty start.
+  indices_options = {
+    allow_no_indices   = true
+    ignore_unavailable = true
+    expand_wildcards   = ["open"]
+  }
+
   query = jsonencode({
     bool = {
       filter = [

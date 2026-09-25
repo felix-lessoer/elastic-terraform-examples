@@ -25,7 +25,7 @@ Two EC2 Elastic Agents enroll into the Security and Observability Fleet policies
 
 ## Company tags (required)
 
-Every taggable AWS resource gets your policy tags via `company_tags`, and the AWS provider also sets them as `default_tags`. Use the **same keys as GCP `company_labels`** — Elastic org SCPs deny creates (notably `sqs:CreateQueue`) when required tags are missing.
+Every taggable AWS resource gets your policy tags via `company_tags`, and the AWS provider also sets them as `default_tags`. Use the **same keys as GCP `company_labels`** — Elastic org SCPs deny creates (notably `sqs:CreateQueue`) when required tags are missing. Do not add a differently-cased `Project` tag: EC2 tag policy requires lowercase `project`, and a `Project` sibling triggers `TagPolicyViolation`.
 
 ```hcl
 company_tags = {

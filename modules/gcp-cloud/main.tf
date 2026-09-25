@@ -80,6 +80,19 @@ resource "google_project_iam_member" "pubsub_subscriber" {
   member  = "serviceAccount:${google_service_account.elastic.email}"
 }
 
+# Extra read roles commonly required for agentless GCP CSPM (CIS) asset inventory.
+resource "google_project_iam_member" "cloudasset_viewer" {
+  project = var.project_id
+  role    = "roles/cloudasset.viewer"
+  member  = "serviceAccount:${google_service_account.elastic.email}"
+}
+
+resource "google_project_iam_member" "iam_security_reviewer" {
+  project = var.project_id
+  role    = "roles/iam.securityReviewer"
+  member  = "serviceAccount:${google_service_account.elastic.email}"
+}
+
 resource "google_service_account_key" "elastic" {
   service_account_id = google_service_account.elastic.name
 }

@@ -117,8 +117,10 @@ variable "detection_rule_tags" {
     key   = string
     value = string
   }))
+  # Prebuilt GCP rules use "Data Source: Google Cloud Platform" / "Data Source: GCP"
+  # (not "Google Cloud"). Wrong value installs rules but enables none of them.
   default = [
-    { key = "Data Source", value = "Google Cloud" }
+    { key = "Data Source", value = "Google Cloud Platform" }
   ]
 }
 

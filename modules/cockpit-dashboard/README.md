@@ -4,13 +4,17 @@ Manages the **GCP Observe & Protect Cockpit** dashboard by importing a pinned
 Kibana NDJSON export (`cockpit.ndjson`). This freezes the live Kibana layout
 (KPIs, data-flow charts, ML/AI inventory, GCP inventory) as Terraform source of truth.
 
+Panels must use Kibana-native types (`lens` / `markdown`). Metric and chart
+panels are `type: lens` (not `vis`) so Saved Objects import restores a working
+dashboard after greenfield applies.
+
 ## Refresh after editing in Kibana
 
 ```bash
-# Export (exclude export details footer)
+# Export the dashboard you want pinned (exclude export details footer)
 curl -u admin:"$OBS_PASSWORD" -H 'kbn-xsrf: true' -H 'content-type: application/json' \
   -X POST "$OBS_KIBANA/api/saved_objects/_export" \
-  -d '{"objects":[{"type":"dashboard","id":"c51727b1-226a-4955-9cb2-fcd59f950d55"}],"includeReferencesDeep":false,"excludeExportDetails":true}' \
+  -d '{"objects":[{"type":"dashboard","id":"c51727b1-226a-4955-9cb2-fcd59f950d55"}],"includeReferencesDeep":true,"excludeExportDetails":true}' \
   -o modules/cockpit-dashboard/cockpit.ndjson
 
 terraform apply -target=module.cockpit

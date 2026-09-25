@@ -129,6 +129,81 @@ locals {
     }
   }
 
+  # Metrics templates the GCP package enables by default unless declared.
+  gcp_extra_metrics_disabled = {
+    "firestore-gcp/metrics" = {
+      enabled = false
+      streams = {
+        "gcp.firestore" = {
+          enabled = false
+          vars    = jsonencode({ period = "10m", tags = ["gcp-firestore"] })
+        }
+      }
+    }
+    "gke-gcp/metrics" = {
+      enabled = false
+      streams = {
+        "gcp.gke" = {
+          enabled = false
+          vars    = jsonencode({ period = "10m", tags = ["gcp-gke"] })
+        }
+      }
+    }
+    "dataproc-gcp/metrics" = {
+      enabled = false
+      streams = {
+        "gcp.dataproc" = {
+          enabled = false
+          vars    = jsonencode({ period = "10m", tags = ["gcp-dataproc"] })
+        }
+      }
+    }
+    "pubsub-gcp/metrics" = {
+      enabled = false
+      streams = {
+        "gcp.pubsub" = {
+          enabled = false
+          vars    = jsonencode({ period = "5m", tags = ["gcp-pubsub"] })
+        }
+      }
+    }
+    "redis-gcp/metrics" = {
+      enabled = false
+      streams = {
+        "gcp.redis" = {
+          enabled = false
+          vars    = jsonencode({ period = "10m", tags = ["gcp-redis"] })
+        }
+      }
+    }
+    "cloudrun-gcp/metrics" = {
+      enabled = false
+      streams = {
+        "gcp.cloudrun_metrics" = {
+          enabled = false
+          vars    = jsonencode({ period = "10m", tags = ["gcp-cloudrun"] })
+        }
+      }
+    }
+    "cloudsql-gcp/metrics" = {
+      enabled = false
+      streams = {
+        "gcp.cloudsql_mysql" = {
+          enabled = false
+          vars    = jsonencode({ period = "10m", tags = ["gcp-cloudsql-mysql"] })
+        }
+        "gcp.cloudsql_postgresql" = {
+          enabled = false
+          vars    = jsonencode({ period = "10m", tags = ["gcp-cloudsql-postgresql"] })
+        }
+        "gcp.cloudsql_sqlserver" = {
+          enabled = false
+          vars    = jsonencode({ period = "10m", tags = ["gcp-cloudsql-sqlserver"] })
+        }
+      }
+    }
+  }
+
   # Security Fleet: CSPM (agentless) + security-relevant GCP logs (audit, firewall).
   security_integrations = concat(
     var.enable_cspm ? [
@@ -178,7 +253,7 @@ locals {
         })
         var_group_selections = {}
         cloud_connector      = null
-        inputs = {
+        inputs = merge({
           "audit-gcp-pubsub" = {
             enabled = true
             streams = {
@@ -273,7 +348,7 @@ locals {
               }
             }
           }
-        }
+        }, local.gcp_extra_metrics_disabled)
       }
     ]
   )

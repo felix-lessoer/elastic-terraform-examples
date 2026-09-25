@@ -64,15 +64,6 @@ resource "elasticstack_kibana_dashboard" "cockpit" {
     text     = ""
   }
 
-  options = {
-    hide_panel_titles  = false
-    hide_panel_borders = false
-    sync_colors        = true
-    sync_cursor        = true
-    sync_tooltips      = true
-    auto_apply_filters = true
-  }
-
   panels = [
     # -------------------------------------------------------------------------
     # Mission control
@@ -245,6 +236,8 @@ resource "elasticstack_kibana_dashboard" "cockpit" {
                   config_json = jsonencode({
                     operation     = "count"
                     empty_as_null = true
+                    axis          = "y"
+                    color         = { type = "auto" }
                   })
                 }]
               }
@@ -288,6 +281,8 @@ resource "elasticstack_kibana_dashboard" "cockpit" {
                   config_json = jsonencode({
                     operation     = "count"
                     empty_as_null = true
+                    axis          = "y"
+                    color         = { type = "auto" }
                   })
                 }]
               }
@@ -332,6 +327,8 @@ resource "elasticstack_kibana_dashboard" "cockpit" {
                   config_json = jsonencode({
                     operation     = "count"
                     empty_as_null = true
+                    axis          = "y"
+                    color         = { type = "auto" }
                   })
                 }]
               }
@@ -429,6 +426,8 @@ resource "elasticstack_kibana_dashboard" "cockpit" {
                   config_json = jsonencode({
                     operation     = "count"
                     empty_as_null = true
+                    axis          = "y"
+                    color         = { type = "auto" }
                   })
                 }]
               }
@@ -490,6 +489,8 @@ resource "elasticstack_kibana_dashboard" "cockpit" {
                   config_json = jsonencode({
                     operation     = "count"
                     empty_as_null = true
+                    axis          = "y"
+                    color         = { type = "auto" }
                   })
                 }]
               }
@@ -533,6 +534,8 @@ resource "elasticstack_kibana_dashboard" "cockpit" {
                   config_json = jsonencode({
                     operation     = "count"
                     empty_as_null = true
+                    axis          = "y"
+                    color         = { type = "auto" }
                   })
                 }]
               }
@@ -546,31 +549,41 @@ resource "elasticstack_kibana_dashboard" "cockpit" {
       grid = { x = 32, y = 71, w = 16, h = 14 }
       vis_config = {
         by_value = {
-          pie_chart_config = {
-            title                 = "Findings by evaluation"
-            donut_hole            = "s"
-            label_position        = "outside"
-            data_source_json      = local.findings_data_source
-            ignore_global_filters = false
-            sampling              = 1
-            query                 = { expression = "" }
-            metrics = [{
-              config_json = jsonencode({
-                operation = "count"
-                format    = { type = "number" }
-              })
-            }]
-            group_by = [{
-              config_json = jsonencode({
-                operation = "terms"
-                fields    = ["result.evaluation"]
-                limit     = 10
-                rank_by = {
-                  type         = "metric"
-                  metric_index = 0
-                  direction    = "desc"
-                }
-              })
+          xy_chart_config = {
+            title = "Findings by evaluation"
+            axis = {
+              y = { domain_json = jsonencode({ type = "fit" }) }
+            }
+            decorations = {
+              minimum_bar_height = 1
+              show_value_labels  = true
+            }
+            fitting = { type = "none" }
+            legend  = {}
+            query   = { expression = "" }
+            layers = [{
+              type = "bar_horizontal"
+              data_layer = {
+                data_source_json = local.findings_data_source
+                x_json = jsonencode({
+                  operation = "terms"
+                  fields    = ["result.evaluation"]
+                  limit     = 10
+                  rank_by = {
+                    type         = "metric"
+                    metric_index = 0
+                    direction    = "desc"
+                  }
+                })
+                y = [{
+                  config_json = jsonencode({
+                    operation     = "count"
+                    empty_as_null = true
+                    axis          = "y"
+                    color         = { type = "auto" }
+                  })
+                }]
+              }
             }]
           }
         }
@@ -582,5 +595,11 @@ resource "elasticstack_kibana_dashboard" "cockpit" {
     endpoints = [local.kibana_url]
     username  = var.elasticsearch_username
     password  = var.elasticsearch_password
+  }
+
+  lifecycle {
+    # Provider always returns options.use_margins=true; setting/clearing options
+    # causes create/update to fail with inconsistent result (elasticstack 0.16.5).
+    ignore_changes = [options]
   }
 }

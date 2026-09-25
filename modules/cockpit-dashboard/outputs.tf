@@ -1,11 +1,19 @@
 output "dashboard_id" {
-  value = elasticstack_kibana_dashboard.cockpit.dashboard_id
+  value = local.dashboard_id
 }
 
 output "title" {
-  value = elasticstack_kibana_dashboard.cockpit.title
+  value = var.title
 }
 
 output "dashboard_url" {
-  value = "${trimsuffix(var.kibana_endpoint, "/")}/app/dashboards#/view/${elasticstack_kibana_dashboard.cockpit.dashboard_id}"
+  value = "${local.kibana_url}/app/dashboards#/view/${local.dashboard_id}"
+}
+
+output "import_success" {
+  value = elasticstack_kibana_import_saved_objects.cockpit.success
+}
+
+output "import_success_count" {
+  value = elasticstack_kibana_import_saved_objects.cockpit.success_count
 }

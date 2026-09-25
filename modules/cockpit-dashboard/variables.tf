@@ -11,6 +11,25 @@ variable "elasticsearch_password" {
   sensitive = true
 }
 
+variable "space_id" {
+  type    = string
+  default = "default"
+}
+
+# Kept for callers that still pass display names / inventory; the pinned
+# NDJSON already embeds the values from the saved Kibana dashboard.
+variable "security_project_name" {
+  type        = string
+  description = "Unused — retained for backward-compatible module inputs."
+  default     = ""
+}
+
+variable "observability_project_name" {
+  type        = string
+  description = "Unused — retained for backward-compatible module inputs."
+  default     = ""
+}
+
 variable "title" {
   type    = string
   default = "GCP Observe & Protect Cockpit"
@@ -21,28 +40,13 @@ variable "description" {
   default = "Aggregated security + observability posture across linked Elastic serverless projects."
 }
 
-variable "space_id" {
-  type    = string
-  default = "default"
-}
-
-variable "security_project_name" {
-  type        = string
-  description = "Display name of the linked Security project (for cockpit copy)."
-}
-
-variable "observability_project_name" {
-  type        = string
-  description = "Display name of the Observability hub project."
-}
-
 variable "ml_jobs" {
   type = list(object({
     id          = string
     description = string
     state       = string
   }))
-  description = "Provisioned ML jobs to list in the cockpit inventory."
+  description = "Unused — ML inventory is frozen in cockpit.ndjson."
   default     = []
 }
 
@@ -52,6 +56,6 @@ variable "ai_agents" {
     role  = string
     state = string
   }))
-  description = "Provisioned Agent Builder agents to list in the cockpit inventory."
+  description = "Unused — AI agent inventory is frozen in cockpit.ndjson."
   default     = []
 }

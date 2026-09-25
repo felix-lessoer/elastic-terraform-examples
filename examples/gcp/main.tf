@@ -100,13 +100,15 @@ module "cockpit" {
   elasticsearch_password     = module.observability[0].password
   security_project_name      = module.elastic.name
   observability_project_name = module.observability[0].name
+  title                      = "GCP Observe & Protect Cockpit - updated"
+  dashboard_id               = "fcf1246c-6ee2-4c91-94f8-f034e8d345bc"
   ml_jobs                    = try(module.observability_seed[0].ml_jobs, [])
   ai_agents                  = try(module.observability_seed[0].ai_agents, [])
 
   depends_on = [module.observability, module.observability_seed]
 }
 
-# Kibana Workflows pinned from examples/gcp/workflows/*.yaml (export from live Kibana).
+# Kibana Workflows pinned from examples/gcp/workflows/*.yaml (recommendation generators).
 module "workflows_obs" {
   count  = var.enable_workflows && length(module.observability) > 0 ? 1 : 0
   source = "../../modules/kibana-workflows"

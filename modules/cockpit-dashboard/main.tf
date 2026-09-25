@@ -5,8 +5,7 @@ locals {
 }
 
 # Source of truth: NDJSON export of the live Kibana cockpit dashboard.
-# Chart panels must be type "lens" (not "vis") so Saved Objects import
-# restores a working dashboard on greenfield applies.
+# Chart panels use type "vis" with embedded Lens attributes (ES|QL textBased).
 # To refresh after UI edits:
 #   1. Export from Kibana Saved Objects, or POST /api/saved_objects/_export
 #      with objects=[{type:dashboard,id:<id>}], includeReferencesDeep=true,

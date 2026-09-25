@@ -107,8 +107,8 @@ module "cockpit" {
   elasticsearch_password     = module.observability[0].password
   security_project_name      = module.elastic.name
   observability_project_name = module.observability[0].name
-  title                      = "AWS Observe & Protect Cockpit"
-  dashboard_id               = "a1b2c3d4-e5f6-4789-a012-3456789abcde"
+  title                      = "AWS Observe & Protect Cockpit updated"
+  dashboard_id               = "752a1ac0-26e4-49d8-a2b4-5483068809b9"
   ndjson_path                = "${path.module}/../../modules/cockpit-dashboard/cockpit-aws.ndjson"
   ml_jobs                    = try(module.observability_seed[0].ml_jobs, [])
   ai_agents                  = try(module.observability_seed[0].ai_agents, [])

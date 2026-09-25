@@ -4,10 +4,10 @@ Creates:
 
 1. **Elastic Security** serverless project (Complete) — Fleet agent for security data (audit/firewall), agentless CSPM, detection rules
 2. **Elastic Observability** serverless project (Complete) — Fleet agent for observability data (metrics, vpcflow/dns/lb), linked to Security via **Cross-Project Search**
-3. **Cockpit dashboard** on Observability — pinned Kibana NDJSON (`modules/cockpit-dashboard/cockpit.ndjson`) with aggregated alerts, data-flow, ML/AI inventory, and GCP inventory via CPS
-4. **Kibana Workflows** — YAML under `examples/gcp/workflows/` deployed via `elasticstack_kibana_agentbuilder_workflow` and executed once on apply
-4. GCP Pub/Sub topics + logging sinks, collector SA, company-policy labels
-5. Two GCE Elastic Agents — one enrolled to Security Fleet, one to Observability Fleet
+3. **Cockpit dashboard** on Observability — pinned Kibana NDJSON (`modules/cockpit-dashboard/cockpit.ndjson`, id `fcf1246c-…`) with aggregated alerts, data-flow, ML/AI inventory, GCP inventory via CPS, and `gcp-cockpit-recommendations`
+4. **Kibana Workflows** — recommendation generators under `examples/gcp/workflows/` (Cloud Run / Cloud SQL / GKE / Host) deployed via `elasticstack_kibana_agentbuilder_workflow` and executed once on apply
+5. GCP Pub/Sub topics + logging sinks, collector SA, company-policy labels
+6. Two GCE Elastic Agents — one enrolled to Security Fleet, one to Observability Fleet
 
 ## Data split
 
@@ -50,8 +50,8 @@ terraform apply
 
 | Surface | Where |
 | --- | --- |
-| Cockpit dashboard | `observability_kibana_url` → Dashboards → **GCP Observe & Protect Cockpit** (or `cockpit_dashboard_url`) |
-| Kibana Workflows | YAML in `examples/gcp/workflows/` — export with `../../scripts/export-kibana-workflows.sh`, then `terraform apply` |
+| Cockpit dashboard | `observability_kibana_url` → Dashboards → **GCP Observe & Protect Cockpit - updated** (or `cockpit_dashboard_url`) |
+| Kibana Workflows | `examples/gcp/workflows/*.yaml` → `gcp-cockpit-recommendations` (Cloud Run, Cloud SQL, GKE, Host) |
 | Security Fleet / CSPM | `kibana_url` — agent `elastic-poc-agent` |
 | Observability Fleet | `observability_kibana_url` — agent `elastic-poc-obs-agent` |
 | AI agents | Observability → Agent Builder (`gcp-security-analyst`, `gcp-obs-triage`) |

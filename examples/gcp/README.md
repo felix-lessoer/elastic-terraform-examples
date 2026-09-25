@@ -51,6 +51,7 @@ terraform apply
 | Surface | Where |
 | --- | --- |
 | Cockpit dashboard | `observability_kibana_url` → Dashboards → **GCP Observe & Protect Cockpit** (or `cockpit_dashboard_url`) |
+| Kibana Workflows | YAML in `examples/gcp/workflows/` — export with `../../scripts/export-kibana-workflows.sh`, then `terraform apply` |
 | Security Fleet / CSPM | `kibana_url` — agent `elastic-poc-agent` |
 | Observability Fleet | `observability_kibana_url` — agent `elastic-poc-obs-agent` |
 | AI agents | Observability → Agent Builder (`gcp-security-analyst`, `gcp-obs-triage`) |

@@ -95,3 +95,31 @@ variable "detection_rule_tags" {
     { key = "Data Source", value = "Google Cloud" }
   ]
 }
+
+variable "enable_elastic_agent" {
+  type        = bool
+  description = "Deploy a GCE VM with Elastic Agent enrolled into the Fleet policy (required for Pub/Sub/metrics collection)."
+  default     = true
+}
+
+variable "elastic_agent_zone" {
+  type        = string
+  description = "GCE zone for the Elastic Agent VM. Empty picks {google_cloud_region}-b."
+  default     = ""
+}
+
+variable "elastic_agent_machine_type" {
+  type    = string
+  default = "e2-standard-2"
+}
+
+variable "elastic_agent_version" {
+  type        = string
+  description = "Elastic Agent version installed on the GCE VM."
+  default     = "9.5.4"
+}
+
+variable "elastic_agent_network" {
+  type    = string
+  default = "default"
+}

@@ -239,3 +239,20 @@ module "stack" {
 
   depends_on = [module.elastic, module.gcp_cloud]
 }
+
+module "elastic_agent" {
+  count  = var.enable_elastic_agent ? 1 : 0
+  source = "../../modules/elastic-agent-gce"
+
+  project_id      = var.google_cloud_project
+  name            = "${var.name_prefix}-agent"
+  zone            = var.elastic_agent_zone != "" ? var.elastic_agent_zone : "${var.google_cloud_region}-b"
+  machine_type    = var.elastic_agent_machine_type
+  network         = var.elastic_agent_network
+  company_labels  = module.gcp_cloud.applied_labels
+  fleet_url       = module.elastic.fleet_endpoint
+  enrollment_token = module.stack.enrollment_token
+  agent_version   = var.elastic_agent_version
+
+  depends_on = [module.stack]
+}

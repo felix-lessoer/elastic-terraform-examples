@@ -8,6 +8,31 @@ locals {
       product_tier = var.product_tier
     }
   ]
+
+  # Elastic Cloud region ids look like gcp-europe-west3 / aws-eu-west-1 / azure-westeurope.
+  cloud_provider = (
+    substr(var.region, 0, 4) == "aws-" ? "aws" :
+    substr(var.region, 0, 6) == "azure-" ? "azure" :
+    "gcp"
+  )
+  cloud_region = (
+    local.cloud_provider == "aws" ? trimprefix(var.region, "aws-") :
+    local.cloud_provider == "azure" ? trimprefix(var.region, "azure-") :
+    trimprefix(var.region, "gcp-")
+  )
+
+  serverless_fleet_url = local.is_serverless ? format(
+    "https://%s.fleet.%s.%s.elastic.cloud:443",
+    ec_security_project.this[0].id,
+    local.cloud_region,
+    local.cloud_provider
+  ) : null
+
+  hosted_fleet_url = local.is_hosted ? replace(
+    ec_deployment.this[0].integrations_server.https_endpoint,
+    "apm",
+    "fleet"
+  ) : null
 }
 
 # -----------------------------------------------------------------------------

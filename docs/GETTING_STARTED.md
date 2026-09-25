@@ -61,22 +61,26 @@ required_label_keys = ["cost-center", "owner", "environment"]  # optional guardr
 
 Labels are normalized for GCP / Elastic Cloud metadata rules and applied to Pub/Sub topics, subscriptions, and (sanitized) to the Elastic project.
 
-## Enrolling an agent (optional)
+## Enrolling an agent
 
-Agentless CSPM and many metrics work without a host agent. For S3/SQS log inputs (CloudTrail, etc.) and Event Hub / Pub/Sub log inputs, enroll Elastic Agent into the created Fleet policy using the `enrollment_token` and `kibana_url` outputs:
+- **GCP (`examples/gcp`)**: by default Terraform deploys a GCE VM (`enable_elastic_agent = true`) that enrolls into the Fleet policy automatically.
+- **AWS / Azure / multicloud**: Agentless CSPM works without a host agent. For S3/SQS, Event Hub, or Pub/Sub log inputs, enroll Elastic Agent into the created Fleet policy:
 
 ```bash
 sudo elastic-agent install \
-  --url=<fleet-or-kibana-url> \
-  --enrollment-token=<enrollment_token>
+  --url=<fleet_url> \
+  --enrollment-token=<enrollment_token> \
+  --force --non-interactive
 ```
 
+Use the `fleet_url` / `enrollment_token` outputs from the example.
 ## Modules
 
 | Module | Role |
 |---|---|
 | `modules/elastic-project` | `ec_security_project` or `ec_deployment` |
 | `modules/elastic-stack` | Fleet policies, integrations, managed/agentless, detection rules |
+| `modules/elastic-agent-gce` | GCE VM that installs and enrolls Elastic Agent |
 | `modules/aws-cloud` | S3, SQS, CloudTrail, VPC flow logs, collector IAM role |
 | `modules/azure-cloud` | Event Hub, diagnostics, app registration |
 | `modules/gcp-cloud` | Pub/Sub topics, logging sinks, collector SA |

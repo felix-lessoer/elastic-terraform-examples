@@ -40,9 +40,22 @@ output "enrollment_token" {
   value     = module.stack.enrollment_token
 }
 
+output "fleet_url" {
+  value = module.elastic.fleet_endpoint
+}
+
+output "elastic_agent_instance" {
+  value = try(module.elastic_agent[0].instance_name, null)
+}
+
+output "elastic_agent_external_ip" {
+  value = try(module.elastic_agent[0].external_ip, null)
+}
+
 output "next_steps" {
   value = <<-EOT
     Open Kibana: ${module.elastic.kibana_endpoint}
+    - Fleet > Agents: confirm ${try(module.elastic_agent[0].instance_name, "elastic-agent")} is Healthy on policy gcp-observe-protect
     - Security > Cloud Security Posture for GCP CSPM
     - Discover for gcp.* data streams from Pub/Sub sinks
     - Security > Rules for Google Cloud detection rules

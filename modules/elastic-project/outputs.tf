@@ -36,3 +36,8 @@ output "project_type" {
   description = "Serverless project type string for CPS linking (security)."
   value       = local.is_serverless ? "security" : null
 }
+
+output "fleet_endpoint" {
+  description = "Fleet Server URL for Elastic Agent enrollment."
+  value       = local.is_serverless ? local.serverless_fleet_url : local.hosted_fleet_url
+}

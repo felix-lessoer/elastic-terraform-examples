@@ -68,6 +68,12 @@ def cleanup() -> None:
 def sync() -> None:
     detectors: dict[str, str] = json.loads(os.environ["DETECTORS_JSON"])
     existing = {item["name"]: item for item in managed_integrations()}
+    connectors = {
+        item["name"]: item
+        for item in request(
+            "GET", "/api/fleet/cloud_connectors?perPage=10000"
+        ).get("items", [])
+    }
     package = request("GET", "/api/fleet/epm/packages/aws")["item"]
     package_version = package["version"]
     role_arn = os.environ["AWS_ROLE_ARN"]
@@ -90,6 +96,17 @@ def sync() -> None:
         if name in existing:
             continue
 
+        connector_name = f"{NAME_PREFIX}-guardduty-{region}"
+        connector = connectors.get(connector_name)
+        cloud_connector = {
+            "enabled": True,
+            "target_csp": "aws",
+        }
+        if connector:
+            cloud_connector["cloud_connector_id"] = connector["id"]
+        else:
+            cloud_connector["name"] = connector_name
+
         request(
             "POST",
             "/api/fleet/managed_integrations",
@@ -109,11 +126,7 @@ def sync() -> None:
                 "var_group_selections": {
                     "credential_type": "identity_federation"
                 },
-                "cloud_connector": {
-                    "enabled": True,
-                    "name": f"{NAME_PREFIX}-guardduty-{region}",
-                    "target_csp": "aws",
-                },
+                "cloud_connector": cloud_connector,
                 "inputs": {
                     "guardduty-httpjson": {
                         "enabled": True,

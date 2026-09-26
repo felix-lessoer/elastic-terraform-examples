@@ -1,0 +1,25 @@
+elastic_project_name = "AWS Observability"
+elastic_region       = "aws-eu-west-1"
+
+# Used only as the bootstrap/default region. Every regional metrics input uses
+# regions = [], which is the AWS integration's "all regions" setting.
+aws_region = "eu-west-1"
+
+# Required: company-policy tags.
+company_tags = {
+  division    = "field"
+  org         = "sa"
+  keep-until  = "2026-10-01"
+  team        = "emea_central_area"
+  project     = "aws-observability"
+  environment = "poc"
+}
+
+required_tag_keys = [
+  "division",
+  "org",
+  "keep-until",
+  "team",
+  "project",
+  "environment",
+]

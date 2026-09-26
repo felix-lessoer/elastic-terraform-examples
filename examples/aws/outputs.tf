@@ -68,7 +68,8 @@ output "enabled_datasets" {
     for input in values(local.managed_inputs) : keys(input.streams)
     ]), flatten([
     for input in values(local.agent_inputs) : keys(input.streams)
-  ]))))
+    ]), length(local.guardduty_managed_integrations) > 0 ? ["aws.guardduty"] : []
+  )))
 }
 
 output "applied_tags" {

@@ -14,6 +14,10 @@ terraform {
       source  = "hashicorp/aws"
       version = ">= 5.0"
     }
+    external = {
+      source  = "hashicorp/external"
+      version = ">= 2.3"
+    }
   }
 }
 
@@ -32,6 +36,14 @@ provider "elasticstack" {}
 
 data "aws_caller_identity" "current" {}
 data "aws_partition" "current" {}
+
+data "external" "guardduty_detectors" {
+  program = ["python3", "${path.module}/scripts/discover_guardduty.py"]
+
+  query = {
+    bootstrap_region = var.aws_region
+  }
+}
 
 locals {
   elastic_tags = {
@@ -583,6 +595,60 @@ locals {
     local.agent_required_disabled_overrides,
     local.agent_inputs,
   )
+
+  guardduty_managed_integrations = [
+    for region, detector_id in data.external.guardduty_detectors.result : {
+      name            = "aws-managed-guardduty-${region}"
+      description     = "Elastic-managed GuardDuty findings collection in ${region}"
+      package_name    = "aws"
+      managed         = true
+      agent_policy    = false
+      prerelease      = false
+      package_version = null
+      policy_template = "guardduty"
+      vars_json = jsonencode({
+        default_region               = region
+        role_arn                     = aws_iam_role.elastic_managed.arn
+        supports_identity_federation = true
+      })
+      var_group_selections = {
+        credential_type = "identity_federation"
+      }
+      cloud_connector = {
+        enabled            = true
+        cloud_connector_id = null
+        name               = "${var.name_prefix}-guardduty-${region}"
+        target_csp         = "aws"
+      }
+      inputs = {
+        "guardduty-httpjson" = {
+          enabled = true
+          streams = {
+            "aws.guardduty" = {
+              enabled = true
+              vars = jsonencode({
+                interval                         = "1m"
+                initial_interval                 = "24h"
+                detector_id                      = detector_id
+                aws_region                       = region
+                tld                              = "amazonaws.com"
+                http_client_timeout              = "30s"
+                tags                             = ["forwarded", "aws-guardduty"]
+                preserve_original_event          = false
+                preserve_duplicate_custom_fields = false
+              })
+            }
+          }
+        }
+        "guardduty-aws-s3" = {
+          enabled = false
+          streams = {
+            "aws.guardduty" = { enabled = false }
+          }
+        }
+      }
+    }
+  ]
 }
 
 check "required_company_tags" {
@@ -680,6 +746,10 @@ data "aws_iam_policy_document" "elastic_managed" {
       "elasticloadbalancing:DescribeTargetHealth",
       "lambda:GetFunction",
       "lambda:ListFunctions",
+      "guardduty:GetDetector",
+      "guardduty:GetFindings",
+      "guardduty:ListDetectors",
+      "guardduty:ListFindings",
       "rds:DescribeDBClusters",
       "rds:DescribeDBInstances",
       "rds:ListTagsForResource",
@@ -773,6 +843,7 @@ module "stack" {
       cloud_connector = null
       inputs          = local.agent_policy_inputs
     }],
+    local.guardduty_managed_integrations,
   )
 
   depends_on = [module.observability, module.aws_cloud, aws_iam_role_policy.elastic_managed]

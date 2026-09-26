@@ -37,6 +37,7 @@ The managed policies enable these AWS datasets:
 | SNS | `aws.sns` |
 | SQS | `aws.sqs` |
 | Transit Gateway | `aws.transitgateway` |
+| GuardDuty | `aws.guardduty` (one managed policy per active regional detector) |
 
 Each regional metrics stream sets `regions = []`. In the Elastic AWS
 integration, an empty region selection means that the collector discovers and
@@ -84,6 +85,7 @@ does not turn on logging for those AWS services.
 ## Prerequisites
 
 - Terraform >= 1.2.7
+- Python 3 and AWS CLI (used to discover regional GuardDuty detectors)
 - an Elastic Cloud API key in `EC_API_KEY`
 - AWS credentials that can create IAM, EC2, S3, SQS, CloudTrail, and VPC Flow
   Log resources
@@ -118,6 +120,11 @@ Terraform then configures both runtime authentication paths:
 Users must not paste an access key, secret key, session token, shared
 credentials path, or profile name into any Fleet integration or policy. Those
 fields intentionally remain empty after apply.
+
+GuardDuty discovery uses the same AWS provider environment/profile as
+Terraform. It enumerates enabled AWS regions and creates one managed policy for
+each existing detector because the GuardDuty API requires a scalar region and
+detector ID. No detector ID or additional credential is entered by the user.
 
 ## Apply
 

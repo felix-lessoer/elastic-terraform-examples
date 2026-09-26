@@ -40,6 +40,11 @@ output "regional_security_agent_regions" {
   value       = sort(keys(data.external.enabled_regions.result))
 }
 
+output "existing_log_sources" {
+  description = "Customer-enabled AWS log sources discovered and configured in Elastic."
+  value       = jsondecode(data.external.existing_log_sources.result.sources_json)
+}
+
 output "agent_policy_id" {
   description = "Fleet policy containing only non-managed AWS integrations."
   value       = module.stack.agent_policy_id
@@ -81,7 +86,11 @@ output "enabled_datasets" {
       "aws.securityhub_findings",
       "aws.securityhub_findings_full_posture",
       "aws.securityhub_insights",
-    ] : []
+    ] : [],
+    [
+      for source in jsondecode(data.external.existing_log_sources.result.sources_json) :
+      source.dataset
+    ],
   )))
 }
 

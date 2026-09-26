@@ -53,6 +53,14 @@ data "external" "enabled_regions" {
   }
 }
 
+data "external" "existing_log_sources" {
+  program = ["python3", "${path.module}/scripts/discover_existing_log_sources.py"]
+
+  query = {
+    bootstrap_region = var.aws_region
+  }
+}
+
 locals {
   elastic_tags = {
     for k, v in var.company_tags :
@@ -360,40 +368,6 @@ locals {
           }
         }
       }
-      "waf-aws-cloudwatch" = {
-        enabled = true
-        streams = {
-          "aws.waf" = {
-            enabled = true
-            vars = jsonencode({
-              log_group_name_prefix   = "aws-waf-logs-"
-              region_name             = var.aws_region
-              preserve_original_event = false
-            })
-          }
-        }
-      }
-      "route53-aws-cloudwatch" = {
-        enabled = true
-        streams = {
-          "aws.route53_public_logs" = {
-            enabled = true
-            vars = jsonencode({
-              log_group_name_prefix   = "/aws/route53/"
-              region_name             = "us-east-1"
-              preserve_original_event = false
-            })
-          }
-          "aws.route53_resolver_logs" = {
-            enabled = true
-            vars = jsonencode({
-              log_group_name_prefix   = "/aws/route53resolver/"
-              region_name             = var.aws_region
-              preserve_original_event = false
-            })
-          }
-        }
-      }
       "redshift-aws/metrics" = {
         enabled = true
         streams = {
@@ -421,38 +395,12 @@ locals {
           }
         }
       }
-      "apigateway-aws-cloudwatch" = {
-        enabled = true
-        streams = {
-          "aws.apigateway_logs" = {
-            enabled = true
-            vars = jsonencode({
-              log_group_name_prefix   = "API-Gateway-Execution-Logs_"
-              region_name             = var.aws_region
-              preserve_original_event = false
-            })
-          }
-        }
-      }
       "emr-aws/metrics" = {
         enabled = true
         streams = {
           "aws.emr_metrics" = {
             enabled = true
             vars    = local.all_region_vars
-          }
-        }
-      }
-      "emr-aws-cloudwatch" = {
-        enabled = true
-        streams = {
-          "aws.emr_logs" = {
-            enabled = true
-            vars = jsonencode({
-              log_group_name_prefix   = "/aws/elasticmapreduce/"
-              region_name             = var.aws_region
-              preserve_original_event = false
-            })
           }
         }
       }
@@ -637,9 +585,12 @@ module "aws_cloud" {
   enable_sqs           = true
   company_tags         = var.company_tags
   required_tag_keys    = var.required_tag_keys
-  additional_read_bucket_arns = var.existing_cloudtrail_bucket_name != "" ? [
-    "arn:${data.aws_partition.current.partition}:s3:::${var.existing_cloudtrail_bucket_name}"
-  ] : []
+  additional_read_bucket_arns = distinct(concat(
+    var.existing_cloudtrail_bucket_name != "" ? [
+      "arn:${data.aws_partition.current.partition}:s3:::${var.existing_cloudtrail_bucket_name}"
+    ] : [],
+    jsondecode(data.external.existing_log_sources.result.bucket_arns_json),
+  ))
   additional_tags = {
     Cloud = "aws"
   }
@@ -852,6 +803,51 @@ resource "terraform_data" "regional_security_integrations" {
       AWS_ACCOUNT_ID  = self.input.aws_account_id
       REGIONS_JSON    = self.input.regions_json
       DETECTORS_JSON  = self.input.detectors_json
+    }
+  }
+
+  depends_on = [module.stack, module.aws_cloud]
+}
+
+# Discover only log delivery that customers already configured, then attach
+# matching CloudWatch/S3 inputs without changing any AWS workload settings.
+resource "terraform_data" "existing_log_integrations" {
+  input = {
+    kibana_url      = module.observability.kibana_endpoint
+    kibana_username = module.observability.username
+    kibana_password = module.observability.password
+    agent_policy_id = module.stack.agent_policy_id
+    sources_json    = data.external.existing_log_sources.result.sources_json
+  }
+
+  triggers_replace = [
+    sha256(data.external.existing_log_sources.result.sources_json),
+    filesha256("${path.module}/scripts/sync_existing_log_integrations.py"),
+  ]
+
+  provisioner "local-exec" {
+    interpreter = ["/bin/bash", "-c"]
+    command     = "python3 '${path.module}/scripts/sync_existing_log_integrations.py' sync"
+    environment = {
+      KIBANA_URL      = self.input.kibana_url
+      KIBANA_USERNAME = self.input.kibana_username
+      KIBANA_PASSWORD = self.input.kibana_password
+      AGENT_POLICY_ID = self.input.agent_policy_id
+      SOURCES_JSON    = self.input.sources_json
+    }
+  }
+
+  provisioner "local-exec" {
+    when        = destroy
+    on_failure  = continue
+    interpreter = ["/bin/bash", "-c"]
+    command     = "python3 '${path.module}/scripts/sync_existing_log_integrations.py' cleanup"
+    environment = {
+      KIBANA_URL      = self.input.kibana_url
+      KIBANA_USERNAME = self.input.kibana_username
+      KIBANA_PASSWORD = self.input.kibana_password
+      AGENT_POLICY_ID = self.input.agent_policy_id
+      SOURCES_JSON    = self.input.sources_json
     }
   }
 

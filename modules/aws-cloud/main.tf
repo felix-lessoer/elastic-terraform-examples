@@ -265,6 +265,10 @@ data "aws_iam_policy_document" "elastic_permissions" {
     actions = [
       "cloudwatch:GetMetricData",
       "cloudwatch:ListMetrics",
+      "logs:DescribeLogGroups",
+      "logs:DescribeLogStreams",
+      "logs:FilterLogEvents",
+      "logs:GetLogEvents",
       "ec2:Describe*",
       "rds:Describe*",
       "rds:List*",

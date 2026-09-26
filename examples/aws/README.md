@@ -72,15 +72,16 @@ The agent also collects:
   polling `existing_cloudtrail_bucket_name` when the account trail quota is
   already exhausted;
 - VPC Flow Logs for the default VPC in `aws_region` through S3/SQS;
-- WAF, Route 53, API Gateway, and EMR logs from their standard CloudWatch log
-  group prefixes in `aws_region` (Route 53 public query logs use `us-east-1`);
-- CloudFront logs when `cloudfront_queue_url` points to an existing SQS queue
-  receiving S3 object notifications.
+- every existing CloudWatch log group, mapped to Lambda, Network Firewall,
+  WAF, API Gateway, EMR, Route 53, EC2, or generic CloudWatch datasets; and
+- existing S3 destinations for ELB access logs, S3 server-access logs, and
+  CloudFront standard logs.
 
-CloudFront cannot be auto-wired without knowing the distribution's logging
-bucket. Likewise, existing resources must already deliver WAF, Route 53,
-API Gateway, and EMR logs to the standard CloudWatch groups; enabling an input
-does not turn on logging for those AWS services.
+Terraform only configures Elastic consumers for sources it discovers. It does
+not enable or modify logging on customer Lambda functions, firewalls, load
+balancers, buckets, distributions, or other workloads. When customer-side
+logging is enabled or disabled, the next apply adds, updates, or removes the
+matching Elastic package policy.
 
 ## Prerequisites
 

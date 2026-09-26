@@ -915,8 +915,6 @@ module "elastic_agent" {
   enrollment_token     = module.stack.enrollment_token
   agent_version        = var.elastic_agent_version
   iam_instance_profile = module.aws_cloud.agent_instance_profile_name
-
-  depends_on = [module.stack]
 }
 
 # Keep the curated AWS cockpit in the same Observability project as the data.

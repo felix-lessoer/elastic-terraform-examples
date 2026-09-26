@@ -24,7 +24,10 @@ from insight_fabric_common import (  # noqa: E402
     scoreboard_template,
     uid,
 )
+from fabric_drilldowns import DRILLDOWN_IDS, drilldowns_panel  # noqa: E402
 from ootb_nav import PANEL_IDS, NAV_HEIGHT, inject_ootb_nav  # noqa: E402
+
+DRILLDOWN_H = 5
 
 SCOREBOARD_ID = "c0ffee10-26e4-49d8-a2b4-548306880910"
 MATRIX_ID = "c0ffee11-26e4-49d8-a2b4-548306880911"
@@ -230,9 +233,12 @@ def inject(panels: list[dict]) -> list[dict]:
     # Ensure OOTB nav present / positioned at y=8
     kept = inject_ootb_nav(kept, "aws", y=8)
 
-    insight_y = 8 + NAV_HEIGHT  # 20
+    insight_y = 8 + NAV_HEIGHT
     scoreboard_h, matrix_h = 8, 14
-    insight_end = insight_y + scoreboard_h + matrix_h  # 42
+    # Scoreboard → markdown drill-downs (clickable) → matrix/timeline
+    drill_y = insight_y + scoreboard_h
+    matrix_y = drill_y + DRILLDOWN_H
+    insight_end = matrix_y + matrix_h
 
     scoreboard = custom_panel(
         panel_id=SCOREBOARD_ID,
@@ -240,6 +246,7 @@ def inject(panels: list[dict]) -> list[dict]:
         esql_query="FROM aws-cockpit-security-kpi\n| SORT @timestamp DESC\n| LIMIT 1",
         grid={"x": 0, "y": insight_y, "w": 48, "h": scoreboard_h},
     )
+    drilldowns = drilldowns_panel("aws", y=drill_y, h=DRILLDOWN_H)
     matrix = custom_panel(
         panel_id=MATRIX_ID,
         template=MATRIX_TMPL.replace(
@@ -253,7 +260,7 @@ def inject(panels: list[dict]) -> list[dict]:
             "| SORT category ASC, label ASC\n"
             "| LIMIT 20"
         ),
-        grid={"x": 0, "y": insight_y + scoreboard_h, "w": 28, "h": matrix_h},
+        grid={"x": 0, "y": matrix_y, "w": 28, "h": matrix_h},
     )
     # Prefer actionable events: recommendations + failures + open health
     timeline = custom_panel(
@@ -265,7 +272,7 @@ def inject(panels: list[dict]) -> list[dict]:
             "| SORT @timestamp DESC\n"
             "| LIMIT 12"
         ),
-        grid={"x": 28, "y": insight_y + scoreboard_h, "w": 20, "h": matrix_h},
+        grid={"x": 28, "y": matrix_y, "w": 20, "h": matrix_h},
     )
 
     # Idempotent re-pack: pin chrome panels, reflow the rest below insight_end.
@@ -337,11 +344,17 @@ def inject(panels: list[dict]) -> list[dict]:
     for kpi in top:
         kpi["embeddableConfig"]["hidePanelTitles"] = True
 
+    # Drop prior drilldown markdown if present (idempotent re-inject).
+    body_panels = [
+        p
+        for p in body_panels
+        if p.get("panelIndex") != DRILLDOWN_IDS["aws"]
+    ]
     out = (
         header_panels
         + top
         + [p for p in kept if p.get("panelIndex") == PANEL_IDS["aws"]]
-        + [scoreboard, matrix, timeline]
+        + [scoreboard, drilldowns, matrix, timeline]
         + body_panels
         + section_panels
         + rebuild_inventory_panels(inv_y)

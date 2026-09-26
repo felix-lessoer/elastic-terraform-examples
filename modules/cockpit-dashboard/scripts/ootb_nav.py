@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """Shared OOTB integration dashboard navigation for cloud cockpits.
 
-Builds a Kibana ``custom_content`` panel (same visualization type as the
-cockpit header) with curated deep-links into the EPR/integration dashboards
-that ship with each cloud package, plus primary Security / ML / CSPM jumps.
+Builds a Kibana **markdown** panel with curated deep-links into the EPR /
+integration dashboards that ship with each cloud package, plus primary
+Security / ML / CSPM jumps.
+
+Note: ``custom_content`` strips ``<a>`` tags and sandboxes navigation, so
+OOTB nav must be markdown for links to work.
 """
 
 from __future__ import annotations
@@ -161,7 +164,7 @@ THEMES = {
     },
 }
 
-NAV_HEIGHT = 12  # grid units — room for primary chips + 3 category columns
+NAV_HEIGHT = 8  # markdown deep-link block (clickable; custom_content cannot host links)
 
 
 def _dash_href(dashboard_id: str) -> str:
@@ -185,247 +188,41 @@ def render_template(cloud: str) -> str:
     groups = OOTB[cloud]
     primary = list(PRIMARY_LINKS) + list(theme.get("extra_primary") or [])
 
-    # custom_content strips <a>; navigate with form+button (no JS).
-    primary_html = []
-    for link in primary:
-        primary_html.append(
-            f'<form class="chip-form" action="{_escape(link["href"])}" method="get" target="_top">'
-            f'<button type="submit" class="chip chip-{_escape(link["tone"])}">'
-            f'<span class="chip-dot"></span>{_escape(link["label"])}'
-            f'<span class="chip-arrow" aria-hidden="true">→</span></button></form>'
-        )
-
-    groups_html = []
+    primary_md = " · ".join(
+        f'[{link["label"]} →]({link["href"]})' for link in primary
+    )
+    group_blocks = []
     for group in groups:
-        links_html = []
-        for label, dash_id in group["links"]:
-            links_html.append(
-                f'<form class="tile-form" action="{_escape(_dash_href(dash_id))}" method="get" target="_top">'
-                f'<button type="submit" class="tile">'
-                f'<span class="tile-label">{_escape(label)}</span>'
-                f'<span class="tile-meta">OOTB</span></button></form>'
-            )
-        groups_html.append(
-            '<div class="group">'
-            f'<div class="group-title">{_escape(group["title"])}</div>'
-            f'<div class="tiles">{"".join(links_html)}</div>'
-            "</div>"
+        links = " · ".join(
+            f"[{label}]({_dash_href(dash_id)})" for label, dash_id in group["links"]
         )
+        group_blocks.append(f"**{group['title']}** · {links}")
 
-    return f"""<html>
-<head>
-<style>
-  body {{
-    margin: 0;
-    padding: var(--cc-space-l);
-    box-sizing: border-box;
-    font-family: var(--cc-font-family);
-    color: var(--cc-color-text);
-    background: var(--cc-color-background);
-  }}
-
-  .nav {{
-    display: flex;
-    flex-direction: column;
-    gap: var(--cc-space-m);
-    width: 100%;
-    box-sizing: border-box;
-  }}
-
-  .hero {{
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--cc-space-l);
-    padding: var(--cc-space-m) var(--cc-space-xl);
-    border-radius: var(--cc-radius);
-    background: {theme["gradient"]};
-    box-shadow: 0 2px 12px rgba(0,0,0,0.18);
-    color: #ffffff;
-  }}
-
-  .hero-copy {{
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    min-width: 0;
-  }}
-
-  .hero-kicker {{
-    font-size: 0.6875rem;
-    font-weight: 600;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: {theme["accent"]};
-  }}
-
-  .hero-title {{
-    font-size: 1.125rem;
-    font-weight: 600;
-    line-height: 1.25;
-    color: #ffffff;
-  }}
-
-  .hero-sub {{
-    font-size: 0.8125rem;
-    color: rgba(255,255,255,0.78);
-    line-height: 1.35;
-  }}
-
-  .chips {{
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--cc-space-s);
-    justify-content: flex-end;
-  }}
-  .chip-form {{ margin: 0; display: inline-flex; }}
-
-  .chip {{
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    padding: 0.4rem 0.75rem;
-    border-radius: var(--cc-radius-s);
-    background: rgba(255,255,255,0.10);
-    border: 1px solid rgba(255,255,255,0.22);
-    color: #ffffff;
-    font-size: 0.75rem;
-    font-weight: 600;
-    font-family: inherit;
-    cursor: pointer;
-    transition: background var(--cc-motion-fast) var(--cc-ease),
-                border-color var(--cc-motion-fast) var(--cc-ease),
-                transform var(--cc-motion-fast) var(--cc-ease);
-  }}
-  .chip:hover {{
-    background: rgba(255,255,255,0.18);
-    border-color: rgba(255,255,255,0.4);
-    transform: translateY(-1px);
-  }}
-  .chip-dot {{
-    width: 0.45rem;
-    height: 0.45rem;
-    border-radius: 50%;
-    background: {theme["accent"]};
-    flex-shrink: 0;
-  }}
-  .chip-alert .chip-dot {{ background: #FF957D; }}
-  .chip-warn .chip-dot {{ background: #FEC514; }}
-  .chip-info .chip-dot {{ background: #0B64DD; }}
-  .chip-ok .chip-dot {{ background: #48EFCF; }}
-  .chip-arrow {{ opacity: 0.7; }}
-
-  .groups {{
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: var(--cc-space-m);
-  }}
-
-  .group {{
-    background: var(--cc-color-surface);
-    border: 1px solid var(--cc-color-border);
-    border-radius: var(--cc-radius);
-    padding: var(--cc-space-m);
-    box-shadow: 0 1px 2px rgba(0,0,0,0.04);
-    min-width: 0;
-  }}
-
-  .group-title {{
-    font-size: 0.75rem;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--cc-color-text);
-    margin-bottom: var(--cc-space-s);
-    padding-bottom: var(--cc-space-xs);
-    border-bottom: 2px solid {theme["accent"]};
-    border-bottom-width: 2px;
-    width: fit-content;
-  }}
-
-  .tiles {{
-    display: flex;
-    flex-direction: column;
-    gap: 0.35rem;
-  }}
-  .tile-form {{ margin: 0; }}
-
-  .tile {{
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--cc-space-s);
-    width: 100%;
-    padding: 0.45rem 0.65rem;
-    border-radius: var(--cc-radius-s);
-    border: 1px solid transparent;
-    color: var(--cc-color-text);
-    background: transparent;
-    font-size: 0.8125rem;
-    font-weight: 600;
-    font-family: inherit;
-    cursor: pointer;
-    text-align: left;
-    transition: background var(--cc-motion-fast) var(--cc-ease),
-                border-color var(--cc-motion-fast) var(--cc-ease),
-                transform var(--cc-motion-fast) var(--cc-ease);
-  }}
-  .tile:hover {{
-    background: var(--cc-color-background);
-    border-color: var(--cc-color-border);
-    transform: translateX(2px);
-  }}
-  .tile-label {{ min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
-  .tile-meta {{
-    font-size: 0.625rem;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: var(--cc-color-text);
-    opacity: 0.45;
-    flex-shrink: 0;
-  }}
-
-  @media (max-width: 900px) {{
-    .hero {{ flex-direction: column; align-items: flex-start; }}
-    .chips {{ justify-content: flex-start; }}
-    .groups {{ grid-template-columns: 1fr; }}
-  }}
-</style>
-</head>
-<body>
-  <div class="nav">
-    <div class="hero">
-      <div class="hero-copy">
-        <div class="hero-kicker">{_escape(theme["kicker"])}</div>
-        <div class="hero-title">{_escape(theme["label"])} OOTB dashboards</div>
-        <div class="hero-sub">Jump into the integration dashboards that ship with this cloud package — curated for observe &amp; protect workflows.</div>
-      </div>
-      <div class="chips">
-        {"".join(primary_html)}
-      </div>
-    </div>
-    <div class="groups">
-      {"".join(groups_html)}
-    </div>
-  </div>
-</body>
-</html>
-"""
+    # Markdown (not custom_content) so links are clickable.
+    return (
+        f"### {theme['label']} OOTB dashboards\n"
+        f"{theme.get('kicker', 'Integration dashboards')} — jump into package dashboards "
+        f"and Security / ML / CSPM views.\n\n"
+        f"**Primary** · {primary_md}\n\n"
+        + "\n\n".join(group_blocks)
+        + "\n"
+    )
 
 
 def build_panel(cloud: str, *, y: int = 8, x: int = 0, w: int = 48, h: int = NAV_HEIGHT) -> dict:
-    """Return a custom_content panel dict ready to splice into panelsJSON."""
+    """Return a markdown panel with clickable OOTB / Security deep-links."""
     cloud = cloud.lower()
     pid = PANEL_IDS[cloud]
     return {
-        "type": "custom_content",
+        "type": "markdown",
         "panelIndex": pid,
         "gridData": {"y": y, "x": x, "w": w, "h": h, "i": pid},
         "embeddableConfig": {
-            "hide_title": True,
-            "hide_border": True,
-            "template": render_template(cloud),
+            "title": "",
+            "hidePanelTitles": True,
+            "content": render_template(cloud),
+            "settings": {"open_links_in_new_tab": False},
+            "enhancements": {},
         },
     }
 
@@ -443,7 +240,7 @@ def inject_ootb_nav(panels: list[dict], cloud: str, *, y: int = 8) -> list[dict]
 
     - Removes any prior OOTB nav panel (by stable id) and the legacy quick-links
       markdown row.
-    - Inserts the new custom_content panel at ``y``.
+    - Inserts the new markdown nav panel at ``y``.
     - Shifts every other panel with ``gridData.y >= y`` down by ``NAV_HEIGHT``
       minus the height of removed panels that occupied that band (best-effort).
     """

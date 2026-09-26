@@ -18,7 +18,10 @@ from insight_fabric_common import (  # noqa: E402
     scoreboard_template,
     uid,
 )
+from fabric_drilldowns import DRILLDOWN_IDS, drilldowns_panel  # noqa: E402
 from ootb_nav import NAV_HEIGHT, PANEL_IDS, inject_ootb_nav  # noqa: E402
+
+DRILLDOWN_H = 4
 
 SCOREBOARD_ID = "c0ffee10-9a7d-4e3b-8c5a-1d6f0e9b2a10"
 MATRIX_ID = "c0ffee11-9a7d-4e3b-8c5a-1d6f0e9b2a11"
@@ -185,7 +188,9 @@ def inject(panels: list[dict]) -> list[dict]:
     kept = inject_ootb_nav(kept, "azure", y=8)
     insight_y = 8 + NAV_HEIGHT
     scoreboard_h, matrix_h = 8, 14
-    insight_end = insight_y + scoreboard_h + matrix_h
+    drill_y = insight_y + scoreboard_h
+    matrix_y = drill_y + DRILLDOWN_H
+    insight_end = matrix_y + matrix_h
 
     scoreboard = custom_panel(
         panel_id=SCOREBOARD_ID,
@@ -226,6 +231,7 @@ def inject(panels: list[dict]) -> list[dict]:
         esql_query=f"FROM {KPI_INDEX}\n| SORT @timestamp DESC\n| LIMIT 1",
         grid={"x": 0, "y": insight_y, "w": 48, "h": scoreboard_h},
     )
+    drilldowns = drilldowns_panel("azure", y=drill_y, h=DRILLDOWN_H)
     matrix = custom_panel(
         panel_id=MATRIX_ID,
         template=MATRIX_TMPL,
@@ -235,13 +241,13 @@ def inject(panels: list[dict]) -> list[dict]:
             "| SORT category ASC, label ASC\n"
             "| LIMIT 20"
         ),
-        grid={"x": 0, "y": insight_y + scoreboard_h, "w": 28, "h": matrix_h},
+        grid={"x": 0, "y": matrix_y, "w": 28, "h": matrix_h},
     )
     timeline = custom_panel(
         panel_id=TIMELINE_ID,
         template=TIMELINE_TMPL,
         esql_query="FROM azure-cockpit-events\n| SORT @timestamp DESC\n| LIMIT 12",
-        grid={"x": 28, "y": insight_y + scoreboard_h, "w": 20, "h": matrix_h},
+        grid={"x": 28, "y": matrix_y, "w": 20, "h": matrix_h},
     )
 
     chrome_ids = {PANEL_IDS["azure"]} | TOP_KPI_IDS
@@ -314,7 +320,7 @@ def inject(panels: list[dict]) -> list[dict]:
         header_panels
         + top
         + [p for p in kept if p.get("panelIndex") == PANEL_IDS["azure"]]
-        + [scoreboard, matrix, timeline]
+        + [scoreboard, drilldowns, matrix, timeline]
         + body_panels
         + section_panels
         + rebuild_inventory_panels(inv_y)

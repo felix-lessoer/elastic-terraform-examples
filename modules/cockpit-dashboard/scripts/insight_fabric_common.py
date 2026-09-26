@@ -470,7 +470,7 @@ def scoreboard_template(
     <div>
       <div class="kicker">Insight fabric</div>
       <div class="title">{cloud_label} posture at a glance</div>
-      <div class="sub">{subtitle} · click any tile to drill down</div>
+      <div class="sub">{subtitle} · use Drill down links below for details</div>
     </div>
   </div>
   <div class="grid">
@@ -510,7 +510,7 @@ MATRIX_TMPL = """<html>
 <div class="wrap">
   <div class="head">
     <div class="title">Service coverage</div>
-    <div class="sub">Click a tile to open the OOTB dashboard or Fleet · Datadog-style overview</div>
+    <div class="sub">Coverage status · open OOTB boards via Drill down links below</div>
   </div>
   <div class="grid">
     {% for row in rows %}
@@ -555,7 +555,7 @@ TIMELINE_TMPL = """<html>
 <body>
 <div class="wrap">
   <div class="title">What changed</div>
-  <div class="sub">Click a row to investigate · recommendations · failures · health</div>
+  <div class="sub">Recommendations · API failures · open health · drill down via links below</div>
   <div class="list">
     {% if rows.size == 0 %}
       <div class="empty">No insight events yet — run the insight seeder / wait for the next workflow cycle.</div>

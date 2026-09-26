@@ -24,8 +24,13 @@ OUT = ROOT / "cockpit-aws.ndjson"
 
 AWS_DASH_ID = "a1b2c3d4-e5f6-4789-a012-3456789abcde"
 # Elastic CPS remote: {project_alias}-{first 6 of project id}
+# NOTE: CPS link may show enabled while ES|QL still cannot resolve the Security
+# alias (no_matching_project_exception). Prefer Observability-local index
+# patterns that execute cleanly; Security deep-links remain in the OOTB nav.
 AWS_CPS = "aws-observe-and-protect-ad5bcf"
-MISCONFIG = f"{AWS_CPS}:security_solution-cloud_security_posture.misconfiguration_latest"
+MISCONFIG = "security_solution-*.misconfiguration_latest"
+AWS_HEALTH = "metrics-aws.awshealth*"
+ML_ANOMALIES = ".ml-anomalies-shared-000001"
 
 
 def uid() -> str:
@@ -305,10 +310,22 @@ def rewrite_gcp_panel_queries(panel: dict) -> dict:
         "gcp-observe-and-protect-ff5053:security_solution-cloud_security_posture.misconfiguration_latest",
         MISCONFIG,
     )
-    # ML anomalies keep local+CPS pattern with AWS CPS alias
+    # Prefer local ML anomalies index — CPS-qualified dual FROM breaks the panel.
+    raw = raw.replace(
+        '".ml-anomalies-shared-000001,aws-observe-and-protect-ad5bcf:.ml-anomalies-shared-000001"',
+        f'"{ML_ANOMALIES}"',
+    )
+    raw = raw.replace(
+        ".ml-anomalies-shared-000001,aws-observe-and-protect-ad5bcf:.ml-anomalies-shared-000001",
+        ML_ANOMALIES,
+    )
     raw = raw.replace(
         "gcp-observe-and-protect-ff5053:.ml-anomalies-shared-000001",
-        f"{AWS_CPS}:.ml-anomalies-shared-000001",
+        ML_ANOMALIES,
+    )
+    raw = raw.replace(
+        f"{AWS_CPS}:metrics-aws.awshealth-default",
+        AWS_HEALTH,
     )
     return json.loads(raw)
 
@@ -423,25 +440,79 @@ def build(gcp_path: Path) -> dict:
         gd = p.get("gridData") or {}
         max_y = max(max_y, int(gd.get("y", 0)) + int(gd.get("h", 0)))
 
-    # Top-row CSPM KPI at y=6 x=36 (GCP layout)
-    cspm_kpi = esql_metric_panel(
-        title="CSPM findings (24h)",
-        metric_label="CSPM findings (24h)",
-        esql=(
-            f"FROM {MISCONFIG}\n"
-            "| WHERE @timestamp >= ?_tstart AND @timestamp < ?_tend\n"
-            "| STATS `CSPM findings (24h)` = COUNT(*)"
+    # Drop broken Security-only / CPS-qualified top KPIs retained from GCP and
+    # rebuild an Observability-local top row at y=4.
+    top_kpi_ids = {
+        "1dfcd0c5-db92-46ee-a0cc-6b38079265ab",
+        "99c28cc1-a686-482b-9fc9-2cf7869b7b5b",
+        "d170a127-afff-4154-b6c3-24a85a931382",
+        "143696f7-f91e-41b2-9650-40b28c80a105",
+    }
+    kept = [
+        p
+        for p in kept
+        if p.get("panelIndex") not in top_kpi_ids
+        and ".alerts-security.alerts-default" not in json.dumps(p)
+    ]
+
+    top_kpis = [
+        esql_metric_panel(
+            title="",
+            metric_label="Active datasets",
+            esql=(
+                "FROM logs-*, metrics-*\n"
+                "| WHERE @timestamp >= ?_tstart AND @timestamp < ?_tend\n"
+                "| STATS `Active datasets` = COUNT_DISTINCT(data_stream.dataset)"
+            ),
+            index="logs-*,metrics-*-@timestamp",
+            grid={"x": 0, "y": 4, "w": 12, "h": 4},
+            panel_id="1dfcd0c5-db92-46ee-a0cc-6b38079265ab",
         ),
-        index=f"{MISCONFIG}-@timestamp",
-        grid={"x": 36, "y": 6, "w": 12, "h": 8},
-    )
+        esql_metric_panel(
+            title="",
+            metric_label="Hosts delivering",
+            esql=(
+                "FROM logs-*, metrics-*\n"
+                "| WHERE @timestamp >= ?_tstart AND @timestamp < ?_tend\n"
+                "| STATS `Hosts delivering` = COUNT_DISTINCT(host.name)"
+            ),
+            index="logs-*,metrics-*-@timestamp",
+            grid={"x": 12, "y": 4, "w": 12, "h": 4},
+            panel_id="99c28cc1-a686-482b-9fc9-2cf7869b7b5b",
+        ),
+        esql_metric_panel(
+            title="",
+            metric_label="Critical ML Anomalies",
+            esql=(
+                f"FROM {ML_ANOMALIES}\n"
+                "| WHERE record_score >= 75 AND timestamp >= ?_tstart AND timestamp < ?_tend\n"
+                "| STATS `Critical ML Anomalies` = COUNT(*)"
+            ),
+            index=f"{ML_ANOMALIES}-timestamp",
+            grid={"x": 24, "y": 4, "w": 12, "h": 4},
+            panel_id="d170a127-afff-4154-b6c3-24a85a931382",
+        ),
+        esql_metric_panel(
+            title="",
+            metric_label="CSPM findings",
+            esql=(
+                f"FROM {MISCONFIG}\n"
+                "| STATS `CSPM findings` = COUNT(*)"
+            ),
+            index=MISCONFIG,
+            grid={"x": 36, "y": 4, "w": 12, "h": 4},
+            panel_id="143696f7-f91e-41b2-9650-40b28c80a105",
+        ),
+    ]
+    for _kpi in top_kpis:
+        _kpi["embeddableConfig"]["hidePanelTitles"] = True
 
     inv_header = markdown_panel(
         title="AWS inventory",
         content=(
             "### AWS inventory (CSPM asset posture)\n"
-            "Charts below query the **CPS-linked Security project** "
-            f"`{MISCONFIG}` via cross-project search.\n\n"
+            "Charts below query Observability-local CSPM indices "
+            f"`{MISCONFIG}` (Security deep-links remain in the OOTB nav above).\n\n"
             "A **live resource inventory** from AWS metrics and "
             "**recommendations** derived from those metrics are in the next sections."
         ),
@@ -784,7 +855,17 @@ def build(gcp_path: Path) -> dict:
         ),
     ]
 
-    panels_out = kept + [cspm_kpi, inv_header, assets_by_type, top_assets, by_eval, live_intro, *live_kpis, *live_charts, *rec_panels]
+    panels_out = kept + [
+        *top_kpis,
+        inv_header,
+        assets_by_type,
+        top_assets,
+        by_eval,
+        live_intro,
+        *live_kpis,
+        *live_charts,
+        *rec_panels,
+    ]
     panels_out = inject_ootb_nav(panels_out, "aws")
 
     # Pinned controls (AWS equivalents of GCP filters)

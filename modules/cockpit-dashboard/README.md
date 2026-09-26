@@ -49,9 +49,13 @@ cd examples/<cloud> && terraform apply -target=module.cockpit
 `overwrite = true` re-applies the file on every apply so Kibana stays aligned with the export.
 
 CPS cross-cluster references in the NDJSON use the live Security project alias
-(e.g. `gcp-observe-and-protect-…` / `aws-observe-and-protect-…` /
-`azure-observe-and-protect-…`). After a greenfield recreate with a new project
-name, re-export from the live UI or search-replace the alias before apply.
+when ES|QL can resolve it (e.g. `gcp-observe-and-protect-…`). On AWS, the
+Observability cockpit top KPIs and inventory charts use **Observability-local**
+index patterns (`logs-*` / `metrics-*` / `security_solution-*.misconfiguration_latest`)
+because qualified CPS aliases currently raise `no_matching_project_exception`
+even when the Cloud link status is `enabled`. Security deep-links remain in the
+OOTB nav. After a greenfield recreate, re-export from the live UI or
+search-replace aliases before apply.
 
 ## Recommendations index
 

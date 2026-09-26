@@ -124,14 +124,22 @@ def sync() -> None:
             "vars": copy.deepcopy(template["vars"]),
         }
         body["vars"]["default_region"]["value"] = source["region"]
+        policy_token = hashlib.sha256(name.encode()).hexdigest()[:12]
 
-        for input_config in body["inputs"]:
+        for input_index, input_config in enumerate(body["inputs"]):
+            input_config["id"] = (
+                f"{input_config['type']}-{policy_token}-{input_index}"
+            )
             enabled_input = (
                 input_config.get("policy_template") == source["policy_template"]
                 and input_config.get("type") == source["input_type"]
             )
             input_config["enabled"] = enabled_input
-            for stream in input_config.get("streams", []):
+            for stream_index, stream in enumerate(input_config.get("streams", [])):
+                stream["id"] = (
+                    f"{input_config['type']}-{policy_token}"
+                    f"-{input_index}-{stream_index}"
+                )
                 enabled_stream = (
                     enabled_input
                     and stream["data_stream"]["dataset"] == source["dataset"]

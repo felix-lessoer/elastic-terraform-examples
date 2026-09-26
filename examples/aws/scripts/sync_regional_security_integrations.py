@@ -4,6 +4,7 @@
 import base64
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import copy
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -235,14 +236,22 @@ def sync() -> None:
             "vars": copy.deepcopy(template["vars"]),
         }
         body["vars"]["default_region"]["value"] = region
+        policy_token = hashlib.sha256(name.encode()).hexdigest()[:12]
 
-        for input_config in body["inputs"]:
+        for input_index, input_config in enumerate(body["inputs"]):
+            input_config["id"] = (
+                f"{input_config['type']}-{policy_token}-{input_index}"
+            )
             enabled = (
                 input_config.get("policy_template"),
                 input_config.get("type"),
             ) in security_inputs
             input_config["enabled"] = enabled
-            for stream in input_config.get("streams", []):
+            for stream_index, stream in enumerate(input_config.get("streams", [])):
+                stream["id"] = (
+                    f"{input_config['type']}-{policy_token}"
+                    f"-{input_index}-{stream_index}"
+                )
                 stream["enabled"] = enabled
                 if enabled:
                     configure_stream(stream, region, detector_id)

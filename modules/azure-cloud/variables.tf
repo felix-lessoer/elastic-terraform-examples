@@ -37,3 +37,19 @@ variable "additional_tags" {
   description = "Optional extra tags merged on top of company_tags."
   default     = {}
 }
+
+variable "enable_agent_network" {
+  type        = bool
+  description = "Create a VNet/subnet for Elastic Agent VMs."
+  default     = true
+}
+
+variable "agent_vnet_cidr" {
+  type    = string
+  default = "10.60.0.0/16"
+}
+
+variable "agent_subnet_cidr" {
+  type    = string
+  default = "10.60.1.0/24"
+}

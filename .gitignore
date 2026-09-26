@@ -19,3 +19,4 @@ examples/aws/.env.aws
 
 *.tfvars
 !*.tfvars.example
+__pycache__/

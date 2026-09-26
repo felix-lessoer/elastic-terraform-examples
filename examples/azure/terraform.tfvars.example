@@ -1,16 +1,29 @@
-deployment_mode        = "serverless"
-elastic_project_name   = "Azure Observe and Protect"
-elastic_region         = "azure-westeurope"
-azure_region           = "westeurope"
-azure_subscription_id  = "00000000-0000-0000-0000-000000000000"
-azure_tenant_id        = "00000000-0000-0000-0000-000000000000"
-azure_client_id        = "00000000-0000-0000-0000-000000000000"
-azure_client_secret    = "REPLACE_ME"
-enable_cspm            = true
-enable_detection_rules = true
+deployment_mode              = "serverless"
+elastic_project_name         = "Azure Observe and Protect"
+observability_project_name   = "Azure Observability Cockpit"
+enable_observability_project = true
+elastic_region               = "azure-westeurope"
+azure_region                 = "westeurope"
+azure_resource_group         = "elastic-cloud-poc"
+azure_subscription_id        = "00000000-0000-0000-0000-000000000000"
+azure_tenant_id              = "00000000-0000-0000-0000-000000000000"
+azure_client_id              = "00000000-0000-0000-0000-000000000000"
+azure_client_secret          = "REPLACE_ME"
+
+enable_cspm                       = true
+enable_billing_metrics            = true
+enable_container_instance_metrics = true
+enable_detection_rules            = true
+enable_elastic_agent              = true
+enable_workflows                  = true
+execute_workflows_on_apply        = true
+enable_ml_jobs                    = true
+enable_ai_agents                  = true
 
 company_tags = {
-  CostCenter  = "platform"
-  Owner       = "sre-team"
-  Environment = "poc"
+  division    = "field"
+  org         = "sa"
+  cost-center = "platform"
+  owner       = "sre-team"
+  environment = "poc"
 }

@@ -7,6 +7,7 @@ Imports a pinned Kibana NDJSON export so Terraform owns the live cockpit layout
 | --- | --- | --- | --- |
 | GCP | `cockpit.ndjson` | `fcf1246c-6ee2-4c91-94f8-f034e8d345bc` | Latest Observability export |
 | AWS | `cockpit-aws.ndjson` | `752a1ac0-26e4-49d8-a2b4-5483068809b9` | Latest Observability export |
+| Azure | `cockpit-azure.ndjson` | `b8e4c2f1-9a7d-4e3b-8c5a-1d6f0e9b2a47` | Built from the GCP/AWS cockpit template |
 
 Panels use Kibana `vis` (Lens attributes with ES|QL `textBased` datasources),
 `markdown`, and `custom_content`.
@@ -26,25 +27,30 @@ curl -u admin:"$AWS_OBS_PASSWORD" -H 'kbn-xsrf: true' -H 'content-type: applicat
   -d '{"objects":[{"type":"dashboard","id":"752a1ac0-26e4-49d8-a2b4-5483068809b9"}],"includeReferencesDeep":true,"excludeExportDetails":true}' \
   -o modules/cockpit-dashboard/cockpit-aws.ndjson
 
+# Azure (rebuild from the GCP template)
+python3 modules/cockpit-dashboard/scripts/build_azure_cockpit_ndjson.py /tmp/gcp-cockpit-live.ndjson
+
 cd examples/<cloud> && terraform apply -target=module.cockpit
 ```
 
 `overwrite = true` re-applies the file on every apply so Kibana stays aligned with the export.
 
 CPS cross-cluster references in the NDJSON use the live Security project alias
-(e.g. `gcp-observe-and-protect-…` / `aws-observe-and-protect-…`). After a
-greenfield recreate with a new project name, re-export from the live UI or
-search-replace the alias before apply.
+(e.g. `gcp-observe-and-protect-…` / `aws-observe-and-protect-…` /
+`azure-observe-and-protect-…`). After a greenfield recreate with a new project
+name, re-export from the live UI or search-replace the alias before apply.
 
 ## Recommendations index
 
 Recommendation documents are produced by pinned Kibana Workflows under
-`examples/{gcp,aws}/workflows/` (see those READMEs), not by this module.
+`examples/{gcp,aws,azure}/workflows/` (see those READMEs), not by this module.
 
 | Cloud | Index | Seeded by workflows |
 | --- | --- | --- |
 | GCP | `gcp-cockpit-recommendations` | Cloud Run, Cloud SQL, GKE, Host |
 | AWS | `aws-cockpit-recommendations` | EC2, S3 |
+| Azure | `azure-cockpit-recommendations` | VM, Storage |
 
-Optional Python seed for AWS still exists at
-`scripts/generate_aws_recommendations.py` for offline backfill.
+Optional Python seeds for offline backfill:
+`scripts/generate_aws_recommendations.py`,
+`scripts/generate_azure_recommendations.py`.

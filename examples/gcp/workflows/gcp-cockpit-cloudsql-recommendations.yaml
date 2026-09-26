@@ -1,0 +1,57 @@
+name: GCP Cloud SQL Recommendations
+id: gcp-cockpit-cloudsql-recommendations
+description: >-
+  Analyzes GCP Cloud SQL memory utilization metrics and writes performance
+  risk recommendations to gcp-cockpit-recommendations when average memory
+  utilization over the last 24 hours exceeds 85%.
+
+triggers:
+  - type: manual
+  - type: scheduled
+    with:
+      every: "1h"
+
+steps:
+  - name: query_cloudsql_memory
+    type: elasticsearch.esql.query
+    with:
+      query: |
+        FROM metrics-gcp.cloudsql_postgresql-default
+        | WHERE @timestamp > NOW() - 24 hours
+        | STATS avg_memory_frac = AVG(gcp.cloudsql_postgresql.database.memory.utilization.pct) BY database_id = gcp.labels.resource.database_id
+        | EVAL avg_memory_pct = avg_memory_frac * 100
+        | WHERE avg_memory_pct > 85
+        | KEEP database_id, avg_memory_pct
+
+  - name: build_recommendations
+    type: data.map
+    items: "{{ steps.query_cloudsql_memory.output.values }}"
+    with:
+      fields:
+        database_id: "{{ item[0] }}"
+        avg_memory_pct: "{{ item[1] }}"
+
+  - name: write_recommendations
+    type: foreach
+    foreach: "{{ steps.build_recommendations.output | json }}"
+    steps:
+      - name: index_recommendation
+        type: elasticsearch.index
+        with:
+          index: "gcp-cockpit-recommendations"
+          id: "{{ foreach.item.database_id }}-performance_risk-{{ now | date: '%Y%m%dT%H%M' }}"
+          document:
+            "@timestamp": "{{ now | date_to_xmlschema }}"
+            category: "performance_risk"
+            severity: "high"
+            metric_name: "db_avg_memory_pct"
+            recommendation: >-
+              Cloud SQL instance {{ foreach.item.database_id }} has high memory
+              utilization (avg {{ foreach.item.avg_memory_pct | round: 2 }}%
+              over 24h) - consider upgrading to a machine type with more
+              memory to avoid performance degradation or OOM conditions.
+            resource:
+              type: "cloudsql_database"
+              name: "{{ foreach.item.database_id }}"
+            threshold: "85"
+            metric_value: "{{ foreach.item.avg_memory_pct | round: 2 }}"

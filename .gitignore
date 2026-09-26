@@ -1,0 +1,22 @@
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+override.tf
+*_override.tf
+.DS_Store
+examples/*/local_env/
+
+# local secrets
+**/creds.json
+**/*credentials*.json
+
+# local AWS creds for PoC runs
+examples/aws/.env.aws
+**/.env.aws
+
+*.tfvars
+!*.tfvars.example
+__pycache__/

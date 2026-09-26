@@ -1,0 +1,63 @@
+id: azure-cockpit-storage-recommendations
+name: Azure Storage Recommendations
+description: >-
+  Finds near-empty Azure storage accounts and writes cost-optimization
+  recommendations into azure-cockpit-recommendations.
+
+triggers:
+  - type: manual
+  - type: scheduled
+    with:
+      every: "1h"
+
+steps:
+  - name: find_empty_accounts
+    type: elasticsearch.esql.query
+    with:
+      format: json
+      query: |
+        FROM metrics-azure.storage_account-default
+        | WHERE @timestamp > NOW() - 7 days
+        | STATS max_bytes = MAX(COALESCE(azure.storage_account.used_capacity.avg, azure.storage_account.used_capacity.total))
+          BY azure.resource.name, azure.resource.group, cloud.region, cloud.account.id
+        | WHERE max_bytes == 0 OR max_bytes < 1048576
+
+  - name: map_empty_accounts
+    type: data.map
+    items: "{{ steps.find_empty_accounts.output.values }}"
+    with:
+      fields:
+        max_bytes: "{{ item[0] }}"
+        account: "{{ item[1] }}"
+        resource_group: "{{ item[2] }}"
+        region: "{{ item[3] }}"
+        account_id: "{{ item[4] }}"
+
+  - name: process_empty_accounts
+    type: foreach
+    foreach: "{{ steps.map_empty_accounts.output }}"
+    steps:
+      - name: index_recommendation
+        type: elasticsearch.index
+        with:
+          index: azure-cockpit-recommendations
+          id: "{{ foreach.item.account }}-empty_storage-{{ now | date: '%Y%m%dT%H%M' }}"
+          document:
+            "@timestamp": "{{ now | date_to_xmlschema }}"
+            category: cost_optimization
+            severity: low
+            metric_name: storage_used_capacity_bytes
+            metric_value: "{{ foreach.item.max_bytes }}"
+            threshold: 1048576
+            recommendation: >-
+              Storage account {{ foreach.item.account }} in resource group
+              {{ foreach.item.resource_group }} appears near-empty
+              (used capacity={{ foreach.item.max_bytes }} bytes) — confirm it
+              is still needed or remove it to reduce clutter and exposure risk.
+            resource:
+              type: azure_storage_account
+              name: "{{ foreach.item.account }}"
+            cloud:
+              region: "{{ foreach.item.region }}"
+              account:
+                id: "{{ foreach.item.account_id }}"

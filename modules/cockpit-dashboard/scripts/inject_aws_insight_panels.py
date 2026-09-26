@@ -406,16 +406,17 @@ def inject(panels: list[dict]) -> list[dict]:
         and p.get("panelIndex") != PANEL_IDS["aws"]
     ]
 
-    for p in body_panels:
+    inventory_md = (
+        "### AWS inventory (live metrics assets)\n"
+        "Charts below query `aws-cockpit-assets`, refreshed by the "
+        "**AWS Cockpit Asset Inventory** workflow and the insight seeder. "
+        "This stays populated even when CSPM findings are empty.\n"
+    )
+    for p in body_panels + section_panels:
         cfg = p.get("embeddableConfig") or {}
         content = cfg.get("content") or ""
         if "AWS inventory" in content or "### AWS inventory" in content:
-            cfg["content"] = (
-                "### AWS inventory (live metrics assets)\n"
-                "Charts below query `aws-cockpit-assets`, refreshed by the "
-                "**AWS Cockpit Asset Inventory** workflow and the insight seeder. "
-                "This stays populated even when CSPM findings are empty.\n"
-            )
+            cfg["content"] = inventory_md
 
     # Preserve relative order of body panels; park them after insight block.
     body_panels.sort(

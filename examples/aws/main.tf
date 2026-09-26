@@ -822,6 +822,7 @@ resource "terraform_data" "regional_security_integrations" {
 
   triggers_replace = [
     jsonencode(sort(keys(data.external.enabled_regions.result))),
+    filesha256("${path.module}/scripts/sync_regional_security_integrations.py"),
   ]
 
   provisioner "local-exec" {

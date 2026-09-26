@@ -211,6 +211,198 @@ locals {
       }
     }
   }
+
+  # Inputs whose policy templates are not available in Elastic-managed mode.
+  # Metrics use an empty region list to discover all enabled AWS regions. Log
+  # inputs use Terraform-provisioned S3/SQS sources or well-known CloudWatch
+  # log-group prefixes in the bootstrap region.
+  agent_inputs = merge(
+    {
+      "cloudtrail-aws-s3" = {
+        enabled = true
+        streams = {
+          "aws.cloudtrail" = {
+            enabled = true
+            vars = jsonencode({
+              queue_url               = module.aws_cloud.cloudtrail_queue_url
+              collect_s3_logs         = false
+              preserve_original_event = false
+              actor_target_mapping    = true
+            })
+          }
+        }
+      }
+      "natgateway-aws/metrics" = {
+        enabled = true
+        streams = {
+          "aws.natgateway" = {
+            enabled = true
+            vars    = local.all_region_vars
+          }
+        }
+      }
+      "s3_storage_lens-aws/metrics" = {
+        enabled = true
+        streams = {
+          "aws.s3_storage_lens" = {
+            enabled = true
+            vars    = local.all_region_vars
+          }
+        }
+      }
+      "usage-aws/metrics" = {
+        enabled = true
+        streams = {
+          "aws.usage" = {
+            enabled = true
+            vars    = local.all_region_vars
+          }
+        }
+      }
+      "vpcflow-aws-s3" = {
+        enabled = true
+        streams = {
+          "aws.vpcflow" = {
+            enabled = true
+            vars = jsonencode({
+              queue_url               = module.aws_cloud.vpcflow_queue_url
+              collect_s3_logs         = false
+              preserve_original_event = false
+            })
+          }
+        }
+      }
+      "vpn-aws/metrics" = {
+        enabled = true
+        streams = {
+          "aws.vpn" = {
+            enabled = true
+            vars    = local.all_region_vars
+          }
+        }
+      }
+      "waf-aws-cloudwatch" = {
+        enabled = true
+        streams = {
+          "aws.waf" = {
+            enabled = true
+            vars = jsonencode({
+              log_group_name_prefix   = "aws-waf-logs-"
+              region_name             = var.aws_region
+              preserve_original_event = false
+            })
+          }
+        }
+      }
+      "route53-aws-cloudwatch" = {
+        enabled = true
+        streams = {
+          "aws.route53_public_logs" = {
+            enabled = true
+            vars = jsonencode({
+              log_group_name_prefix   = "/aws/route53/"
+              region_name             = "us-east-1"
+              preserve_original_event = false
+            })
+          }
+          "aws.route53_resolver_logs" = {
+            enabled = true
+            vars = jsonencode({
+              log_group_name_prefix   = "/aws/route53resolver/"
+              region_name             = var.aws_region
+              preserve_original_event = false
+            })
+          }
+        }
+      }
+      "redshift-aws/metrics" = {
+        enabled = true
+        streams = {
+          "aws.redshift" = {
+            enabled = true
+            vars    = local.all_region_vars
+          }
+        }
+      }
+      "kinesis-aws/metrics" = {
+        enabled = true
+        streams = {
+          "aws.kinesis" = {
+            enabled = true
+            vars    = local.all_region_vars
+          }
+        }
+      }
+      "apigateway-aws/metrics" = {
+        enabled = true
+        streams = {
+          "aws.apigateway_metrics" = {
+            enabled = true
+            vars    = local.all_region_vars
+          }
+        }
+      }
+      "apigateway-aws-cloudwatch" = {
+        enabled = true
+        streams = {
+          "aws.apigateway_logs" = {
+            enabled = true
+            vars = jsonencode({
+              log_group_name_prefix   = "API-Gateway-Execution-Logs_"
+              region_name             = var.aws_region
+              preserve_original_event = false
+            })
+          }
+        }
+      }
+      "emr-aws/metrics" = {
+        enabled = true
+        streams = {
+          "aws.emr_metrics" = {
+            enabled = true
+            vars    = local.all_region_vars
+          }
+        }
+      }
+      "emr-aws-cloudwatch" = {
+        enabled = true
+        streams = {
+          "aws.emr_logs" = {
+            enabled = true
+            vars = jsonencode({
+              log_group_name_prefix   = "/aws/elasticmapreduce/"
+              region_name             = var.aws_region
+              preserve_original_event = false
+            })
+          }
+        }
+      }
+      "kafka-aws/metrics" = {
+        enabled = true
+        streams = {
+          "aws.kafka_metrics" = {
+            enabled = true
+            vars    = local.all_region_vars
+          }
+        }
+      }
+    },
+    var.cloudfront_queue_url != "" ? {
+      "cloudfront-aws-s3" = {
+        enabled = true
+        streams = {
+          "aws.cloudfront_logs" = {
+            enabled = true
+            vars = jsonencode({
+              queue_url               = var.cloudfront_queue_url
+              collect_s3_logs         = false
+              preserve_original_event = false
+            })
+          }
+        }
+      }
+    } : {},
+  )
 }
 
 check "required_company_tags" {
@@ -230,6 +422,23 @@ module "observability" {
   region          = var.elastic_region
   product_tier    = var.product_tier
   tags            = local.elastic_tags
+}
+
+# Provision the sources needed by agent-only CloudTrail and VPC Flow inputs,
+# plus the EC2 instance profile used by the collector.
+module "aws_cloud" {
+  source = "../../modules/aws-cloud"
+
+  name_prefix          = var.name_prefix
+  bucket_name          = var.bucket_name
+  enable_cloudtrail    = true
+  enable_vpc_flow_logs = true
+  enable_sqs           = true
+  company_tags         = var.company_tags
+  required_tag_keys    = var.required_tag_keys
+  additional_tags = {
+    Cloud = "aws"
+  }
 }
 
 # Elastic's managed collector assumes this role through identity federation.
@@ -321,9 +530,8 @@ resource "aws_iam_role_policy" "elastic_managed" {
   policy = data.aws_iam_policy_document.elastic_managed.json
 }
 
-# One managed integration means Elastic provisions the collector runtime. No
-# EC2 instance, Fleet enrollment token, or customer-managed Elastic Agent is
-# created.
+# Elastic-managed collection handles every supported observability input. A
+# separate Fleet policy contains only the inputs that still require an agent.
 module "stack" {
   source = "../../modules/elastic-stack"
 
@@ -358,10 +566,44 @@ module "stack" {
         target_csp         = "aws"
       }
       inputs = local.managed_inputs
-    }
+    },
+    {
+      name            = "aws-agent-only-integrations"
+      description     = "AWS integrations and log inputs unavailable in Elastic-managed mode"
+      package_name    = "aws"
+      managed         = false
+      agent_policy    = true
+      prerelease      = false
+      package_version = null
+      policy_template = null
+      vars_json = jsonencode({
+        default_region = var.aws_region
+      })
+      var_group_selections = {
+        credential_type = "default_credentials"
+      }
+      cloud_connector = null
+      inputs          = local.agent_inputs
+    },
   ]
 
-  depends_on = [module.observability, aws_iam_role_policy.elastic_managed]
+  depends_on = [module.observability, module.aws_cloud, aws_iam_role_policy.elastic_managed]
+}
+
+# One customer-managed agent handles only the inputs unavailable in managed
+# mode. Its instance profile supplies credentials through IMDS.
+module "elastic_agent" {
+  source = "../../modules/elastic-agent-ec2"
+
+  name                 = "${var.name_prefix}-agent"
+  instance_type        = var.elastic_agent_instance_type
+  company_tags         = merge(var.company_tags, { Role = "elastic-agent-observability" })
+  fleet_url            = module.observability.fleet_endpoint
+  enrollment_token     = module.stack.enrollment_token
+  agent_version        = var.elastic_agent_version
+  iam_instance_profile = module.aws_cloud.agent_instance_profile_name
+
+  depends_on = [module.stack]
 }
 
 # Keep the curated AWS cockpit in the same Observability project as the data.

@@ -28,6 +28,30 @@ variable "name_prefix" {
   default     = "elastic-observability"
 }
 
+variable "bucket_name" {
+  type        = string
+  description = "Prefix for the S3 bucket that receives CloudTrail and VPC Flow Logs."
+  default     = "elastic-observability-logs"
+}
+
+variable "cloudfront_queue_url" {
+  type        = string
+  description = "Optional SQS queue URL receiving CloudFront S3 log notifications. Empty leaves CloudFront collection unconfigured."
+  default     = ""
+}
+
+variable "elastic_agent_instance_type" {
+  type        = string
+  description = "EC2 instance type for the agent-only AWS integrations."
+  default     = "t3.medium"
+}
+
+variable "elastic_agent_version" {
+  type        = string
+  description = "Elastic Agent version installed on EC2."
+  default     = "9.5.4"
+}
+
 variable "elastic_managed_collector_role_arn" {
   type        = string
   description = "Elastic's AWS super-role used by managed integrations for identity federation."

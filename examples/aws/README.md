@@ -1,19 +1,20 @@
-# AWS Observability with one Elastic-managed collector
+# AWS Observability with managed collection and one EC2 agent
 
 This example intentionally creates a small, observability-only setup:
 
 - one Elastic **Serverless Observability** project;
-- one **Elastic-managed AWS integration** (no EC2-hosted Elastic Agent);
+- one **Elastic-managed AWS integration** for every supported input;
+- one EC2-hosted Elastic Agent for integrations unavailable in managed mode;
 - identity federation through one read-only AWS IAM role; and
 - every AWS observability metrics input supported by managed mode, configured
   for **all AWS regions**;
 - the pinned AWS Observability cockpit dashboard; and
 - pinned Kibana workflows from `examples/aws/workflows`.
 
-There is no Security project, Cross-Project Search link, Fleet enrollment
-token, EC2 collector, CloudTrail/S3/SQS pipeline, CSPM policy, detection-rule
-bootstrap, or customer-managed Elastic Agent. Dashboards and workflows remain
-in the Observability project.
+There is no Security project, Cross-Project Search link, CSPM policy, or
+detection-rule bootstrap. Dashboards and workflows remain in the Observability
+project. Terraform provisions CloudTrail and VPC Flow Log S3/SQS sources for
+the agent-only log streams.
 
 ## Enabled integrations
 
@@ -42,40 +43,48 @@ integration, an empty region selection means that the collector discovers and
 queries every enabled AWS region. Billing is a global API and has no region
 selector.
 
-Log inputs are not enabled: most require a specific regional log group or an
-S3/SQS transport and therefore cannot satisfy both the managed-only and
-all-regions constraints in a single collector.
+Log inputs generally require a specific regional log group or an S3/SQS
+transport and therefore cannot satisfy the all-regions constraint in the
+managed collector. They are assigned to the EC2 agent instead.
 
-## Integrations that still require a customer-managed agent
+## EC2 agent collection
 
-The current AWS package does not offer managed mode for these policy templates:
+The EC2 agent enables all metric streams from policy templates that do not
+offer managed mode:
 
-- CloudTrail
 - NAT Gateway
 - S3 Storage Lens
 - AWS Usage
-- VPC Flow Logs
 - VPN
-- WAF
-- Route 53
-- CloudFront
 - Redshift
 - Kinesis Data Streams
-- API Gateway
-- EMR
-- Amazon MSK
+- API Gateway metrics
+- EMR metrics
+- Amazon MSK metrics
 
-There are also mixed-mode integrations. EC2, ELB, Lambda, S3, Network Firewall,
-and GuardDuty have managed-capable metrics or API collection, but one or more
-of their S3, SQS, or CloudWatch log inputs still require a customer-managed
-Elastic Agent. Network Firewall explicitly marks both log inputs as
-default-mode-only in the package manifest.
+All of these metrics streams use `regions = []`, which enables discovery
+across every AWS region.
+
+The agent also collects:
+
+- multi-region CloudTrail through the Terraform-created S3/SQS source;
+- VPC Flow Logs for the default VPC in `aws_region` through S3/SQS;
+- WAF, Route 53, API Gateway, and EMR logs from their standard CloudWatch log
+  group prefixes in `aws_region` (Route 53 public query logs use `us-east-1`);
+- CloudFront logs when `cloudfront_queue_url` points to an existing SQS queue
+  receiving S3 object notifications.
+
+CloudFront cannot be auto-wired without knowing the distribution's logging
+bucket. Likewise, existing resources must already deliver WAF, Route 53,
+API Gateway, and EMR logs to the standard CloudWatch groups; enabling an input
+does not turn on logging for those AWS services.
 
 ## Prerequisites
 
 - Terraform >= 1.2.7
 - an Elastic Cloud API key in `EC_API_KEY`
-- AWS credentials that can create an IAM role and inline policy
+- AWS credentials that can create IAM, EC2, S3, SQS, CloudTrail, and VPC Flow
+  Log resources
 - Elastic Serverless/Kibana 9.5 or later (required by managed integrations)
 
 ```bash
@@ -84,8 +93,8 @@ export AWS_ACCESS_KEY_ID="..."
 export AWS_SECRET_ACCESS_KEY="..."
 ```
 
-The IAM role trusts Elastic's managed-collector role and grants only the read
-APIs needed by the enabled datasets. No long-lived AWS key is stored in Fleet.
+The managed integration uses a federated IAM role. The EC2 agent uses an
+instance profile and IMDS. No long-lived AWS key is stored in Fleet.
 
 ## Apply
 
@@ -102,9 +111,10 @@ After apply:
 
 1. Use `kibana_url` and verify `aws-observability-all-regions` under
    **Fleet → Managed integrations**.
-2. Open `cockpit_dashboard_url`; package-provided AWS dashboards are also
+2. Confirm the EC2 collector is healthy under **Fleet → Agents**.
+3. Open `cockpit_dashboard_url`; package-provided AWS dashboards are also
    installed automatically.
-3. Check `workflow_ids` for the pinned YAML definitions deployed from
+4. Check `workflow_ids` for the pinned YAML definitions deployed from
    `examples/aws/workflows`.
 
 ## Cost note

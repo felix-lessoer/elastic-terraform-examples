@@ -23,7 +23,7 @@ Stand up an Elastic **Security Complete** environment and the cloud collectors n
 
 | Path | Use when |
 |---|---|
-| [`examples/aws`](../examples/aws) | One Serverless Observability project + one Elastic-managed AWS metrics collector for all regions, with cockpit dashboard and workflows |
+| [`examples/aws`](../examples/aws) | One Serverless Observability project + managed AWS collection + one EC2 agent for non-managed integrations, with cockpit and workflows |
 | [`examples/azure`](../examples/azure) | Azure-only PoC |
 | [`examples/gcp`](../examples/gcp) | GCP Security + Observability (CPS) + cockpit dashboard |
 | [`examples/multicloud`](../examples/multicloud) | One or more clouds + CPS/CCS hub |
@@ -76,9 +76,10 @@ Labels/tags are applied to all taggable cloud resources. On AWS, missing org tag
 ## Enrolling an agent
 
 - **GCP (`examples/gcp`)**: Terraform deploys GCE Elastic Agents (`enable_elastic_agent = true`) for Pub/Sub/metrics; CSPM is agentless.
-- **AWS (`examples/aws`)**: no host enrollment is required. Elastic provisions
-  the single managed integration runtime, which assumes the Terraform-created
-  read-only IAM role through identity federation.
+- **AWS (`examples/aws`)**: Elastic provisions the managed integration runtime
+  and Terraform enrolls one EC2 Agent for policy templates and log inputs that
+  managed mode does not support. Both use IAM roles; no static AWS keys are
+  stored in Fleet.
 - **Azure / multicloud**: Agentless CSPM works without a host agent. For Event Hub or remaining log inputs, enroll Elastic Agent into the created Fleet policy:
 
 ```bash

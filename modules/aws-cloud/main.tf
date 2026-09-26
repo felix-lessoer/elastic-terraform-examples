@@ -288,6 +288,18 @@ data "aws_iam_policy_document" "elastic_permissions" {
       "guardduty:List*",
       "inspector2:List*",
       "inspector2:Get*",
+      # Agent-only AWS metrics integrations.
+      "apigateway:GET",
+      "elasticmapreduce:DescribeCluster",
+      "elasticmapreduce:ListClusters",
+      "kafka:DescribeCluster",
+      "kafka:DescribeClusterV2",
+      "kafka:ListClusters",
+      "kafka:ListClustersV2",
+      "kinesis:DescribeStream",
+      "kinesis:DescribeStreamSummary",
+      "kinesis:ListStreams",
+      "redshift:DescribeClusters",
       # AWS Health (console home widget)
       "health:DescribeEvents",
       "health:DescribeEventDetails",

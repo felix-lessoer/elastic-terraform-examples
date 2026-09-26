@@ -211,6 +211,7 @@ def sync() -> None:
         item for item in policies if item.get("name") == "aws-agent-only-integrations"
     )
     agent_policy_id = os.environ["AGENT_POLICY_ID"]
+    role_arn = os.environ["AWS_ROLE_ARN"]
     security_inputs = {
         ("config", "cel"),
         ("guardduty", "httpjson"),
@@ -236,6 +237,7 @@ def sync() -> None:
             "vars": copy.deepcopy(template["vars"]),
         }
         body["vars"]["default_region"]["value"] = region
+        body["vars"]["role_arn"]["value"] = role_arn
         policy_token = hashlib.sha256(name.encode()).hexdigest()[:12]
 
         for input_index, input_config in enumerate(body["inputs"]):

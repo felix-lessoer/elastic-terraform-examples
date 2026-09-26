@@ -389,6 +389,23 @@ data "aws_iam_policy_document" "agent_trust" {
       identifiers = ["ec2.amazonaws.com"]
     }
   }
+
+  statement {
+    sid     = "AllowSelfAssume"
+    effect  = "Allow"
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "AWS"
+      identifiers = ["arn:${data.aws_partition.current.partition}:iam::${local.account_id}:root"]
+    }
+    condition {
+      test     = "ArnEquals"
+      variable = "aws:PrincipalArn"
+      values = [
+        "arn:${data.aws_partition.current.partition}:iam::${local.account_id}:role/${var.name_prefix}-elastic-agent"
+      ]
+    }
+  }
 }
 
 resource "aws_iam_role" "agent" {
@@ -397,10 +414,21 @@ resource "aws_iam_role" "agent" {
   tags               = local.common_tags
 }
 
+data "aws_iam_policy_document" "agent_permissions" {
+  source_policy_documents = [data.aws_iam_policy_document.elastic_permissions.json]
+
+  statement {
+    sid       = "AssumeCollectorRole"
+    effect    = "Allow"
+    actions   = ["sts:AssumeRole"]
+    resources = [aws_iam_role.agent.arn]
+  }
+}
+
 resource "aws_iam_role_policy" "agent" {
   name   = "${var.name_prefix}-elastic-agent"
   role   = aws_iam_role.agent.id
-  policy = data.aws_iam_policy_document.elastic_permissions.json
+  policy = data.aws_iam_policy_document.agent_permissions.json
 }
 
 resource "aws_iam_role_policy_attachment" "agent_security_audit" {

@@ -340,7 +340,7 @@ data "aws_iam_policy_document" "elastic_permissions" {
     resources = length(compact(concat(
       aws_sqs_queue.cloudtrail[*].arn,
       aws_sqs_queue.vpcflow[*].arn,
-    ))) > 0 ? compact(concat(
+      ))) > 0 ? compact(concat(
       aws_sqs_queue.cloudtrail[*].arn,
       aws_sqs_queue.vpcflow[*].arn,
     )) : ["arn:${data.aws_partition.current.partition}:sqs:${local.region}:${local.account_id}:elastic-poc-disabled"]

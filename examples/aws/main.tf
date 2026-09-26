@@ -14,10 +14,6 @@ terraform {
       source  = "hashicorp/aws"
       version = ">= 5.0"
     }
-    random = {
-      source  = "hashicorp/random"
-      version = ">= 3.5"
-    }
   }
 }
 
@@ -26,7 +22,6 @@ provider "ec" {}
 provider "aws" {
   region = var.aws_region
 
-  # Ensure every taggable AWS resource carries org-policy tags (SCP enforcement).
   default_tags {
     tags = var.company_tags
   }
@@ -35,585 +30,329 @@ provider "aws" {
 # Per-resource kibana_connection blocks supply credentials.
 provider "elasticstack" {}
 
-module "elastic" {
-  source = "../../modules/elastic-project"
+data "aws_caller_identity" "current" {}
+data "aws_partition" "current" {}
 
-  deployment_mode        = var.deployment_mode
-  project_kind           = "security"
-  name                   = var.elastic_project_name
-  region                 = var.elastic_region
-  product_tier           = var.product_tier
-  elastic_version        = var.elastic_version
-  deployment_template_id = var.deployment_template_id
-  tags = {
+locals {
+  elastic_tags = {
     for k, v in var.company_tags :
     substr(lower(replace(replace(replace(replace(k, " ", "-"), "/", "-"), ".", "-"), ":", "-")), 0, 32) =>
     substr(lower(replace(replace(replace(replace(tostring(v), " ", "-"), "/", "-"), ".", "-"), ":", "-")), 0, 32)
   }
+
+  required_aws_tag_keys_missing = [
+    for key in var.required_tag_keys : key
+    if !contains(keys(var.company_tags), key)
+  ]
+
+  # An empty regions list is the AWS integration's documented "all regions"
+  # setting. Every supported observability policy template is represented in
+  # this single Elastic-managed integration.
+  all_region_vars = jsonencode({
+    regions = []
+  })
+
+  managed_inputs = {
+    "awshealth-aws/metrics" = {
+      enabled = true
+      streams = {
+        "aws.awshealth" = {
+          enabled = true
+          vars    = local.all_region_vars
+        }
+      }
+    }
+    "billing-aws/metrics" = {
+      enabled = true
+      streams = {
+        "aws.billing" = {
+          enabled = true
+          vars = jsonencode({
+            period                  = "24h"
+            include_linked_accounts = true
+          })
+        }
+      }
+    }
+    "cloudwatch-aws/metrics" = {
+      enabled = true
+      streams = {
+        "aws.cloudwatch_metrics" = {
+          enabled = true
+          vars = jsonencode({
+            period                  = "5m"
+            latency                 = "5m"
+            regions                 = []
+            include_linked_accounts = true
+            metrics = <<-YAML
+              - namespace: "*"
+            YAML
+          })
+        }
+      }
+    }
+    "dynamodb-aws/metrics" = {
+      enabled = true
+      streams = {
+        "aws.dynamodb" = {
+          enabled = true
+          vars    = local.all_region_vars
+        }
+      }
+    }
+    "ebs-aws/metrics" = {
+      enabled = true
+      streams = {
+        "aws.ebs" = {
+          enabled = true
+          vars    = local.all_region_vars
+        }
+      }
+    }
+    "ec2-aws/metrics" = {
+      enabled = true
+      streams = {
+        "aws.ec2_metrics" = {
+          enabled = true
+          vars    = local.all_region_vars
+        }
+      }
+    }
+    "ecs-aws/metrics" = {
+      enabled = true
+      streams = {
+        "aws.ecs_metrics" = {
+          enabled = true
+          vars    = local.all_region_vars
+        }
+      }
+    }
+    "elb-aws/metrics" = {
+      enabled = true
+      streams = {
+        "aws.elb_metrics" = {
+          enabled = true
+          vars    = local.all_region_vars
+        }
+      }
+    }
+    "lambda-aws/metrics" = {
+      enabled = true
+      streams = {
+        "aws.lambda" = {
+          enabled = true
+          vars    = local.all_region_vars
+        }
+      }
+    }
+    "firewall-aws/metrics" = {
+      enabled = true
+      streams = {
+        "aws.firewall_metrics" = {
+          enabled = true
+          vars    = local.all_region_vars
+        }
+      }
+    }
+    "rds-aws/metrics" = {
+      enabled = true
+      streams = {
+        "aws.rds" = {
+          enabled = true
+          vars    = local.all_region_vars
+        }
+      }
+    }
+    "s3-aws/metrics" = {
+      enabled = true
+      streams = {
+        "aws.s3_daily_storage" = {
+          enabled = true
+          vars    = local.all_region_vars
+        }
+        "aws.s3_request" = {
+          enabled = true
+          vars    = local.all_region_vars
+        }
+      }
+    }
+    "sns-aws/metrics" = {
+      enabled = true
+      streams = {
+        "aws.sns" = {
+          enabled = true
+          vars    = local.all_region_vars
+        }
+      }
+    }
+    "sqs-aws/metrics" = {
+      enabled = true
+      streams = {
+        "aws.sqs" = {
+          enabled = true
+          vars    = local.all_region_vars
+        }
+      }
+    }
+    "transitgateway-aws/metrics" = {
+      enabled = true
+      streams = {
+        "aws.transitgateway" = {
+          enabled = true
+          vars    = local.all_region_vars
+        }
+      }
+    }
+  }
 }
 
-# Observability hub with Cross-Project Search into the Security project.
+check "required_company_tags" {
+  assert {
+    condition     = length(local.required_aws_tag_keys_missing) == 0
+    error_message = "company_tags is missing required keys: ${join(", ", local.required_aws_tag_keys_missing)}"
+  }
+}
+
+# The only Elastic environment: one Serverless Observability project.
 module "observability" {
-  count  = var.enable_observability_project && var.deployment_mode == "serverless" ? 1 : 0
   source = "../../modules/elastic-project"
 
   deployment_mode = "serverless"
   project_kind    = "observability"
-  name            = var.observability_project_name
+  name            = var.elastic_project_name
   region          = var.elastic_region
   product_tier    = var.product_tier
-  linked_projects = {
-    (module.elastic.id) = { type = "security" }
-  }
-  tags = {
-    for k, v in var.company_tags :
-    substr(lower(replace(replace(replace(replace(k, " ", "-"), "/", "-"), ".", "-"), ":", "-")), 0, 32) =>
-    substr(lower(replace(replace(replace(replace(tostring(v), " ", "-"), "/", "-"), ".", "-"), ":", "-")), 0, 32)
-  }
-
-  depends_on = [module.elastic]
+  tags            = local.elastic_tags
 }
 
-module "observability_seed" {
-  count  = length(module.observability) > 0 ? 1 : 0
-  source = "../../modules/observability-seed"
+# Elastic's managed collector assumes this role through identity federation.
+data "aws_iam_policy_document" "elastic_managed_trust" {
+  statement {
+    sid     = "ElasticManagedCollector"
+    effect  = "Allow"
+    actions = ["sts:AssumeRole"]
 
-  kibana_endpoint                 = module.observability[0].kibana_endpoint
-  elasticsearch_endpoint          = module.observability[0].elasticsearch_endpoint
-  elasticsearch_username          = module.observability[0].username
-  elasticsearch_password          = module.observability[0].password
-  security_elasticsearch_endpoint = module.elastic.elasticsearch_endpoint
-  security_elasticsearch_username = module.elastic.username
-  security_elasticsearch_password = module.elastic.password
-  enable_ml_jobs                  = var.enable_ml_jobs
-  enable_ai_agents                = var.enable_ai_agents
-  enable_observability_alerts     = var.enable_observability_alerts
-  cloud_slug                      = "aws"
-  cloud_display_name              = "AWS"
-
-  depends_on = [module.observability, module.elastic]
-}
-
-module "cockpit" {
-  count  = length(module.observability) > 0 ? 1 : 0
-  source = "../../modules/cockpit-dashboard"
-
-  kibana_endpoint            = module.observability[0].kibana_endpoint
-  elasticsearch_username     = module.observability[0].username
-  elasticsearch_password     = module.observability[0].password
-  security_project_name      = module.elastic.name
-  observability_project_name = module.observability[0].name
-  title                      = "AWS Observe & Protect Cockpit"
-  dashboard_id               = "a1b2c3d4-e5f6-4789-a012-3456789abcde"
-  ndjson_path                = "${path.module}/../../modules/cockpit-dashboard/cockpit-aws.ndjson"
-  ml_jobs                    = try(module.observability_seed[0].ml_jobs, [])
-  ai_agents                  = try(module.observability_seed[0].ai_agents, [])
-
-  depends_on = [module.observability, module.observability_seed]
-}
-
-module "workflows_obs" {
-  count  = var.enable_workflows && length(module.observability) > 0 ? 1 : 0
-  source = "../../modules/kibana-workflows"
-
-  kibana_endpoint        = module.observability[0].kibana_endpoint
-  elasticsearch_username = module.observability[0].username
-  elasticsearch_password = module.observability[0].password
-  workflows_dir          = "${path.module}/workflows"
-  execute_on_apply       = var.execute_workflows_on_apply
-
-  depends_on = [module.observability, module.observability_seed, module.cockpit]
-}
-
-module "workflows_security" {
-  count  = var.enable_workflows && var.deploy_workflows_to_security ? 1 : 0
-  source = "../../modules/kibana-workflows"
-
-  kibana_endpoint        = module.elastic.kibana_endpoint
-  elasticsearch_username = module.elastic.username
-  elasticsearch_password = module.elastic.password
-  workflows_dir          = "${path.module}/workflows"
-  execute_on_apply       = var.execute_workflows_on_apply
-
-  depends_on = [module.elastic, module.stack]
-}
-
-module "aws_cloud" {
-  source = "../../modules/aws-cloud"
-
-  name_prefix          = var.name_prefix
-  bucket_name          = var.bucket_name
-  enable_cloudtrail    = var.enable_cloudtrail
-  enable_vpc_flow_logs = var.enable_vpc_flow_logs
-  enable_sqs           = var.enable_sqs
-  company_tags         = var.company_tags
-  required_tag_keys    = var.required_tag_keys
-  additional_tags = {
-    Cloud = "aws"
-  }
-}
-
-# GuardDuty httpjson requires an explicit detector id (package does not auto-discover).
-data "aws_guardduty_detector" "this" {
-  count = var.enable_guardduty ? 1 : 0
-}
-
-locals {
-  aws_package_vars = {
-    default_region = var.aws_region
-  }
-
-  # The aws package enables EVERY policy template by default. Explicitly disable
-  # unused inputs (same pattern as examples/gcp extra metrics).
-  aws_all_input_datasets = {
-    "awshealth-aws/metrics"             = ["aws.awshealth"]
-    "billing-aws/metrics"               = ["aws.billing"]
-    "cloudtrail-aws-s3"                 = ["aws.cloudtrail"]
-    "cloudtrail-aws-cloudwatch"          = ["aws.cloudtrail"]
-    "cloudwatch-aws-cloudwatch"          = ["aws.cloudwatch_logs"]
-    "cloudwatch-aws/metrics"             = ["aws.cloudwatch_metrics"]
-    "config-cel"                        = ["aws.config"]
-    "dynamodb-aws/metrics"              = ["aws.dynamodb"]
-    "ebs-aws/metrics"                   = ["aws.ebs"]
-    "ec2-aws-s3"                        = ["aws.ec2_logs"]
-    "ec2-aws-cloudwatch"                = ["aws.ec2_logs"]
-    "ec2-aws/metrics"                   = ["aws.ec2_metrics"]
-    "ecs-aws/metrics"                   = ["aws.ecs_metrics"]
-    "elb-aws-s3"                        = ["aws.elb_logs"]
-    "elb-aws-cloudwatch"                = ["aws.elb_logs"]
-    "elb-aws/metrics"                   = ["aws.elb_metrics"]
-    "lambda-aws/metrics"                = ["aws.lambda"]
-    "lambda-aws-cloudwatch"             = ["aws.lambda_logs"]
-    "natgateway-aws/metrics"            = ["aws.natgateway"]
-    "firewall-aws-s3"                   = ["aws.firewall_logs"]
-    "firewall-aws-cloudwatch"           = ["aws.firewall_logs"]
-    "firewall-aws/metrics"              = ["aws.firewall_metrics"]
-    "rds-aws/metrics"                   = ["aws.rds"]
-    "s3-aws-s3"                         = ["aws.s3access"]
-    "s3-aws/metrics"                    = ["aws.s3_daily_storage", "aws.s3_request"]
-    "s3_storage_lens-aws/metrics"       = ["aws.s3_storage_lens"]
-    "sns-aws/metrics"                   = ["aws.sns"]
-    "sqs-aws/metrics"                   = ["aws.sqs"]
-    "transitgateway-aws/metrics"        = ["aws.transitgateway"]
-    "usage-aws/metrics"                 = ["aws.usage"]
-    "vpcflow-aws-s3"                    = ["aws.vpcflow"]
-    "vpcflow-aws-cloudwatch"            = ["aws.vpcflow"]
-    "vpn-aws/metrics"                   = ["aws.vpn"]
-    "waf-aws-s3"                        = ["aws.waf"]
-    "waf-aws-cloudwatch"                = ["aws.waf"]
-    "route53-aws-cloudwatch"            = ["aws.route53_public_logs", "aws.route53_resolver_logs"]
-    "route53-aws-s3"                    = ["aws.route53_resolver_logs"]
-    "cloudfront-aws-s3"                 = ["aws.cloudfront_logs"]
-    "redshift-aws/metrics"              = ["aws.redshift"]
-    "kinesis-aws/metrics"               = ["aws.kinesis"]
-    "securityhub-httpjson"              = ["aws.securityhub_findings", "aws.securityhub_findings_full_posture", "aws.securityhub_insights"]
-    "inspector-httpjson"                = ["aws.inspector"]
-    "guardduty-httpjson"                = ["aws.guardduty"]
-    "guardduty-aws-s3"                  = ["aws.guardduty"]
-    "apigateway-aws/metrics"            = ["aws.apigateway_metrics"]
-    "apigateway-aws-s3"                 = ["aws.apigateway_logs"]
-    "apigateway-aws-cloudwatch"         = ["aws.apigateway_logs"]
-    "emr-aws/metrics"                   = ["aws.emr_metrics"]
-    "emr-aws-s3"                        = ["aws.emr_logs"]
-    "emr-aws-cloudwatch"                = ["aws.emr_logs"]
-    "kafka-aws/metrics"                 = ["aws.kafka_metrics"]
-  }
-
-  aws_disabled_input_stubs = {
-    for input_key, datasets in local.aws_all_input_datasets : input_key => {
-      enabled = false
-      streams = { for ds in datasets : ds => { enabled = false } }
+    principals {
+      type        = "AWS"
+      identifiers = [var.elastic_managed_collector_role_arn]
     }
   }
+}
 
-  # Fleet still validates required vars on these even when disabled.
-  aws_httpjson_disabled_overrides = {
-    "inspector-httpjson" = {
-      enabled = false
-      streams = {
-        "aws.inspector" = {
-          enabled = false
-          vars = jsonencode({
-            interval                         = "1h"
-            initial_interval                 = "24h"
-            aws_region                       = var.aws_region
-            tld                              = "amazonaws.com"
-            tags                             = ["forwarded", "aws-inspector"]
-            preserve_original_event          = false
-            preserve_duplicate_custom_fields = false
-          })
-        }
-      }
-    }
-    "securityhub-httpjson" = {
-      enabled = false
-      streams = {
-        "aws.securityhub_findings" = {
-          enabled = false
-          vars = jsonencode({
-            interval                         = "1h"
-            initial_interval                 = "24h"
-            aws_region                       = var.aws_region
-            tld                              = "amazonaws.com"
-            tags                             = ["forwarded", "aws_securityhub_findings"]
-            preserve_original_event          = false
-            preserve_duplicate_custom_fields = false
-          })
-        }
-        "aws.securityhub_insights" = {
-          enabled = false
-          vars = jsonencode({
-            interval                         = "1h"
-            aws_region                       = var.aws_region
-            tld                              = "amazonaws.com"
-            tags                             = ["forwarded", "aws_securityhub_insights"]
-            preserve_original_event          = false
-            preserve_duplicate_custom_fields = false
-          })
-        }
-        "aws.securityhub_findings_full_posture" = {
-          enabled = false
-          vars = jsonencode({
-            aws_region                       = var.aws_region
-            tld                              = "amazonaws.com"
-            tags                             = ["forwarded", "aws_securityhub_findings_full_posture"]
-            preserve_original_event          = false
-            preserve_duplicate_custom_fields = false
-          })
-        }
-      }
-    }
-    "guardduty-httpjson" = {
-      enabled = false
-      streams = {
-        "aws.guardduty" = {
-          enabled = false
-          vars = jsonencode({
-            interval                         = "1h"
-            initial_interval                 = "24h"
-            detector_id                      = try(data.aws_guardduty_detector.this[0].id, "00000000000000000000000000000000")
-            aws_region                       = var.aws_region
-            tld                              = "amazonaws.com"
-            http_client_timeout              = "30s"
-            tags                             = ["forwarded", "aws-guardduty"]
-            preserve_original_event          = false
-            preserve_duplicate_custom_fields = false
-          })
-        }
-      }
-    }
-  }
+resource "aws_iam_role" "elastic_managed" {
+  name               = "${var.name_prefix}-managed-observability"
+  assume_role_policy = data.aws_iam_policy_document.elastic_managed_trust.json
+  tags               = merge(var.company_tags, { Name = "${var.name_prefix}-managed-observability" })
+}
 
-  aws_security_enabled_inputs = merge(
-    var.enable_cloudtrail && module.aws_cloud.cloudtrail_queue_url != null ? {
-      "cloudtrail-aws-s3" = {
-        enabled = true
-        streams = {
-          "aws.cloudtrail" = {
-            enabled = true
-            vars = jsonencode({
-              queue_url               = module.aws_cloud.cloudtrail_queue_url
-              collect_s3_logs         = false
-              preserve_original_event = false
-              actor_target_mapping    = true
-            })
-          }
-        }
-      }
-    } : {},
-    var.enable_security_hub ? {
-      "securityhub-httpjson" = {
-        enabled = true
-        streams = {
-          "aws.securityhub_findings" = {
-            enabled = true
-            vars = jsonencode({
-              interval                         = "1h"
-              initial_interval                 = "24h"
-              aws_region                       = var.aws_region
-              tld                              = "amazonaws.com"
-              tags                             = ["forwarded", "aws_securityhub_findings"]
-              preserve_original_event          = false
-              preserve_duplicate_custom_fields = false
-            })
-          }
-          "aws.securityhub_insights" = {
-            enabled = true
-            vars = jsonencode({
-              interval                         = "1h"
-              aws_region                       = var.aws_region
-              tld                              = "amazonaws.com"
-              tags                             = ["forwarded", "aws_securityhub_insights"]
-              preserve_original_event          = false
-              preserve_duplicate_custom_fields = false
-            })
-          }
-          "aws.securityhub_findings_full_posture" = {
-            enabled = true
-            vars = jsonencode({
-              aws_region                       = var.aws_region
-              tld                              = "amazonaws.com"
-              tags                             = ["forwarded", "aws_securityhub_findings_full_posture"]
-              preserve_original_event          = false
-              preserve_duplicate_custom_fields = false
-            })
-          }
-        }
-      }
-    } : {},
-    var.enable_guardduty ? {
-      "guardduty-httpjson" = {
-        enabled = true
-        streams = {
-          "aws.guardduty" = {
-            enabled = true
-            vars = jsonencode({
-              interval                         = "1h"
-              initial_interval                 = "24h"
-              detector_id                      = data.aws_guardduty_detector.this[0].id
-              aws_region                       = var.aws_region
-              tld                              = "amazonaws.com"
-              http_client_timeout              = "30s"
-              tags                             = ["forwarded", "aws-guardduty"]
-              preserve_original_event          = false
-              preserve_duplicate_custom_fields = false
-            })
-          }
-        }
-      }
-    } : {},
-    var.enable_aws_health ? {
-      "awshealth-aws/metrics" = {
-        enabled = true
-        streams = {
-          "aws.awshealth" = {
-            enabled = true
-            vars = jsonencode({
-              period  = "24h"
-              regions = ["us-east-1", var.aws_region]
-            })
-          }
-        }
-      }
-    } : {}
-  )
-
-  aws_observe_enabled_inputs = merge(
-    var.enable_vpc_flow_logs && module.aws_cloud.vpcflow_queue_url != null ? {
-      "vpcflow-aws-s3" = {
-        enabled = true
-        streams = {
-          "aws.vpcflow" = {
-            enabled = true
-            vars = jsonencode({
-              queue_url               = module.aws_cloud.vpcflow_queue_url
-              collect_s3_logs         = false
-              tags                    = ["forwarded", "aws-vpcflow"]
-              preserve_original_event = false
-            })
-          }
-        }
-      }
-    } : {},
-    {
-      "cloudwatch-aws/metrics" = {
-        enabled = true
-        streams = {
-          "aws.cloudwatch_metrics" = {
-            enabled = true
-            vars = jsonencode(merge(
-              {
-                period  = "5m"
-                latency = "5m"
-                regions = [var.aws_region]
-              },
-              var.enable_trusted_advisor ? {
-                metrics = <<-YAML
-                  - namespace: AWS/TrustedAdvisor
-                    name:
-                      - RedResources
-                      - YellowResources
-                      - ServiceLimitUsage
-                    statistic:
-                      - Average
-                      - Maximum
-                YAML
-              } : tomap({})
-            ))
-          }
-        }
-      }
-      "ec2-aws/metrics" = {
-        enabled = true
-        streams = {
-          "aws.ec2_metrics" = {
-            enabled = true
-            vars = jsonencode({
-              period  = "5m"
-              regions = [var.aws_region]
-            })
-          }
-        }
-      }
-      "s3-aws/metrics" = {
-        enabled = true
-        streams = {
-          "aws.s3_daily_storage" = {
-            enabled = true
-            vars = jsonencode({
-              period  = "24h"
-              regions = [var.aws_region]
-            })
-          }
-          "aws.s3_request" = {
-            enabled = true
-            vars = jsonencode({
-              period  = "5m"
-              regions = [var.aws_region]
-            })
-          }
-        }
-      }
-      "billing-aws/metrics" = {
-        enabled = var.enable_billing_metrics
-        streams = {
-          "aws.billing" = {
-            enabled = var.enable_billing_metrics
-            vars = jsonencode({
-              period = "12h"
-            })
-          }
-        }
-      }
-    }
-  )
-
-  security_integrations = concat(
-    var.enable_cspm ? [
-      {
-        name                 = "cspm-aws"
-        description          = "Agentless CSPM for AWS (CIS)"
-        package_name         = "cloud_security_posture"
-        managed              = true
-        agent_policy         = false
-        prerelease           = false
-        package_version      = null
-        policy_template      = "cspm"
-        vars_json            = jsonencode({ posture = "cspm", deployment = "aws" })
-        var_group_selections = { deployment = "aws" }
-        cloud_connector      = null
-        inputs = {
-          "cspm-cloudbeat/cis_aws" = {
-            enabled = true
-            streams = {
-              "cloud_security_posture.findings" = {
-                enabled = true
-                vars = jsonencode({
-                  role_arn                      = module.aws_cloud.elastic_role_arn
-                  "aws.credentials.type"        = "assume_role"
-                  "aws.account_type"            = "single-account"
-                  "aws.credentials.external_id" = module.aws_cloud.external_id
-                })
-              }
-            }
-          }
-        }
-      }
-    ] : [],
-    [
-      {
-        name                 = "aws-security"
-        description          = "AWS console-home security: Security Hub, GuardDuty, AWS Health (+ CloudTrail when SQS allowed)"
-        package_name         = "aws"
-        managed              = false
-        agent_policy         = true
-        prerelease           = false
-        package_version      = null
-        policy_template      = null
-        vars_json            = jsonencode(local.aws_package_vars)
-        var_group_selections = {}
-        cloud_connector      = null
-        inputs               = merge(local.aws_disabled_input_stubs, local.aws_httpjson_disabled_overrides, local.aws_security_enabled_inputs)
-      }
+data "aws_iam_policy_document" "elastic_managed" {
+  statement {
+    sid    = "DiscoverAccountAndRegions"
+    effect = "Allow"
+    actions = [
+      "ec2:DescribeRegions",
+      "iam:ListAccountAliases",
+      "sts:GetCallerIdentity",
+      "tag:GetResources",
     ]
-  )
+    resources = ["*"]
+  }
 
-  observability_integrations = [
-    {
-      name                 = "aws-observe"
-      description          = "AWS observability (metrics + Trusted Advisor; vpcflow when SQS allowed)"
-      package_name         = "aws"
-      managed              = false
-      agent_policy         = true
-      prerelease           = false
-      package_version      = null
-      policy_template      = null
-      vars_json            = jsonencode(local.aws_package_vars)
-      var_group_selections = {}
-      cloud_connector      = null
-      inputs               = merge(local.aws_disabled_input_stubs, local.aws_httpjson_disabled_overrides, local.aws_observe_enabled_inputs)
-    }
-  ]
+  statement {
+    sid    = "CollectObservabilityMetrics"
+    effect = "Allow"
+    actions = [
+      "cloudwatch:GetMetricData",
+      "cloudwatch:ListMetrics",
+      "dynamodb:DescribeTable",
+      "dynamodb:ListTables",
+      "ec2:DescribeInstanceStatus",
+      "ec2:DescribeInstances",
+      "ec2:DescribeTransitGatewayAttachments",
+      "ec2:DescribeTransitGateways",
+      "ec2:DescribeVolumes",
+      "ecs:DescribeClusters",
+      "ecs:DescribeServices",
+      "ecs:ListClusters",
+      "ecs:ListServices",
+      "elasticloadbalancing:DescribeLoadBalancers",
+      "elasticloadbalancing:DescribeTags",
+      "elasticloadbalancing:DescribeTargetGroups",
+      "elasticloadbalancing:DescribeTargetHealth",
+      "lambda:GetFunction",
+      "lambda:ListFunctions",
+      "rds:DescribeDBClusters",
+      "rds:DescribeDBInstances",
+      "rds:ListTagsForResource",
+      "s3:GetBucketLocation",
+      "s3:ListAllMyBuckets",
+      "s3:ListBucket",
+      "sns:GetTopicAttributes",
+      "sns:ListTopics",
+      "sqs:GetQueueAttributes",
+      "sqs:ListQueues",
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid    = "CollectGlobalObservabilityData"
+    effect = "Allow"
+    actions = [
+      "ce:GetCostAndUsage",
+      "health:DescribeAffectedEntities",
+      "health:DescribeEventDetails",
+      "health:DescribeEvents",
+    ]
+    resources = ["*"]
+  }
 }
 
-# Security project Fleet: agentless CSPM/CNVM + agent CloudTrail + detection rules.
+resource "aws_iam_role_policy" "elastic_managed" {
+  name   = "${var.name_prefix}-managed-observability"
+  role   = aws_iam_role.elastic_managed.id
+  policy = data.aws_iam_policy_document.elastic_managed.json
+}
+
+# One managed integration means Elastic provisions the collector runtime. No
+# EC2 instance, Fleet enrollment token, or customer-managed Elastic Agent is
+# created.
 module "stack" {
   source = "../../modules/elastic-stack"
 
-  kibana_endpoint        = module.elastic.kibana_endpoint
-  elasticsearch_endpoint = module.elastic.elasticsearch_endpoint
-  elasticsearch_username = module.elastic.username
-  elasticsearch_password = module.elastic.password
-  policy_name            = "aws-observe-protect"
-  enable_detection_rules = var.enable_detection_rules
-  detection_rule_tags    = var.detection_rule_tags
-  integrations           = local.security_integrations
-
-  depends_on = [module.elastic, module.aws_cloud]
-}
-
-# Observability project Fleet: metrics + vpcflow + observability agent.
-module "stack_obs" {
-  count  = length(module.observability) > 0 ? 1 : 0
-  source = "../../modules/elastic-stack"
-
-  kibana_endpoint        = module.observability[0].kibana_endpoint
-  elasticsearch_endpoint = module.observability[0].elasticsearch_endpoint
-  elasticsearch_username = module.observability[0].username
-  elasticsearch_password = module.observability[0].password
-  policy_name            = "aws-observability"
+  kibana_endpoint        = module.observability.kibana_endpoint
+  elasticsearch_endpoint = module.observability.elasticsearch_endpoint
+  elasticsearch_username = module.observability.username
+  elasticsearch_password = module.observability.password
   enable_detection_rules = false
-  integrations           = local.observability_integrations
 
-  depends_on = [module.observability, module.aws_cloud]
-}
+  integrations = [
+    {
+      name                 = "aws-observability-all-regions"
+      description          = "Elastic-managed AWS observability collection across all regions"
+      package_name         = "aws"
+      managed              = true
+      agent_policy         = false
+      prerelease           = false
+      package_version      = null
+      policy_template      = null
+      vars_json = jsonencode({
+        default_region               = var.aws_region
+        role_arn                     = aws_iam_role.elastic_managed.arn
+        supports_identity_federation = true
+      })
+      var_group_selections = {
+        credential_type = "identity_federation"
+      }
+      cloud_connector = {
+        enabled            = true
+        cloud_connector_id = null
+        name               = "${var.name_prefix}-aws-observability"
+        target_csp         = "aws"
+      }
+      inputs = local.managed_inputs
+    }
+  ]
 
-module "elastic_agent" {
-  count  = var.enable_elastic_agent ? 1 : 0
-  source = "../../modules/elastic-agent-ec2"
-
-  name                 = "${var.name_prefix}-agent"
-  instance_type        = var.elastic_agent_instance_type
-  company_tags         = merge(module.aws_cloud.applied_tags, { Role = "elastic-agent-security" })
-  fleet_url            = module.elastic.fleet_endpoint
-  enrollment_token     = module.stack.enrollment_token
-  agent_version        = var.elastic_agent_version
-  iam_instance_profile = module.aws_cloud.agent_instance_profile_name
-
-  depends_on = [module.stack]
-}
-
-module "elastic_agent_obs" {
-  count  = var.enable_elastic_agent && length(module.stack_obs) > 0 ? 1 : 0
-  source = "../../modules/elastic-agent-ec2"
-
-  name                 = "${var.name_prefix}-obs-agent"
-  instance_type        = var.elastic_agent_instance_type
-  company_tags         = merge(module.aws_cloud.applied_tags, { Role = "elastic-agent-observability" })
-  fleet_url            = module.observability[0].fleet_endpoint
-  enrollment_token     = module.stack_obs[0].enrollment_token
-  agent_version        = var.elastic_agent_version
-  iam_instance_profile = module.aws_cloud.agent_instance_profile_name
-
-  depends_on = [module.stack_obs]
+  depends_on = [module.observability, aws_iam_role_policy.elastic_managed]
 }

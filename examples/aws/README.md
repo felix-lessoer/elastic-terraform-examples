@@ -1,105 +1,81 @@
-# AWS Observe and Protect (modern PoC)
+# AWS Observability with one Elastic-managed collector
 
-Mirrors the GCP dual-project pattern for AWS:
+This example intentionally creates a small, observability-only setup:
 
-1. **Elastic Security** serverless (Complete) — agentless CSPM (+ optional CNVM), agent CloudTrail + console-home security, AWS detection rules
-2. **Elastic Observability** serverless — CPS-linked hub with agent vpcflow + CloudWatch/EC2/S3/billing + Trusted Advisor metrics
-3. **Cockpit dashboard** on Observability — pinned NDJSON (`modules/cockpit-dashboard/cockpit-aws.ndjson`)
-4. **Kibana Workflows** — YAML under `examples/aws/workflows/` (optional execute-on-apply)
+- one Elastic **Serverless Observability** project;
+- one **Elastic-managed AWS integration** (no EC2-hosted Elastic Agent);
+- identity federation through one read-only AWS IAM role; and
+- every AWS observability metrics input supported by managed mode, configured
+  for **all AWS regions**.
 
-## Agentless vs agent
+There is no Security project, Cross-Project Search link, Fleet enrollment
+token, EC2 collector, CloudTrail/S3/SQS pipeline, CSPM policy, detection-rule
+bootstrap, or customer-managed Elastic Agent.
 
-| Integration | Mode | Why |
-| --- | --- | --- |
-| CSPM (CIS AWS) | **Agentless** | `cloud_security_posture` managed integration |
-| CNVM / vuln_mgmt | **Agentless** | same package, `vuln_mgmt` policy template |
-| CloudTrail | **Agent** | S3/SQS package input not available agentless |
-| Security Hub findings | **Agent** | httpjson streams; agentless available in package but this PoC uses IMDS on EC2 |
-| GuardDuty findings | **Agent** | same pattern as Security Hub |
-| AWS Health | **Agent** | `awshealth` metricset via agent IMDS |
-| Trusted Advisor | **Agent** | CloudWatch `AWS/TrustedAdvisor` (no dedicated Elastic data stream) |
-| VPC Flow Logs | **Agent** | S3/SQS package input not available agentless |
-| CloudWatch / EC2 / S3 / billing metrics | **Agent** | AWS metrics streams require Elastic Agent |
+## Enabled integrations
 
-Two EC2 Elastic Agents enroll into the Security and Observability Fleet policies. Agents use an **IAM instance profile** (IMDS) — no static AWS access keys in Fleet policies. Agentless CSPM/CNVM still assume the collector role with external id.
+The single managed integration enables these AWS datasets:
 
-## Company tags (required)
-
-Every taggable AWS resource gets your policy tags via `company_tags`, and the AWS provider also sets them as `default_tags`. Use the **same keys as GCP `company_labels`** — Elastic org SCPs deny creates (notably `sqs:CreateQueue`) when required tags are missing.
-
-```hcl
-company_tags = {
-  division    = "field"
-  org         = "sa"
-  keep-until  = "2026-10-01"
-  team        = "emea_central_area"
-  project     = "felixroessel"
-  environment = "poc"
-}
-
-required_tag_keys = [
-  "division",
-  "org",
-  "keep-until",
-  "team",
-  "project",
-  "environment",
-]
-```
-
-## AWS console home → Elastic mapping
-
-| Console widget | Elastic dataset(s) |
+| Service | Dataset |
 | --- | --- |
-| Security findings | `logs-aws.securityhub_*`, `logs-aws.guardduty` |
-| AWS Health | `metrics-aws.awshealth` |
-| Trusted Advisor | `metrics-aws.cloudwatch_metrics` filtered to `AWS/TrustedAdvisor` (`RedResources`, `YellowResources`, `ServiceLimitUsage`) |
+| AWS Health | `aws.awshealth` |
+| Billing | `aws.billing` |
+| CloudWatch | `aws.cloudwatch_metrics` |
+| DynamoDB | `aws.dynamodb` |
+| EBS | `aws.ebs` |
+| EC2 | `aws.ec2_metrics` |
+| ECS | `aws.ecs_metrics` |
+| ELB | `aws.elb_metrics` |
+| Lambda | `aws.lambda` |
+| Network Firewall | `aws.firewall_metrics` |
+| RDS | `aws.rds` |
+| S3 | `aws.s3_daily_storage`, `aws.s3_request` |
+| SNS | `aws.sns` |
+| SQS | `aws.sqs` |
+| Transit Gateway | `aws.transitgateway` |
+
+Each regional metrics stream sets `regions = []`. In the Elastic AWS
+integration, an empty region selection means that the collector discovers and
+queries every enabled AWS region. Billing is a global API and has no region
+selector.
+
+Log inputs are not enabled: most require a specific regional log group or an
+S3/SQS transport and therefore cannot satisfy both the managed-only and
+all-regions constraints in a single collector.
 
 ## Prerequisites
 
 - Terraform >= 1.2.7
-- `EC_API_KEY` for Elastic Cloud
-- AWS credentials with permissions to create IAM, S3, SQS, CloudTrail, VPC Flow Logs, EC2
+- an Elastic Cloud API key in `EC_API_KEY`
+- AWS credentials that can create an IAM role and inline policy
+- Elastic Serverless/Kibana 9.5 or later (required by managed integrations)
 
 ```bash
 export EC_API_KEY="..."
 export AWS_ACCESS_KEY_ID="..."
 export AWS_SECRET_ACCESS_KEY="..."
-# or use an AWS profile / SSO
 ```
+
+The IAM role trusts Elastic's managed-collector role and grants only the read
+APIs needed by the enabled datasets. No long-lived AWS key is stored in Fleet.
 
 ## Apply
 
 ```bash
 cd examples/aws
 cp terraform.tfvars.example terraform.tfvars
-# edit company_tags
+# Edit company_tags for your organization.
 terraform init
+terraform plan
 terraform apply
 ```
 
-## Defaults
+After apply, use the `kibana_url` output and verify
+`aws-observability-all-regions` under **Fleet → Managed integrations**.
 
-| Variable | Default | Notes |
-| --- | --- | --- |
-| `deployment_mode` | `serverless` | set `hosted` for classic `ec_deployment` |
-| `product_tier` | `complete` | required for Cross-Project Search |
-| `enable_cspm` | `true` | agentless CSPM |
-| `enable_cnvm` | `true` | agentless vulnerability management |
-| `enable_security_hub` | `true` | console Security findings |
-| `enable_guardduty` | `true` | GuardDuty findings |
-| `enable_aws_health` | `true` | console Health widget |
-| `enable_trusted_advisor` | `true` | TA via CloudWatch metrics |
-| `enable_billing_metrics` | `true` | agent-based Cost Explorer metrics |
-| `enable_detection_rules` | `true` | tag `Data Source: AWS` |
-| `enable_elastic_agent` | `true` | EC2 agents for non-agentless inputs |
+## Cost note
 
-## Surfaces
-
-| Surface | Where |
-| --- | --- |
-| Cockpit dashboard | `observability_kibana_url` / `cockpit_dashboard_url` |
-| Security Fleet / CSPM | `kibana_url` — agent `${name_prefix}-agent` |
-| Observability Fleet | `observability_kibana_url` — agent `${name_prefix}-obs-agent` |
-| AI agents | Observability → Agent Builder (`aws-security-analyst`, `aws-obs-triage`) |
-| Kibana Workflows | YAML in `examples/aws/workflows/` |
+Activating every metrics integration across every region can generate a large
+number of CloudWatch API calls. This setup follows the requested broad
+coverage; for production, narrow the region lists, increase collection
+periods, or add tag filters where appropriate.

@@ -27,6 +27,8 @@ locals {
 # -----------------------------------------------------------------------------
 
 resource "elasticstack_fleet_agent_policy" "cloud" {
+  count = length(local.agent_integrations) > 0 ? 1 : 0
+
   name            = var.policy_name
   namespace       = var.policy_namespace
   description     = "PoC cloud observe-and-protect agent policy"
@@ -43,7 +45,9 @@ resource "elasticstack_fleet_agent_policy" "cloud" {
 }
 
 data "elasticstack_fleet_enrollment_tokens" "cloud" {
-  policy_id = elasticstack_fleet_agent_policy.cloud.policy_id
+  count = length(local.agent_integrations) > 0 ? 1 : 0
+
+  policy_id = elasticstack_fleet_agent_policy.cloud[0].policy_id
 
   kibana_connection {
     endpoints = [local.kibana_url]
@@ -102,7 +106,7 @@ resource "elasticstack_fleet_integration_policy" "agent" {
   name                = each.value.name
   namespace           = var.policy_namespace
   description         = coalesce(try(each.value.description, null), "Terraform-managed ${each.value.package_name} integration")
-  agent_policy_id     = elasticstack_fleet_agent_policy.cloud.policy_id
+  agent_policy_id     = elasticstack_fleet_agent_policy.cloud[0].policy_id
   integration_name    = each.value.package_name
   integration_version = elasticstack_fleet_integration.packages[each.value.package_name].version
 

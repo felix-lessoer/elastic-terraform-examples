@@ -10,11 +10,11 @@ Provision an Elastic Cloud environment and the AWS / Azure / GCP collectors need
 modules/
   elastic-project/   # Serverless Security (default) or hosted ec_deployment
   elastic-stack/     # Fleet + integrations + detection rules (elasticstack provider)
-  aws-cloud/         # CloudTrail, S3, SQS, IAM assume-role
+  aws-cloud/         # Legacy modern AWS log plumbing used by multicloud
   azure-cloud/       # Event Hub, diagnostics, app registration
   gcp-cloud/         # Pub/Sub sinks + collector SA
 examples/
-  aws/               # AWS reference PoC
+  aws/               # One Observability project + one managed AWS collector
   azure/
   gcp/
   multicloud/        # Toggles + Cross-Project Search / CCS hub
@@ -40,6 +40,9 @@ docs/
 - Assume-role / app registration / service account credentials instead of static keys in policies
 - Multi-cloud **Cross-Project Search** (Serverless) or CCS remotes (hosted)
 - Elastic Serverless Forwarder / SAR path removed
+- The AWS entry point is intentionally **Observability-only**: one Serverless
+  project and one Elastic-managed integration collecting every supported
+  metrics dataset across all AWS regions
 
 ## Quick start (AWS)
 

@@ -1,27 +1,17 @@
-deployment_mode      = "serverless"
-elastic_project_name = "AWS Observe and Protect"
+elastic_project_name = "AWS Observability"
 elastic_region       = "aws-eu-west-1"
-aws_region           = "eu-west-1"
 
-enable_cspm              = true
-enable_cnvm              = true
-enable_security_hub      = true
-enable_guardduty         = true
-enable_aws_health        = true
-enable_trusted_advisor   = true
-enable_billing_metrics   = true
-enable_detection_rules   = true
-enable_elastic_agent     = true
-enable_sqs               = true
+# Used only as the bootstrap/default region. Every regional metrics input uses
+# regions = [], which is the AWS integration's "all regions" setting.
+aws_region = "eu-west-1"
 
-# Required: Elastic org tags (same keys as GCP company_labels).
-# Org SCPs deny create for taggable services (SQS, etc.) when these are missing.
+# Required: company-policy tags.
 company_tags = {
   division    = "field"
   org         = "sa"
   keep-until  = "2026-10-01"
   team        = "emea_central_area"
-  project     = "felixroessel"
+  project     = "aws-observability"
   environment = "poc"
 }
 

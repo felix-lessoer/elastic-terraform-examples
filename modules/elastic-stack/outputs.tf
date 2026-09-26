@@ -1,11 +1,11 @@
 output "agent_policy_id" {
-  value = elasticstack_fleet_agent_policy.cloud.policy_id
+  value = try(elasticstack_fleet_agent_policy.cloud[0].policy_id, null)
 }
 
 output "enrollment_token" {
   sensitive = true
   value = try(
-    [for t in data.elasticstack_fleet_enrollment_tokens.cloud.tokens : t.api_key if t.active][0],
+    [for t in data.elasticstack_fleet_enrollment_tokens.cloud[0].tokens : t.api_key if t.active][0],
     null
   )
 }

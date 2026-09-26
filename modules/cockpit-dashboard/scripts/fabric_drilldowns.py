@@ -42,10 +42,10 @@ AWS_SEC_COVERAGE_LINKS = [
 
 
 def _md_link(label: str, href: str) -> str:
-    # Prefer HTML anchors: markdown [text](url) breaks when url contains ')'.
-    # Only escape attribute delimiters — leave ES|QL operators (>, <) intact.
-    safe = href.replace("&", "&amp;").replace('"', "&quot;")
-    return f'<a href="{safe}">{label}</a>'
+    # Markdown [text](url) truncates on ')' — percent-encode parens in Discover
+    # rison hashes. Kibana markdown also strips raw HTML <a> tags.
+    safe = href.replace("(", "%28").replace(")", "%29")
+    return f"[{label}]({safe})"
 
 
 def aws_drilldowns_markdown() -> str:

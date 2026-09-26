@@ -78,9 +78,9 @@ data "elasticstack_fleet_integration" "latest" {
 resource "elasticstack_fleet_integration" "packages" {
   for_each = local.packages
 
-  name     = each.key
-  version  = coalesce(try(each.value.package_version, null), data.elasticstack_fleet_integration.latest[each.key].version)
-  force    = true
+  name    = each.key
+  version = coalesce(try(each.value.package_version, null), data.elasticstack_fleet_integration.latest[each.key].version)
+  force   = true
   # Pin space_id so computed drift does not force-replace the package
   # (replacement uninstalls the package and deletes attached package policies).
   space_id = var.space_id

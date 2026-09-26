@@ -84,8 +84,15 @@ locals {
             latency                 = "5m"
             regions                 = []
             include_linked_accounts = true
-            metrics = <<-YAML
-              - namespace: "*"
+            metrics                 = <<-YAML
+              - namespace: AWS/EC2
+                resource_type: ec2:instance
+                name:
+                  - CPUUtilization
+                  - DiskWriteOps
+                statistic:
+                  - Average
+                  - Maximum
             YAML
           })
         }
@@ -328,14 +335,14 @@ module "stack" {
 
   integrations = [
     {
-      name                 = "aws-observability-all-regions"
-      description          = "Elastic-managed AWS observability collection across all regions"
-      package_name         = "aws"
-      managed              = true
-      agent_policy         = false
-      prerelease           = false
-      package_version      = null
-      policy_template      = null
+      name            = "aws-observability-all-regions"
+      description     = "Elastic-managed AWS observability collection across all regions"
+      package_name    = "aws"
+      managed         = true
+      agent_policy    = false
+      prerelease      = false
+      package_version = null
+      policy_template = null
       vars_json = jsonencode({
         default_region               = var.aws_region
         role_arn                     = aws_iam_role.elastic_managed.arn

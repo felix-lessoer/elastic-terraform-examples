@@ -210,13 +210,15 @@ def sync() -> None:
         item for item in policies if item.get("name") == "aws-agent-only-integrations"
     )
     agent_policy_id = os.environ["AGENT_POLICY_ID"]
-    security_templates = {"config", "guardduty", "inspector", "securityhub"}
+    security_inputs = {
+        ("config", "cel"),
+        ("guardduty", "httpjson"),
+        ("inspector", "httpjson"),
+        ("securityhub", "httpjson"),
+    }
 
     for region, detector_id in sorted(regional_detectors.items()):
         name = f"{POLICY_PREFIX}{region}"
-        if name in existing:
-            continue
-
         body = {
             "name": name,
             "namespace": "default",
@@ -235,14 +237,24 @@ def sync() -> None:
         body["vars"]["default_region"]["value"] = region
 
         for input_config in body["inputs"]:
-            enabled = input_config.get("policy_template") in security_templates
+            enabled = (
+                input_config.get("policy_template"),
+                input_config.get("type"),
+            ) in security_inputs
             input_config["enabled"] = enabled
             for stream in input_config.get("streams", []):
                 stream["enabled"] = enabled
                 if enabled:
                     configure_stream(stream, region, detector_id)
 
-        request("POST", "/api/fleet/package_policies", body)
+        if name in existing:
+            request(
+                "PUT",
+                f"/api/fleet/package_policies/{existing[name]['id']}",
+                body,
+            )
+        else:
+            request("POST", "/api/fleet/package_policies", body)
 
 
 if len(sys.argv) != 2 or sys.argv[1] not in {"sync", "cleanup"}:

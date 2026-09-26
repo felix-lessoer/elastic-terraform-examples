@@ -384,6 +384,21 @@ data "aws_iam_policy_document" "agent_trust" {
       identifiers = ["ec2.amazonaws.com"]
     }
   }
+
+  # httpjson (GuardDuty / Security Hub) signs with auth.aws.role_arn and
+  # AssumeRole via IMDS. Allow the instance role to assume itself so package
+  # vars can set role_arn without Fleet password secrets (which block agents
+  # on "Waiting for ... composable variables" when secret delivery lags).
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRole"]
+    principals {
+      type = "AWS"
+      identifiers = [
+        "arn:${data.aws_partition.current.partition}:iam::${local.account_id}:role/${var.name_prefix}-elastic-agent",
+      ]
+    }
+  }
 }
 
 resource "aws_iam_role" "agent" {
@@ -392,10 +407,21 @@ resource "aws_iam_role" "agent" {
   tags               = local.common_tags
 }
 
+data "aws_iam_policy_document" "agent_self_assume" {
+  source_policy_documents = [data.aws_iam_policy_document.elastic_permissions.json]
+
+  statement {
+    sid       = "SelfAssumeForHttpjson"
+    effect    = "Allow"
+    actions   = ["sts:AssumeRole"]
+    resources = [aws_iam_role.agent.arn]
+  }
+}
+
 resource "aws_iam_role_policy" "agent" {
   name   = "${var.name_prefix}-elastic-agent"
   role   = aws_iam_role.agent.id
-  policy = data.aws_iam_policy_document.elastic_permissions.json
+  policy = data.aws_iam_policy_document.agent_self_assume.json
 }
 
 resource "aws_iam_role_policy_attachment" "agent_security_audit" {
@@ -414,35 +440,7 @@ resource "aws_iam_instance_profile" "agent" {
   tags = local.common_tags
 }
 
-# -----------------------------------------------------------------------------
-# IAM user + access key for agent-based AWS package httpjson inputs
-# (GuardDuty / Security Hub). Those streams do NOT fall back to IMDS when
-# package credentials are empty — they send unsigned requests and AWS returns
-# "Missing Authentication Token". CloudTrail (aws-s3/SQS) uses the instance
-# profile; httpjson requires explicit access_key_id / secret_access_key.
-# -----------------------------------------------------------------------------
-
-resource "aws_iam_user" "fleet_aws" {
-  name = "${var.name_prefix}-fleet-aws"
-  tags = merge(local.common_tags, { Name = "${var.name_prefix}-fleet-aws" })
-}
-
-resource "aws_iam_user_policy" "fleet_aws" {
-  name   = "${var.name_prefix}-fleet-aws"
-  user   = aws_iam_user.fleet_aws.name
-  policy = data.aws_iam_policy_document.elastic_permissions.json
-}
-
-resource "aws_iam_user_policy_attachment" "fleet_aws_security_audit" {
-  user       = aws_iam_user.fleet_aws.name
-  policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/SecurityAudit"
-}
-
-resource "aws_iam_user_policy_attachment" "fleet_aws_view_only" {
-  user       = aws_iam_user.fleet_aws.name
-  policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/job-function/ViewOnlyAccess"
-}
-
-resource "aws_iam_access_key" "fleet_aws" {
-  user = aws_iam_user.fleet_aws.name
-}
+# Static IAM user keys were previously injected for httpjson, but Fleet stores
+# password vars as secrets; on serverless those secrets can leave Elastic Agent
+# stuck on "Waiting for initial configuration and composable variables".
+# Prefer auth.aws.role_arn + instance-profile IMDS (see agent role trust above).

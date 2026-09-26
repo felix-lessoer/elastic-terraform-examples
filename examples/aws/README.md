@@ -69,7 +69,7 @@ required_tag_keys = [
 
 ## Data collection notes
 
-- **GuardDuty / Security Hub** use the AWS package `httpjson` input. Those streams do **not** use the EC2 instance profile when package credentials are empty (AWS returns `403 Missing Authentication Token`). Terraform creates an IAM user `${name_prefix}-fleet-aws` with access keys and injects them into the agent-based `aws` package `vars_json`.
+- **GuardDuty / Security Hub** use the AWS package `httpjson` input. Empty package credentials produce unsigned requests (`403 Missing Authentication Token`). Terraform sets `role_arn` to the Elastic Agent instance role so httpjson AssumeRole via IMDS (no Fleet password secrets — those can leave agents stuck waiting for composable variables).
 - **CloudTrail / VPC Flow** use SQS + the agent instance profile (IMDS).
 - **EC2 / S3 / Billing / CloudWatch / Health** metrics use Elastic Managed Integrations (agentless) when `enable_managed_aws_metrics = true`.
 - The Observability EC2 agent (`${name_prefix}-obs-agent`) is required for VPC Flow when SQS collection is enabled.
@@ -85,6 +85,9 @@ export EC_API_KEY="..."
 export AWS_ACCESS_KEY_ID="..."
 export AWS_SECRET_ACCESS_KEY="..."
 # or use an AWS profile / SSO
+# or: cp .env.aws.example .env.aws  # then edit (gitignored)
+# Cloud Agents: set the same names as environment secrets; install runs
+# scripts/bootstrap-agent-env.sh to write .env.aws automatically.
 ```
 
 ## Apply

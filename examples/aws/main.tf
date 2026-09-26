@@ -219,12 +219,12 @@ locals {
   aws_cloud_connector_name = "${var.name_prefix}-managed-aws"
 
   # Agent-based aws package (CloudTrail SQS + GuardDuty/Security Hub httpjson).
-  # httpjson inputs require explicit keys — empty credentials → unsigned requests
-  # → AWS 403 "Missing Authentication Token" (IMDS is not used as a fallback).
+  # httpjson always emits auth.aws; empty keys → unsigned 403. Use role_arn
+  # (plain text) so the agent AssumeRole via IMDS — avoid Fleet password
+  # secrets, which can stall agents on composable-variable delivery.
   aws_package_vars = {
-    default_region    = var.aws_region
-    access_key_id     = module.aws_cloud.fleet_aws_access_key_id
-    secret_access_key = module.aws_cloud.fleet_aws_secret_access_key
+    default_region = var.aws_region
+    role_arn       = module.aws_cloud.agent_role_arn
   }
 
   aws_managed_package_vars = {

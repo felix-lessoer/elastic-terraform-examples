@@ -2,6 +2,7 @@
 """Reconcile Elastic policies for AWS logging sources already enabled by users."""
 
 import base64
+from concurrent.futures import ThreadPoolExecutor
 import copy
 import hashlib
 import json
@@ -105,7 +106,7 @@ def sync() -> None:
                 f"/api/fleet/package_policies/{item['id']}?force=true",
             )
 
-    for source in sources:
+    def reconcile(source: dict) -> None:
         name = policy_name(source)
         body = {
             "name": name,
@@ -147,6 +148,11 @@ def sync() -> None:
             )
         else:
             request("POST", "/api/fleet/package_policies", body)
+
+    # Fleet handles a small amount of package-policy concurrency reliably and
+    # this keeps accounts with many existing log groups practical.
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        list(executor.map(reconcile, sources))
 
 
 if len(sys.argv) != 2 or sys.argv[1] not in {"sync", "cleanup"}:

@@ -40,8 +40,8 @@ output "guardduty_managed_regions" {
   value       = sort(keys(data.external.guardduty_detectors.result))
 }
 
-output "securityhub_managed_regions" {
-  description = "Enabled AWS regions reconciled for managed Security Hub CSPM."
+output "securityhub_agent_regions" {
+  description = "Enabled AWS regions reconciled on the shared EC2 Agent for Security Hub CSPM."
   value       = sort(keys(data.external.enabled_regions.result))
 }
 

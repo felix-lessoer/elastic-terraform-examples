@@ -604,6 +604,67 @@ locals {
     local.agent_inputs,
   )
 
+  securityhub_agent_integrations = [
+    for region in sort(keys(data.external.enabled_regions.result)) : {
+      name            = "aws-securityhub-${region}"
+      description     = "Security Hub CSPM collection in ${region} on the shared EC2 Agent"
+      package_name    = "aws"
+      managed         = false
+      agent_policy    = true
+      prerelease      = false
+      package_version = null
+      policy_template = null
+      vars_json       = jsonencode({ default_region = region })
+      var_group_selections = {
+        credential_type = "default_credentials"
+      }
+      cloud_connector = null
+      inputs = merge(
+        local.agent_disabled_input_stubs,
+        local.agent_required_disabled_overrides,
+        {
+          "securityhub-httpjson" = {
+            enabled = true
+            streams = {
+              "aws.securityhub_findings" = {
+                enabled = true
+                vars = jsonencode({
+                  interval                         = "1h"
+                  initial_interval                 = "24h"
+                  aws_region                       = region
+                  tld                              = "amazonaws.com"
+                  tags                             = ["forwarded", "aws_securityhub_findings"]
+                  preserve_original_event          = false
+                  preserve_duplicate_custom_fields = false
+                })
+              }
+              "aws.securityhub_findings_full_posture" = {
+                enabled = true
+                vars = jsonencode({
+                  aws_region                       = region
+                  tld                              = "amazonaws.com"
+                  tags                             = ["forwarded", "aws_securityhub_findings_full_posture"]
+                  preserve_original_event          = false
+                  preserve_duplicate_custom_fields = false
+                })
+              }
+              "aws.securityhub_insights" = {
+                enabled = true
+                vars = jsonencode({
+                  interval                         = "1m"
+                  aws_region                       = region
+                  tld                              = "amazonaws.com"
+                  tags                             = ["forwarded", "aws_securityhub_insights"]
+                  preserve_original_event          = false
+                  preserve_duplicate_custom_fields = false
+                })
+              }
+            }
+          }
+        },
+      )
+    }
+  ]
 }
 
 check "required_company_tags" {
@@ -802,6 +863,7 @@ module "stack" {
       cloud_connector = null
       inputs          = local.agent_policy_inputs
     }],
+    local.securityhub_agent_integrations,
   )
 
   depends_on = [module.observability, module.aws_cloud, aws_iam_role_policy.elastic_managed]
@@ -857,7 +919,8 @@ resource "terraform_data" "guardduty_integrations" {
 
 # Security Hub is also regional. Enable the service where necessary and
 # reconcile all three CSPM datasets without asking the operator for regions,
-# hub identifiers, or Fleet credentials.
+# hub identifiers, or Fleet credentials. Collection runs on the shared EC2
+# Agent because the GuardDuty + metrics policies consume most managed slots.
 resource "terraform_data" "securityhub_integrations" {
   input = {
     kibana_url      = module.observability.kibana_endpoint

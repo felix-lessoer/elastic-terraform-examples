@@ -82,101 +82,14 @@ def ensure_security_hub(region: str) -> bool:
 
 def sync() -> None:
     regions: list[str] = json.loads(os.environ["REGIONS_JSON"])
-    existing = {item["name"]: item for item in managed_integrations()}
-    connectors = {
-        item["name"]: item
-        for item in request(
-            "GET", "/api/fleet/cloud_connectors?perPage=10000"
-        ).get("items", [])
-    }
-    package_version = request("GET", "/api/fleet/epm/packages/aws")["item"][
-        "version"
-    ]
-    role_arn = os.environ["AWS_ROLE_ARN"]
 
     for region in sorted(regions):
-        if not ensure_security_hub(region):
-            continue
+        ensure_security_hub(region)
 
-        name = f"{NAME_PREFIX}-securityhub-{region}"
-        if name in existing:
-            continue
-
-        connector = connectors.get(name)
-        cloud_connector = {"enabled": True, "target_csp": "aws"}
-        if connector:
-            cloud_connector["cloud_connector_id"] = connector["id"]
-        else:
-            cloud_connector["name"] = name
-
-        common_vars = {
-            "aws_region": region,
-            "tld": "amazonaws.com",
-            "preserve_original_event": False,
-            "preserve_duplicate_custom_fields": False,
-        }
-        request(
-            "POST",
-            "/api/fleet/managed_integrations",
-            {
-                "name": name,
-                "namespace": "default",
-                "description": (
-                    f"Elastic-managed Security Hub CSPM collection in {region}"
-                ),
-                "policy_template": "securityhub",
-                "package": {"name": "aws", "version": package_version},
-                "vars": {
-                    "default_region": region,
-                    "role_arn": role_arn,
-                    "supports_identity_federation": True,
-                },
-                "var_group_selections": {
-                    "credential_type": "identity_federation"
-                },
-                "cloud_connector": cloud_connector,
-                "inputs": {
-                    "securityhub-httpjson": {
-                        "enabled": True,
-                        "streams": {
-                            "aws.securityhub_findings": {
-                                "enabled": True,
-                                "vars": {
-                                    **common_vars,
-                                    "interval": "1h",
-                                    "initial_interval": "24h",
-                                    "tags": [
-                                        "forwarded",
-                                        "aws_securityhub_findings",
-                                    ],
-                                },
-                            },
-                            "aws.securityhub_findings_full_posture": {
-                                "enabled": True,
-                                "vars": {
-                                    **common_vars,
-                                    "tags": [
-                                        "forwarded",
-                                        "aws_securityhub_findings_full_posture",
-                                    ],
-                                },
-                            },
-                            "aws.securityhub_insights": {
-                                "enabled": True,
-                                "vars": {
-                                    **common_vars,
-                                    "interval": "1m",
-                                    "tags": [
-                                        "forwarded",
-                                        "aws_securityhub_insights",
-                                    ],
-                                },
-                            },
-                        },
-                    }
-                },
-            },
-        )
+    # Security Hub runs on the shared EC2 Agent to avoid the Serverless
+    # managed-runtime limit. Remove any managed policies created by an older
+    # revision before Terraform creates the regional agent package policies.
+    cleanup()
 
 
 if len(sys.argv) != 2 or sys.argv[1] not in {"sync", "cleanup"}:

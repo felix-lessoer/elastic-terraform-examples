@@ -817,12 +817,12 @@ resource "terraform_data" "guardduty_integrations" {
     interpreter = ["/bin/bash", "-c"]
     command     = "python3 '${path.module}/scripts/sync_guardduty_integrations.py' sync"
     environment = {
-      KIBANA_URL       = self.input.kibana_url
-      KIBANA_USERNAME  = self.input.kibana_username
-      KIBANA_PASSWORD  = self.input.kibana_password
-      AWS_ROLE_ARN     = self.input.aws_role_arn
-      DETECTORS_JSON   = self.input.detectors_json
-      NAME_PREFIX      = self.input.name_prefix
+      KIBANA_URL      = self.input.kibana_url
+      KIBANA_USERNAME = self.input.kibana_username
+      KIBANA_PASSWORD = self.input.kibana_password
+      AWS_ROLE_ARN    = self.input.aws_role_arn
+      DETECTORS_JSON  = self.input.detectors_json
+      NAME_PREFIX     = self.input.name_prefix
     }
   }
 
@@ -832,12 +832,12 @@ resource "terraform_data" "guardduty_integrations" {
     interpreter = ["/bin/bash", "-c"]
     command     = "python3 '${path.module}/scripts/sync_guardduty_integrations.py' cleanup"
     environment = {
-      KIBANA_URL       = self.input.kibana_url
-      KIBANA_USERNAME  = self.input.kibana_username
-      KIBANA_PASSWORD  = self.input.kibana_password
-      AWS_ROLE_ARN     = self.input.aws_role_arn
-      DETECTORS_JSON   = self.input.detectors_json
-      NAME_PREFIX      = self.input.name_prefix
+      KIBANA_URL      = self.input.kibana_url
+      KIBANA_USERNAME = self.input.kibana_username
+      KIBANA_PASSWORD = self.input.kibana_password
+      AWS_ROLE_ARN    = self.input.aws_role_arn
+      DETECTORS_JSON  = self.input.detectors_json
+      NAME_PREFIX     = self.input.name_prefix
     }
   }
 

@@ -14,7 +14,7 @@ aws_cli = shutil.which("aws") or str(Path.home() / ".local" / "bin" / "aws")
 bootstrap_region = query["bootstrap_region"]
 
 
-def aws(*args: str, timeout: int = 60) -> dict:
+def aws(*args: str, timeout: int = 20) -> dict:
     result = subprocess.run(
         [aws_cli, *args, "--output", "json"],
         check=True,
@@ -63,7 +63,7 @@ def discover_region(region: str) -> list[dict]:
             "describe-log-groups",
             "--region",
             region,
-            timeout=120,
+            timeout=30,
         ).get("logGroups", [])
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
         return []
@@ -180,7 +180,8 @@ except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
     pass
 
 # Existing ALB/NLB/Classic ELB S3 access-log destinations.
-for region in enabled_regions:
+def discover_load_balancers(region: str) -> list[dict]:
+    discovered: list[dict] = []
     try:
         load_balancers = aws(
             "elbv2",
@@ -200,7 +201,7 @@ for region in enabled_regions:
             values = {item["Key"]: item["Value"] for item in attributes}
             if values.get("access_logs.s3.enabled") != "true":
                 continue
-            sources.append(
+            discovered.append(
                 s3_source(
                     values["access_logs.s3.bucket"],
                     values.get("access_logs.s3.prefix", ""),
@@ -230,7 +231,7 @@ for region in enabled_regions:
             )["LoadBalancerAttributes"]["AccessLog"]
             if not attributes.get("Enabled"):
                 continue
-            sources.append(
+            discovered.append(
                 s3_source(
                     attributes["S3BucketName"],
                     attributes.get("S3BucketPrefix", ""),
@@ -240,6 +241,16 @@ for region in enabled_regions:
             )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
         pass
+    return discovered
+
+
+with ThreadPoolExecutor(max_workers=10) as executor:
+    futures = [
+        executor.submit(discover_load_balancers, region)
+        for region in enabled_regions
+    ]
+    for future in as_completed(futures):
+        sources.extend(future.result())
 
 # De-duplicate sources that share one destination/configuration.
 unique = {

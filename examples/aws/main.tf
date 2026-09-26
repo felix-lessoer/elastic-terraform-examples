@@ -144,18 +144,20 @@ resource "terraform_data" "seed_aws_insight_indices" {
   provisioner "local-exec" {
     interpreter = ["/bin/bash", "-c"]
     environment = {
-      OBS_ES   = module.observability[0].elasticsearch_endpoint
-      SEC_ES   = module.elastic.elasticsearch_endpoint
-      OBS_USER = module.observability[0].username
-      SEC_USER = module.elastic.username
-      OBS_PASS = module.observability[0].password
-      SEC_PASS = module.elastic.password
+      OBS_ES     = module.observability[0].elasticsearch_endpoint
+      SEC_ES     = module.elastic.elasticsearch_endpoint
+      SEC_KIBANA = module.elastic.kibana_endpoint
+      OBS_USER   = module.observability[0].username
+      SEC_USER   = module.elastic.username
+      OBS_PASS   = module.observability[0].password
+      SEC_PASS   = module.elastic.password
     }
     command = <<-EOT
       set -euo pipefail
       python3 "${path.module}/../../modules/cockpit-dashboard/scripts/seed_aws_insight_indices.py" \
         --obs-es "$OBS_ES" \
         --sec-es "$SEC_ES" \
+        --sec-kibana "$SEC_KIBANA" \
         --obs-user "$OBS_USER" \
         --sec-user "$SEC_USER" \
         --obs-password "$OBS_PASS" \

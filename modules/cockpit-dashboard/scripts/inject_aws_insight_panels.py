@@ -11,13 +11,19 @@ from __future__ import annotations
 
 import json
 import sys
-import uuid
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 NDJSON = ROOT / "cockpit-aws.ndjson"
 
 from build_aws_cockpit_ndjson import esql_metric_panel, esql_xy_panel  # noqa: E402
+from insight_fabric_common import (  # noqa: E402
+    MATRIX_TMPL,
+    TIMELINE_TMPL,
+    custom_panel,
+    scoreboard_template,
+    uid,
+)
 from ootb_nav import PANEL_IDS, NAV_HEIGHT, inject_ootb_nav  # noqa: E402
 
 SCOREBOARD_ID = "c0ffee10-26e4-49d8-a2b4-548306880910"
@@ -31,176 +37,42 @@ TOP_KPI_IDS = {
     "143696f7-f91e-41b2-9650-40b28c80a105",
 }
 
+AWS_SCOREBOARD_CARDS = [
+    {
+        "label": "Active alerts",
+        "field": "active_alerts",
+        "hint": "Open Security alerts →",
+        "href": "/app/security/alerts",
+        "sev": "sev-high",
+    },
+    {
+        "label": "High / critical",
+        "field": "high_critical_alerts",
+        "hint": "Prioritize these first →",
+        "href": "/app/security/alerts",
+        "sev": "sev-high",
+    },
+    {
+        "label": "CloudTrail (24h)",
+        "field": "cloudtrail_24h",
+        "hint": "Open CloudTrail dashboard →",
+        "href": "/app/dashboards#/view/aws-9c09cd20-7399-11ea-a345-f985c61fe654",
+        "sev": "",
+    },
+    {
+        "label": "AWS Health events",
+        "field": "health_events",
+        "hint": "Open AWS Health dashboard →",
+        "href": "/app/dashboards#/view/aws-9574244b-b538-4cc1-9666-8aac4ecf433e",
+        "sev": "sev-ok",
+    },
+]
 
-def uid() -> str:
-    return str(uuid.uuid4())
-
-
-def custom_panel(
-    *,
-    panel_id: str,
-    template: str,
-    esql_query: str | None,
-    grid: dict,
-) -> dict:
-    cfg: dict = {
-        "hide_title": True,
-        "hide_border": True,
-        "template": template,
-    }
-    if esql_query:
-        cfg["esql_query"] = [esql_query]
-    g = dict(grid)
-    g["i"] = panel_id
-    return {
-        "type": "custom_content",
-        "panelIndex": panel_id,
-        "gridData": g,
-        "embeddableConfig": cfg,
-    }
-
-
-SCOREBOARD_TMPL = """<html>
-<head>
-<style>
-  body { margin:0; padding: var(--cc-space-l); font-family: var(--cc-font-family); color: var(--cc-color-text); background: var(--cc-color-background); box-sizing:border-box; }
-  .wrap { display:flex; flex-direction:column; gap: var(--cc-space-m); }
-  .hero { display:flex; justify-content:space-between; gap: var(--cc-space-l); align-items:center; padding: var(--cc-space-m) var(--cc-space-xl); border-radius: var(--cc-radius); background: linear-gradient(135deg,#0b1f3a 0%,#16324f 55%,#1e3a5f 100%); color:#fff; box-shadow:0 2px 12px rgba(0,0,0,.18); }
-  .kicker { font-size:.6875rem; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:#48EFCF; }
-  .title { font-size:1.125rem; font-weight:600; }
-  .sub { font-size:.8125rem; color:rgba(255,255,255,.78); }
-  .grid { display:grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: var(--cc-space-m); }
-  .card { background: var(--cc-color-surface); border:1px solid var(--cc-color-border); border-radius: var(--cc-radius); padding: var(--cc-space-m); box-shadow:0 1px 2px rgba(0,0,0,.04); }
-  .card .label { font-size:.75rem; font-weight:700; letter-spacing:.04em; text-transform:uppercase; opacity:.7; }
-  .card .value { font-size:1.75rem; font-weight:700; margin-top: var(--cc-space-xs); color:#0B64DD; }
-  .card .hint { font-size:.75rem; opacity:.65; margin-top: var(--cc-space-xs); }
-  .sev-high .value { color:#FF957D; }
-  .sev-ok .value { color:#209280; }
-  @media (max-width:900px){ .grid{ grid-template-columns:1fr 1fr; } .hero{ flex-direction:column; align-items:flex-start; } }
-</style>
-</head>
-<body>
-<div class="wrap">
-  <div class="hero">
-    <div>
-      <div class="kicker">Insight fabric</div>
-      <div class="title">AWS posture at a glance</div>
-      <div class="sub">Security KPIs mirrored from the Security project · coverage &amp; recommendations computed by workflows</div>
-    </div>
-  </div>
-  <div class="grid">
-    {% assign row = rows[0] %}
-    <div class="card sev-high">
-      <div class="label">Active alerts</div>
-      <div class="value">{{ row["active_alerts"].value | default: 0 }}</div>
-      <div class="hint">From Security detection engine</div>
-    </div>
-    <div class="card sev-high">
-      <div class="label">High / critical</div>
-      <div class="value">{{ row["high_critical_alerts"].value | default: 0 }}</div>
-      <div class="hint">Prioritize these first</div>
-    </div>
-    <div class="card">
-      <div class="label">CloudTrail (24h)</div>
-      <div class="value">{{ row["cloudtrail_24h"].value | default: 0 }}</div>
-      <div class="hint">Management API volume</div>
-    </div>
-    <div class="card sev-ok">
-      <div class="label">AWS Health events</div>
-      <div class="value">{{ row["health_events"].value | default: 0 }}</div>
-      <div class="hint">Open / tracked Health items</div>
-    </div>
-  </div>
-</div>
-</body>
-</html>
-"""
-
-MATRIX_TMPL = """<html>
-<head>
-<style>
-  body { margin:0; padding: var(--cc-space-l); font-family: var(--cc-font-family); color: var(--cc-color-text); background: var(--cc-color-background); }
-  .wrap { display:flex; flex-direction:column; gap: var(--cc-space-m); }
-  .head { display:flex; justify-content:space-between; align-items:baseline; gap: var(--cc-space-m); }
-  .title { font-size:1rem; font-weight:700; }
-  .sub { font-size:.8125rem; opacity:.7; }
-  .grid { display:grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: var(--cc-space-s); }
-  .tile { border:1px solid var(--cc-color-border); border-radius: var(--cc-radius); background: var(--cc-color-surface); padding: var(--cc-space-m); min-height: 5.5rem; display:flex; flex-direction:column; gap: .35rem; }
-  .tile .name { font-weight:700; font-size:.875rem; }
-  .tile .meta { font-size:.75rem; opacity:.65; }
-  .badge { align-self:flex-start; font-size:.625rem; font-weight:700; letter-spacing:.06em; text-transform:uppercase; padding:2px 8px; border-radius: var(--cc-radius-s); border:1px solid var(--cc-color-border); }
-  .healthy { background: rgba(32,146,128,.12); color:#176655; border-color: rgba(32,146,128,.35); }
-  .stale { background: rgba(254,197,20,.18); color:#8a6a00; border-color: rgba(254,197,20,.45); }
-  .missing { background: rgba(255,149,125,.15); color:#9b3b2a; border-color: rgba(255,149,125,.4); }
-  .not_configured { background: rgba(11,100,221,.08); color:#0B64DD; border-color: rgba(11,100,221,.28); }
-  @media (max-width:900px){ .grid{ grid-template-columns:1fr 1fr; } }
-</style>
-</head>
-<body>
-<div class="wrap">
-  <div class="head">
-    <div class="title">AWS service coverage</div>
-    <div class="sub">Healthy = telemetry in last window · comparable to Datadog AWS Overview tiles</div>
-  </div>
-  <div class="grid">
-    {% for row in rows %}
-      {% assign status = row["status"].value %}
-      <div class="tile">
-        <span class="badge {{ status }}">{{ status }}</span>
-        <div class="name">{{ row["label"].value }}</div>
-        <div class="meta">{{ row["detail"].value }}</div>
-        <div class="meta">{{ row["category"].value }}</div>
-      </div>
-    {% endfor %}
-  </div>
-</div>
-</body>
-</html>
-"""
-
-TIMELINE_TMPL = """<html>
-<head>
-<style>
-  body { margin:0; padding: var(--cc-space-l); font-family: var(--cc-font-family); color: var(--cc-color-text); background: var(--cc-color-background); }
-  .wrap { display:flex; flex-direction:column; gap: var(--cc-space-m); }
-  .title { font-size:1rem; font-weight:700; }
-  .sub { font-size:.8125rem; opacity:.7; margin-bottom: var(--cc-space-s); }
-  .list { display:flex; flex-direction:column; gap: .4rem; }
-  .item { display:grid; grid-template-columns: 7rem 1fr auto; gap: var(--cc-space-m); align-items:center; padding: .55rem .75rem; border:1px solid var(--cc-color-border); border-radius: var(--cc-radius-s); background: var(--cc-color-surface); text-decoration:none; color:inherit; }
-  .item:hover { border-color:#0B64DD; transform: translateX(2px); }
-  .src { font-size:.6875rem; font-weight:700; letter-spacing:.05em; text-transform:uppercase; opacity:.65; }
-  .ttl { font-size:.875rem; font-weight:600; }
-  .dtl { font-size:.75rem; opacity:.7; }
-  .sev { font-size:.625rem; font-weight:700; text-transform:uppercase; padding:2px 8px; border-radius: var(--cc-radius-s); border:1px solid var(--cc-color-border); }
-  .high,.critical { color:#9b3b2a; background: rgba(255,149,125,.15); }
-  .medium { color:#8a6a00; background: rgba(254,197,20,.18); }
-  .info,.low { color:#176655; background: rgba(32,146,128,.12); }
-  .empty { padding: var(--cc-space-l); text-align:center; opacity:.7; font-size:.875rem; }
-</style>
-</head>
-<body>
-<div class="wrap">
-  <div class="title">What changed</div>
-  <div class="sub">AWS Health · CloudTrail highlights · recommendation churn</div>
-  <div class="list">
-    {% if rows.size == 0 %}
-      <div class="empty">No insight events yet — run seed_aws_insight_indices.py / wait for the next workflow cycle.</div>
-    {% endif %}
-    {% for row in rows %}
-      <a class="item" href="{{ row["link"].value | default: '#' }}">
-        <div class="src">{{ row["event.source"].value }}</div>
-        <div>
-          <div class="ttl">{{ row["title"].value }}</div>
-          <div class="dtl">{{ row["detail"].value }}</div>
-        </div>
-        <span class="sev {{ row["event.severity"].value }}">{{ row["event.severity"].value }}</span>
-      </a>
-    {% endfor %}
-  </div>
-</div>
-</body>
-</html>
-"""
+SCOREBOARD_TMPL = scoreboard_template(
+    "AWS",
+    "Security KPIs mirrored from the Security project · coverage &amp; recommendations computed by workflows",
+    cards=AWS_SCOREBOARD_CARDS,
+)
 
 
 def build_top_kpis() -> list[dict]:
@@ -370,7 +242,11 @@ def inject(panels: list[dict]) -> list[dict]:
     )
     matrix = custom_panel(
         panel_id=MATRIX_ID,
-        template=MATRIX_TMPL,
+        template=MATRIX_TMPL.replace(
+            "Service coverage",
+            "AWS service coverage",
+            1,
+        ),
         esql_query=(
             "FROM aws-cockpit-coverage\n"
             '| WHERE category IN ("compute", "storage", "cost", "network", "platform", "security", "data")\n'
@@ -379,10 +255,16 @@ def inject(panels: list[dict]) -> list[dict]:
         ),
         grid={"x": 0, "y": insight_y + scoreboard_h, "w": 28, "h": matrix_h},
     )
+    # Prefer actionable events: recommendations + failures + open health
     timeline = custom_panel(
         panel_id=TIMELINE_ID,
         template=TIMELINE_TMPL,
-        esql_query="FROM aws-cockpit-events\n| SORT @timestamp DESC\n| LIMIT 12",
+        esql_query=(
+            "FROM aws-cockpit-events\n"
+            '| WHERE event.source IN ("cockpit.recommendations", "aws.cloudtrail", "aws.health")\n'
+            "| SORT @timestamp DESC\n"
+            "| LIMIT 12"
+        ),
         grid={"x": 28, "y": insight_y + scoreboard_h, "w": 20, "h": matrix_h},
     )
 

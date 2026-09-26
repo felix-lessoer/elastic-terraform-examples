@@ -30,26 +30,48 @@ from datetime import datetime, timezone
 from typing import Any
 from urllib import error, request
 
+try:
+    from insight_fabric_common import (
+        cloudtrail_failure_discover_href,
+        recommendation_discover_href,
+    )
+except ImportError:
+    # Allow running as a standalone script from any CWD.
+    import pathlib
+    import sys as _sys
+
+    _sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+    from insight_fabric_common import (  # type: ignore
+        cloudtrail_failure_discover_href,
+        recommendation_discover_href,
+    )
+
 SECURITY_KPI = "aws-cockpit-security-kpi"
+AWS_COCKPIT_DASHBOARD_ID = "752a1ac0-26e4-49d8-a2b4-5483068809b9"
 COVERAGE = "aws-cockpit-coverage"
 ASSETS = "aws-cockpit-assets"
 EVENTS = "aws-cockpit-events"
 HEALTH = "aws-cockpit-health"
 
 # Canonical service tiles for the Datadog-style coverage matrix.
+# `link` drills into the OOTB integration dashboard (or Fleet when not configured).
+def _dash(did: str) -> str:
+    return f"/app/dashboards#/view/{did}"
+
+
 SERVICE_CATALOG = [
-    {"service": "ec2", "label": "EC2", "datasets": ["aws.ec2_metrics"], "category": "compute"},
-    {"service": "s3", "label": "S3", "datasets": ["aws.s3_daily_storage", "aws.s3_request"], "category": "storage"},
-    {"service": "billing", "label": "Billing", "datasets": ["aws.billing"], "category": "cost"},
-    {"service": "vpcflow", "label": "VPC Flow", "datasets": ["aws.vpcflow"], "category": "network"},
-    {"service": "cloudwatch", "label": "CloudWatch", "datasets": ["aws.cloudwatch_metrics"], "category": "platform"},
-    {"service": "health", "label": "AWS Health", "datasets": ["aws.awshealth"], "category": "platform"},
-    {"service": "cloudtrail", "label": "CloudTrail", "datasets": ["aws.cloudtrail"], "category": "security"},
-    {"service": "guardduty", "label": "GuardDuty", "datasets": ["aws.guardduty"], "category": "security"},
-    {"service": "securityhub", "label": "Security Hub", "datasets": ["aws.securityhub_findings", "aws.securityhub_insights"], "category": "security"},
-    {"service": "lambda", "label": "Lambda", "datasets": ["aws.lambda"], "category": "compute"},
-    {"service": "rds", "label": "RDS", "datasets": ["aws.rds"], "category": "data"},
-    {"service": "elb", "label": "ELB/ALB", "datasets": ["aws.elb_metrics", "aws.applicationelb"], "category": "network"},
+    {"service": "ec2", "label": "EC2", "datasets": ["aws.ec2_metrics"], "category": "compute", "link": _dash("aws-c5846400-f7fb-11e8-af03-c999c9dea608")},
+    {"service": "s3", "label": "S3", "datasets": ["aws.s3_daily_storage", "aws.s3_request"], "category": "storage", "link": _dash("aws-a096b830-4762-11e9-8062-c98a86cb6f94")},
+    {"service": "billing", "label": "Billing", "datasets": ["aws.billing"], "category": "cost", "link": _dash("aws-e6776b10-1534-11ea-841c-01bf20a6c8ba")},
+    {"service": "vpcflow", "label": "VPC Flow", "datasets": ["aws.vpcflow"], "category": "network", "link": _dash("aws-15503340-4488-11ea-ad63-791a5dc86f10")},
+    {"service": "cloudwatch", "label": "CloudWatch", "datasets": ["aws.cloudwatch_metrics"], "category": "platform", "link": _dash("aws-fac28650-7349-11e9-816b-07687310a99a")},
+    {"service": "health", "label": "AWS Health", "datasets": ["aws.awshealth"], "category": "platform", "link": _dash("aws-9574244b-b538-4cc1-9666-8aac4ecf433e")},
+    {"service": "cloudtrail", "label": "CloudTrail", "datasets": ["aws.cloudtrail"], "category": "security", "link": _dash("aws-9c09cd20-7399-11ea-a345-f985c61fe654")},
+    {"service": "guardduty", "label": "GuardDuty", "datasets": ["aws.guardduty"], "category": "security", "link": _dash("aws-9d21f520-6a36-11ed-b880-2f1b70138655")},
+    {"service": "securityhub", "label": "Security Hub", "datasets": ["aws.securityhub_findings", "aws.securityhub_insights"], "category": "security", "link": _dash("aws-c9f103d0-5f63-11ed-bd69-473ce047ef30")},
+    {"service": "lambda", "label": "Lambda", "datasets": ["aws.lambda"], "category": "compute", "link": _dash("aws-7ac8e1d0-28d2-11ea-ba6c-49a884eb104f")},
+    {"service": "rds", "label": "RDS", "datasets": ["aws.rds"], "category": "data", "link": _dash("aws-3367c170-921f-11e9-aa19-159bf182e06f")},
+    {"service": "elb", "label": "ELB/ALB", "datasets": ["aws.elb_metrics", "aws.applicationelb"], "category": "network", "link": _dash("aws-24f3e07a-b5f5-470c-8305-47c9626db37b")},
 ]
 
 
@@ -210,7 +232,16 @@ def seed_security_kpi(obs_es: str, sec_es: str, obs_user: str, obs_pass: str, se
     print(f"  {SECURITY_KPI}: {doc}")
 
 
-def seed_coverage(obs_es: str, sec_es: str, obs_user: str, obs_pass: str, sec_user: str, sec_pass: str) -> None:
+def seed_coverage(
+    obs_es: str,
+    sec_es: str,
+    obs_user: str,
+    obs_pass: str,
+    sec_user: str,
+    sec_pass: str,
+    *,
+    sec_kibana: str = "",
+) -> None:
     ensure_index(
         obs_es,
         obs_user,
@@ -226,6 +257,7 @@ def seed_coverage(obs_es: str, sec_es: str, obs_user: str, obs_pass: str, sec_us
             "last_seen": {"type": "date"},
             "datasets": {"type": "keyword"},
             "detail": {"type": "keyword"},
+            "link": {"type": "keyword"},
         },
     )
     # Merge OBS + SEC dataset stats (wildcard + explicit probes for sparse streams)
@@ -373,6 +405,13 @@ def seed_coverage(obs_es: str, sec_es: str, obs_user: str, obs_pass: str, sec_us
                     detail = f"last seen {age_h:.1f}h ago"
             except Exception:
                 pass
+        link = svc.get("link") or (
+            "/app/fleet/integrations" if status == "not_configured" else "/app/discover"
+        )
+        # Security-project OOTB boards need an absolute Security Kibana base.
+        sec_services = {"cloudtrail", "guardduty", "securityhub", "health"}
+        if sec_kibana and svc["service"] in sec_services and link.startswith("/"):
+            link = sec_kibana.rstrip("/") + link
         docs.append(
             (
                 svc["service"],
@@ -386,6 +425,7 @@ def seed_coverage(obs_es: str, sec_es: str, obs_user: str, obs_pass: str, sec_us
                     "last_seen": last_seen,
                     "datasets": svc["datasets"],
                     "detail": detail,
+                    "link": link,
                 },
             )
         )
@@ -563,7 +603,16 @@ def seed_health(obs_es: str, sec_es: str, obs_user: str, obs_pass: str, sec_user
     print(f"  {HEALTH}: {len(docs)} events")
 
 
-def seed_events(obs_es: str, sec_es: str, obs_user: str, obs_pass: str, sec_user: str, sec_pass: str) -> None:
+def seed_events(
+    obs_es: str,
+    sec_es: str,
+    obs_user: str,
+    obs_pass: str,
+    sec_user: str,
+    sec_pass: str,
+    *,
+    sec_kibana: str = "",
+) -> None:
     ensure_index(
         obs_es,
         obs_user,
@@ -584,84 +633,35 @@ def seed_events(obs_es: str, sec_es: str, obs_user: str, obs_pass: str, sec_user
             "link": {"type": "keyword"},
         },
     )
+    # Drop prior snapshot so volume-style CloudTrail rows don't linger beside failures.
+    try:
+        req(
+            "POST",
+            f"{obs_es}/{EVENTS}/_delete_by_query?refresh=true",
+            obs_user,
+            obs_pass,
+            {"query": {"match_all": {}}},
+        )
+    except RuntimeError as e:
+        print(f"  events purge warn: {e}", file=sys.stderr)
     docs: list[tuple[str, dict]] = []
-    health = esql(
-        sec_es,
-        sec_user,
-        sec_pass,
-        """FROM metrics-aws.awshealth-default
-| STATS last_seen = MAX(@timestamp),
-        open_entities = MAX(aws.awshealth.affected_entities_pending),
-        category = VALUES(aws.awshealth.event_type_category),
-        status = VALUES(aws.awshealth.status_code),
-        region = VALUES(aws.awshealth.region)
-    BY aws.awshealth.event_arn, aws.awshealth.service, aws.awshealth.event_type_code
-| SORT last_seen DESC
-| LIMIT 25""",
-    )
-    for i, row in enumerate(health):
-        arn = row.get("aws.awshealth.event_arn") or f"health-{i}"
-        service = row.get("aws.awshealth.service") or "AWS"
-        code = row.get("aws.awshealth.event_type_code") or "event"
-        status = row.get("status")
-        if isinstance(status, list):
-            status = status[0] if status else "unknown"
-        category = row.get("category")
-        if isinstance(category, list):
-            category = category[0] if category else "issue"
-        severity = "high" if status in ("open", "upcoming") else "medium"
-        region = row.get("region")
-        if isinstance(region, list):
-            region = region[0] if region else None
-        docs.append(
-            (
-                f"health-{abs(hash(arn)) % 10_000_000}",
-                {
-                    "@timestamp": row.get("last_seen") or now_iso(),
-                    "event.source": "aws.health",
-                    "event.severity": severity,
-                    "event.category": str(category),
-                    "title": f"{service}: {code}",
-                    "detail": f"AWS Health {status} — {service} / {code}",
-                    "service": service,
-                    "cloud.region": region,
-                    "link": "/app/dashboards#/view/aws-9574244b-b538-4cc1-9666-8aac4ecf433e",
-                },
-            )
-        )
-
-    # CloudTrail volume spike / daily highlight (not every event — summary insight)
-    ct = esql(
-        sec_es,
-        sec_user,
-        sec_pass,
-        """FROM logs-aws.cloudtrail*
-| WHERE @timestamp > NOW() - 24 hours
-| STATS c = COUNT(*) BY event.provider
-| SORT c DESC
-| LIMIT 8""",
-    )
     ts = now_iso()
-    for row in ct:
-        provider = row.get("event.provider") or "cloudtrail"
-        count = int(row.get("c") or 0)
-        docs.append(
-            (
-                f"cloudtrail-{provider}",
-                {
-                    "@timestamp": ts,
-                    "event.source": "aws.cloudtrail",
-                    "event.severity": "info",
-                    "event.category": "api_activity",
-                    "title": f"CloudTrail: {provider}",
-                    "detail": f"{count:,} management events in the last 24h",
-                    "service": str(provider).replace(".amazonaws.com", ""),
-                    "link": "/app/dashboards#/view/aws-9c09cd20-7399-11ea-a345-f985c61fe654",
-                },
-            )
-        )
+    # CloudTrail / Health OOTB boards live in the Security project — use absolute URLs.
+    sec_kb = (sec_kibana or "").rstrip("/")
+    cloudtrail_dash = (
+        f"{sec_kb}/app/dashboards#/view/aws-9c09cd20-7399-11ea-a345-f985c61fe654"
+        if sec_kb
+        else "/app/dashboards#/view/aws-9c09cd20-7399-11ea-a345-f985c61fe654"
+    )
+    health_dash = (
+        f"{sec_kb}/app/dashboards#/view/aws-9574244b-b538-4cc1-9666-8aac4ecf433e"
+        if sec_kb
+        else "/app/dashboards#/view/aws-9574244b-b538-4cc1-9666-8aac4ecf433e"
+    )
+    # Recommendations section on this Obs cockpit (dashboard deep-link for overview).
+    recs_dash = f"/app/dashboards#/view/{AWS_COCKPIT_DASHBOARD_ID}"
 
-    # Recommendation highlights from OBS
+    # Recommendations first — these are the actionable "problems"
     recs = esql(
         obs_es,
         obs_user,
@@ -675,6 +675,12 @@ def seed_events(obs_es: str, sec_es: str, obs_user: str, obs_pass: str, sec_user
     for row in recs:
         sev = row.get("severity") or "low"
         cat = row.get("category") or "insight"
+        count = int(row.get("c") or 0)
+        label = str(cat).replace("_", " ")
+        # Category/severity → Discover detail table; cost_optimization etc. open filtered rows.
+        detail_link = recommendation_discover_href(
+            "aws-cockpit-recommendations", category=str(cat), severity=str(sev)
+        )
         docs.append(
             (
                 f"rec-{sev}-{cat}",
@@ -683,13 +689,104 @@ def seed_events(obs_es: str, sec_es: str, obs_user: str, obs_pass: str, sec_user
                     "event.source": "cockpit.recommendations",
                     "event.severity": sev,
                     "event.category": cat,
-                    "title": f"{int(row.get('c') or 0)} {sev} {cat} recommendations",
-                    "detail": "From scheduled EC2/S3 recommendation workflows",
+                    "title": f"{count} {label} recommendations",
+                    "detail": (
+                        f"{sev} {label} — open filtered recommendation details "
+                        f"(or cockpit recommendations section) →"
+                    ),
                     "service": "recommendations",
-                    "link": "#aws-recommendations",
+                    "link": detail_link or recs_dash,
                 },
             )
         )
+
+    # CloudTrail failures — show the actual problem (failed API actions), not volume
+    ct_fail = esql(
+        sec_es,
+        sec_user,
+        sec_pass,
+        """FROM logs-aws.cloudtrail*
+| WHERE @timestamp > NOW() - 24 hours AND event.outcome == "failure"
+| STATS c = COUNT(*) BY event.action, event.provider
+| SORT c DESC
+| LIMIT 8""",
+    )
+    for row in ct_fail:
+        action = row.get("event.action") or "UnknownAction"
+        provider = row.get("event.provider") or "cloudtrail"
+        count = int(row.get("c") or 0)
+        short = str(provider).replace(".amazonaws.com", "")
+        # Prefer action-filtered Discover in Security; fall back to OOTB CloudTrail board.
+        fail_link = cloudtrail_failure_discover_href(str(action), kibana_base=sec_kb)
+        docs.append(
+            (
+                f"cloudtrail-fail-{action}",
+                {
+                    "@timestamp": ts,
+                    "event.source": "aws.cloudtrail",
+                    "event.severity": "high" if count >= 10000 else "medium",
+                    "event.category": "api_failure",
+                    "title": f"{count:,} failed {action}",
+                    "detail": (
+                        f"CloudTrail API failures from {short} (24h) — "
+                        f"open failed {action} events →"
+                    ),
+                    "service": short,
+                    "link": fail_link or cloudtrail_dash,
+                },
+            )
+        )
+
+    # Open / upcoming AWS Health only (skip noise from closed events)
+    health = esql(
+        sec_es,
+        sec_user,
+        sec_pass,
+        """FROM metrics-aws.awshealth-default
+| STATS last_seen = MAX(@timestamp),
+        open_entities = MAX(aws.awshealth.affected_entities_pending),
+        category = VALUES(aws.awshealth.event_type_category),
+        status = VALUES(aws.awshealth.status_code),
+        region = VALUES(aws.awshealth.region)
+    BY aws.awshealth.event_arn, aws.awshealth.service, aws.awshealth.event_type_code
+| SORT last_seen DESC
+| LIMIT 40""",
+    )
+    health_kept = 0
+    for i, row in enumerate(health):
+        status = row.get("status")
+        if isinstance(status, list):
+            status = status[0] if status else "unknown"
+        if status not in ("open", "upcoming"):
+            continue
+        arn = row.get("aws.awshealth.event_arn") or f"health-{i}"
+        service = row.get("aws.awshealth.service") or "AWS"
+        code = row.get("aws.awshealth.event_type_code") or "event"
+        category = row.get("category")
+        if isinstance(category, list):
+            category = category[0] if category else "issue"
+        region = row.get("region")
+        if isinstance(region, list):
+            region = region[0] if region else None
+        docs.append(
+            (
+                f"health-{abs(hash(arn)) % 10_000_000}",
+                {
+                    "@timestamp": row.get("last_seen") or ts,
+                    "event.source": "aws.health",
+                    "event.severity": "high",
+                    "event.category": str(category),
+                    "title": f"{service}: {code}",
+                    "detail": f"AWS Health {status} — open Health dashboard →",
+                    "service": service,
+                    "cloud.region": region,
+                    "link": health_dash,
+                },
+            )
+        )
+        health_kept += 1
+        if health_kept >= 6:
+            break
 
     bulk_index(obs_es, obs_user, obs_pass, EVENTS, docs)
     print(f"  {EVENTS}: {len(docs)} events")
@@ -703,16 +800,37 @@ def main() -> int:
     p.add_argument("--sec-user", default="admin")
     p.add_argument("--obs-password", required=True)
     p.add_argument("--sec-password", required=True)
+    p.add_argument(
+        "--sec-kibana",
+        default="",
+        help="Security Kibana base URL for absolute CloudTrail/Health drill-downs",
+    )
     args = p.parse_args()
     obs_es = args.obs_es.rstrip("/")
     sec_es = args.sec_es.rstrip("/")
 
     print("Seeding AWS cockpit insight indices…")
     seed_security_kpi(obs_es, sec_es, args.obs_user, args.obs_password, args.sec_user, args.sec_password)
-    seed_coverage(obs_es, sec_es, args.obs_user, args.obs_password, args.sec_user, args.sec_password)
+    seed_coverage(
+        obs_es,
+        sec_es,
+        args.obs_user,
+        args.obs_password,
+        args.sec_user,
+        args.sec_password,
+        sec_kibana=args.sec_kibana,
+    )
     seed_assets(obs_es, args.obs_user, args.obs_password)
     seed_health(obs_es, sec_es, args.obs_user, args.obs_password, args.sec_user, args.sec_password)
-    seed_events(obs_es, sec_es, args.obs_user, args.obs_password, args.sec_user, args.sec_password)
+    seed_events(
+        obs_es,
+        sec_es,
+        args.obs_user,
+        args.obs_password,
+        args.sec_user,
+        args.sec_password,
+        sec_kibana=args.sec_kibana,
+    )
     print("Done.")
     return 0
 

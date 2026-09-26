@@ -187,6 +187,36 @@ def inject(panels: list[dict]) -> list[dict]:
         template=scoreboard_template(
             "GCP",
             "Security KPIs mirrored from the Security project · coverage & recommendations computed by workflows",
+            cards=[
+                {
+                    "label": "Active alerts",
+                    "field": "active_alerts",
+                    "hint": "Open Security alerts →",
+                    "href": "/app/security/alerts",
+                    "sev": "sev-high",
+                },
+                {
+                    "label": "High / critical",
+                    "field": "high_critical_alerts",
+                    "hint": "Prioritize these first →",
+                    "href": "/app/security/alerts",
+                    "sev": "sev-high",
+                },
+                {
+                    "label": "Audit (24h)",
+                    "field": "audit_24h",
+                    "hint": "Open Audit dashboard →",
+                    "href": "/app/dashboards#/view/gcp-48e12760-cbe4-11ec-b519-85ccf621cbbf",
+                    "sev": "",
+                },
+                {
+                    "label": "CSPM findings",
+                    "field": "cspm_findings",
+                    "hint": "Open CSPM findings →",
+                    "href": "/app/security/cloud_security_posture/findings/misconfigurations",
+                    "sev": "sev-ok",
+                },
+            ],
         ),
         esql_query=f"FROM {KPI_INDEX}\n| SORT @timestamp DESC\n| LIMIT 1",
         grid={"x": 0, "y": insight_y, "w": 48, "h": scoreboard_h},

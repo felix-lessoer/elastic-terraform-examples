@@ -25,6 +25,7 @@ from insight_fabric_common import (
     ensure_index,
     esql,
     now_iso,
+    recommendation_discover_href,
     scalar,
 )
 
@@ -33,19 +34,23 @@ COVERAGE = "gcp-cockpit-coverage"
 ASSETS = "gcp-cockpit-assets"
 EVENTS = "gcp-cockpit-events"
 
+def _dash(did: str) -> str:
+    return f"/app/dashboards#/view/{did}"
+
+
 SERVICE_CATALOG = [
-    {"service": "compute", "label": "Compute Engine", "datasets": ["gcp.compute"], "category": "compute"},
-    {"service": "gke", "label": "GKE", "datasets": ["gcp.gke"], "category": "compute"},
-    {"service": "cloudrun", "label": "Cloud Run", "datasets": ["gcp.cloudrun_metrics"], "category": "compute"},
-    {"service": "storage", "label": "Cloud Storage", "datasets": ["gcp.storage"], "category": "storage"},
-    {"service": "cloudsql", "label": "Cloud SQL", "datasets": ["gcp.cloudsql_postgresql", "gcp.cloudsql_mysql"], "category": "data"},
-    {"service": "pubsub", "label": "Pub/Sub", "datasets": ["gcp.pubsub"], "category": "platform"},
-    {"service": "loadbalancing", "label": "Load Balancing", "datasets": ["gcp.loadbalancing_metrics", "gcp.loadbalancing_logs"], "category": "network"},
-    {"service": "vpcflow", "label": "VPC Flow", "datasets": ["gcp.vpcflow"], "category": "network"},
-    {"service": "dns", "label": "Cloud DNS", "datasets": ["gcp.dns"], "category": "network"},
-    {"service": "billing", "label": "Billing", "datasets": ["gcp.billing"], "category": "cost"},
-    {"service": "audit", "label": "Audit Logs", "datasets": ["gcp.audit"], "category": "security"},
-    {"service": "firewall", "label": "Firewall", "datasets": ["gcp.firewall"], "category": "security"},
+    {"service": "compute", "label": "Compute Engine", "datasets": ["gcp.compute"], "category": "compute", "link": _dash("gcp-f40ee870-5e4a-11ea-a4f6-717338406083")},
+    {"service": "gke", "label": "GKE", "datasets": ["gcp.gke"], "category": "compute", "link": _dash("gcp-1ae960c0-f9f8-11eb-bc38-79936db7c106")},
+    {"service": "cloudrun", "label": "Cloud Run", "datasets": ["gcp.cloudrun_metrics"], "category": "compute", "link": _dash("gcp-f40ee870-5e4a-11ea-a4f6-717338406083")},
+    {"service": "storage", "label": "Cloud Storage", "datasets": ["gcp.storage"], "category": "storage", "link": _dash("gcp-ca401040-8e52-11ea-9fa6-4d675d5290dc")},
+    {"service": "cloudsql", "label": "Cloud SQL", "datasets": ["gcp.cloudsql_postgresql", "gcp.cloudsql_mysql"], "category": "data", "link": _dash("gcp-ddc19780-3a0a-11ee-8736-83dacf143f01")},
+    {"service": "pubsub", "label": "Pub/Sub", "datasets": ["gcp.pubsub"], "category": "platform", "link": _dash("gcp-2b0fd7b0-feac-11ea-b032-d59f894a5072")},
+    {"service": "loadbalancing", "label": "Load Balancing", "datasets": ["gcp.loadbalancing_metrics", "gcp.loadbalancing_logs"], "category": "network", "link": _dash("gcp-aa5b8bd0-9157-11ea-8180-7b0dacd9df87")},
+    {"service": "vpcflow", "label": "VPC Flow", "datasets": ["gcp.vpcflow"], "category": "network", "link": _dash("gcp-9484a4cd-685f-450e-aeaa-728fbdbea20f")},
+    {"service": "dns", "label": "Cloud DNS", "datasets": ["gcp.dns"], "category": "network", "link": "/app/fleet/integrations"},
+    {"service": "billing", "label": "Billing", "datasets": ["gcp.billing"], "category": "cost", "link": _dash("gcp-76c9e920-e890-11ea-bf8c-d13ebf358a78")},
+    {"service": "audit", "label": "Audit Logs", "datasets": ["gcp.audit"], "category": "security", "link": _dash("gcp-48e12760-cbe4-11ec-b519-85ccf621cbbf")},
+    {"service": "firewall", "label": "Firewall", "datasets": ["gcp.firewall"], "category": "security", "link": _dash("gcp-8a1fb690-cbeb-11ec-b519-85ccf621cbbf")},
 ]
 
 OPTIONAL = {"dns", "billing"}
@@ -256,6 +261,41 @@ def seed_events(obs_es, sec_es, obs_user, obs_pass, sec_user, sec_pass) -> None:
 | SORT c DESC
 | LIMIT 8""",
         )
+    # Recommendations first (actionable)
+    recs = esql(
+        obs_es,
+        obs_user,
+        obs_pass,
+        """FROM gcp-cockpit-recommendations
+| WHERE @timestamp > NOW() - 7 days
+| STATS c = COUNT(*) BY severity, category
+| SORT c DESC
+| LIMIT 10""",
+    )
+    for row in recs:
+        sev = row.get("severity") or "low"
+        cat = row.get("category") or "insight"
+        label = str(cat).replace("_", " ")
+        docs.append(
+            (
+                f"rec-{sev}-{cat}",
+                {
+                    "@timestamp": ts,
+                    "event.source": "cockpit.recommendations",
+                    "event.severity": sev,
+                    "event.category": cat,
+                    "title": f"{int(row.get('c') or 0)} {label} recommendations",
+                    "detail": f"Open Discover for {sev} {label} findings →",
+                    "service": "recommendations",
+                    "link": recommendation_discover_href(
+                        "gcp-cockpit-recommendations", category=str(cat), severity=str(sev)
+                    ),
+                },
+            )
+        )
+
+    audit_dash = "/app/dashboards#/view/gcp-48e12760-cbe4-11ec-b519-85ccf621cbbf"
+    fw_dash = "/app/dashboards#/view/gcp-8a1fb690-cbeb-11ec-b519-85ccf621cbbf"
     for row in audit:
         provider = row.get("event.provider") or row.get("service.name") or "gcp.audit"
         count = int(row.get("c") or 0)
@@ -268,9 +308,9 @@ def seed_events(obs_es, sec_es, obs_user, obs_pass, sec_user, sec_pass) -> None:
                     "event.severity": "info",
                     "event.category": "api_activity",
                     "title": f"Audit: {provider}",
-                    "detail": f"{count:,} audit events in the last 24h",
+                    "detail": f"{count:,} audit events in the last 24h — open Audit dashboard →",
                     "service": str(provider),
-                    "link": "/app/dashboards",
+                    "link": audit_dash,
                 },
             )
         )
@@ -295,37 +335,9 @@ def seed_events(obs_es, sec_es, obs_user, obs_pass, sec_user, sec_pass) -> None:
                     "event.severity": "medium" if str(action).lower() in ("denied", "deny") else "info",
                     "event.category": "network",
                     "title": f"Firewall: {action}",
-                    "detail": f"{int(row.get('c') or 0):,} firewall events (24h)",
+                    "detail": f"{int(row.get('c') or 0):,} firewall events (24h) — open Firewall dashboard →",
                     "service": "firewall",
-                    "link": "/app/dashboards",
-                },
-            )
-        )
-    recs = esql(
-        obs_es,
-        obs_user,
-        obs_pass,
-        """FROM gcp-cockpit-recommendations
-| WHERE @timestamp > NOW() - 7 days
-| STATS c = COUNT(*) BY severity, category
-| SORT c DESC
-| LIMIT 10""",
-    )
-    for row in recs:
-        sev = row.get("severity") or "low"
-        cat = row.get("category") or "insight"
-        docs.append(
-            (
-                f"rec-{sev}-{cat}",
-                {
-                    "@timestamp": ts,
-                    "event.source": "cockpit.recommendations",
-                    "event.severity": sev,
-                    "event.category": cat,
-                    "title": f"{int(row.get('c') or 0)} {sev} {cat} recommendations",
-                    "detail": "From scheduled GCP recommendation workflows",
-                    "service": "recommendations",
-                    "link": "#gcp-recommendations",
+                    "link": fw_dash,
                 },
             )
         )

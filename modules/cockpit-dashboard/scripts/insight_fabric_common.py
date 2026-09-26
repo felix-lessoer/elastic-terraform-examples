@@ -233,6 +233,12 @@ def build_coverage_docs(
                     "last_seen": last_seen,
                     "datasets": svc["datasets"],
                     "detail": detail,
+                    "link": svc.get("link")
+                    or (
+                        "/app/fleet/integrations"
+                        if status == "not_configured"
+                        else "/app/discover"
+                    ),
                 },
             )
         )
@@ -249,7 +255,59 @@ COVERAGE_MAPPINGS = {
     "last_seen": {"type": "date"},
     "datasets": {"type": "keyword"},
     "detail": {"type": "keyword"},
+    "link": {"type": "keyword"},
 }
+
+
+def dashboard_href(dashboard_id: str) -> str:
+    return f"/app/dashboards#/view/{dashboard_id}"
+
+
+def discover_esql_href(esql: str) -> str:
+    """Deep-link into Discover ES|QL mode (break out of custom_content iframes with target=_top)."""
+    one = " ".join(esql.split())
+    rison = one.replace("\\", "\\\\").replace("'", "\\'")
+    return f"/app/discover#/?_a=(dataSource:(type:esql),query:(esql:'{rison}'))"
+
+
+def recommendation_discover_href(index: str, category: str | None = None, severity: str | None = None) -> str:
+    """Drill into recommendation details (e.g. cost_optimization) in Discover ES|QL."""
+    clauses = [f"FROM {index}"]
+    wheres = []
+    if category:
+        wheres.append(f'category == "{category}"')
+    if severity:
+        wheres.append(f'severity == "{severity}"')
+    if wheres:
+        clauses.append("| WHERE " + " AND ".join(wheres))
+    clauses.append(
+        "| KEEP @timestamp, severity, category, resource.type, resource.name, "
+        "recommendation, metric_name, metric_value"
+    )
+    clauses.append("| SORT @timestamp DESC")
+    clauses.append("| LIMIT 100")
+    return discover_esql_href("\n".join(clauses))
+
+
+def cloudtrail_failure_discover_href(
+    action: str,
+    *,
+    kibana_base: str = "",
+) -> str:
+    """Drill into failed CloudTrail API calls for a specific action."""
+    safe = action.replace('"', "")
+    esql = (
+        "FROM logs-aws.cloudtrail*\n"
+        f'| WHERE @timestamp > NOW() - 24 hours AND event.outcome == "failure" '
+        f'AND event.action == "{safe}"\n'
+        "| KEEP @timestamp, event.action, event.provider, user.name, source.ip, "
+        "aws.cloudtrail.error_code, aws.cloudtrail.error_message, cloud.region\n"
+        "| SORT @timestamp DESC\n"
+        "| LIMIT 100"
+    )
+    href = discover_esql_href(esql)
+    base = kibana_base.rstrip("/")
+    return f"{base}{href}" if base else href
 
 ASSETS_MAPPINGS = {
     "@timestamp": {"type": "date"},
@@ -309,7 +367,66 @@ SECURITY_KPI_MAPPINGS = {
 # ---------------------------------------------------------------------------
 
 
-def scoreboard_template(cloud_label: str, subtitle: str) -> str:
+def scoreboard_template(
+    cloud_label: str,
+    subtitle: str,
+    *,
+    cards: list[dict[str, str]] | None = None,
+) -> str:
+    """cards: list of {label, field, hint, href, sev?} — field is KPI column name."""
+    if not cards:
+        cards = [
+            {
+                "label": "Active alerts",
+                "field": "active_alerts",
+                "hint": "Open Security alerts →",
+                "href": "/app/security/alerts",
+                "sev": "sev-high",
+            },
+            {
+                "label": "High / critical",
+                "field": "high_critical_alerts",
+                "hint": "Prioritize these first →",
+                "href": "/app/security/alerts",
+                "sev": "sev-high",
+            },
+            {
+                "label": "Audit / activity (24h)",
+                "field": "audit_24h",
+                "hint": "Drill into control-plane activity →",
+                "href": "/app/discover",
+                "sev": "",
+            },
+            {
+                "label": "CSPM findings",
+                "field": "cspm_findings",
+                "hint": "Open CSPM findings →",
+                "href": "/app/security/cloud_security_posture/findings/misconfigurations",
+                "sev": "sev-ok",
+            },
+        ]
+    cards_html = []
+    for c in cards:
+        field = c["field"]
+        # Liquid fallbacks for cloud-specific volume fields
+        if field in ("audit_24h", "activity_24h", "cloudtrail_24h"):
+            value_expr = (
+                '{{ row["audit_24h"].value | default: row["activity_24h"].value '
+                '| default: row["cloudtrail_24h"].value | default: 0 }}'
+            )
+        elif field == "health_events":
+            value_expr = '{{ row["health_events"].value | default: 0 }}'
+        else:
+            value_expr = f'{{{{ row["{field}"].value | default: 0 }}}}'
+        sev = c.get("sev") or ""
+        cards_html.append(
+            f'''    <a class="card {sev}" href="{c["href"]}" target="_top" rel="noopener">
+      <div class="label">{c["label"]}</div>
+      <div class="value">{value_expr}</div>
+      <div class="hint">{c["hint"]}</div>
+    </a>'''
+        )
+    cards_block = "\n".join(cards_html)
     return f"""<html>
 <head>
 <style>
@@ -320,10 +437,11 @@ def scoreboard_template(cloud_label: str, subtitle: str) -> str:
   .title {{ font-size:1.125rem; font-weight:600; }}
   .sub {{ font-size:.8125rem; color:rgba(255,255,255,.78); }}
   .grid {{ display:grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: var(--cc-space-m); }}
-  .card {{ background: var(--cc-color-surface); border:1px solid var(--cc-color-border); border-radius: var(--cc-radius); padding: var(--cc-space-m); box-shadow:0 1px 2px rgba(0,0,0,.04); }}
+  a.card {{ display:block; text-decoration:none; color:inherit; background: var(--cc-color-surface); border:1px solid var(--cc-color-border); border-radius: var(--cc-radius); padding: var(--cc-space-m); box-shadow:0 1px 2px rgba(0,0,0,.04); transition: border-color .15s, transform .15s; cursor:pointer; }}
+  a.card:hover {{ border-color:#0B64DD; transform: translateY(-1px); }}
   .card .label {{ font-size:.75rem; font-weight:700; letter-spacing:.04em; text-transform:uppercase; opacity:.7; }}
   .card .value {{ font-size:1.75rem; font-weight:700; margin-top: var(--cc-space-xs); color:#0B64DD; }}
-  .card .hint {{ font-size:.75rem; opacity:.65; margin-top: var(--cc-space-xs); }}
+  .card .hint {{ font-size:.75rem; opacity:.65; margin-top: var(--cc-space-xs); color:#0B64DD; }}
   .sev-high .value {{ color:#FF957D; }}
   .sev-ok .value {{ color:#209280; }}
   @media (max-width:900px){{ .grid{{ grid-template-columns:1fr 1fr; }} .hero{{ flex-direction:column; align-items:flex-start; }} }}
@@ -335,31 +453,12 @@ def scoreboard_template(cloud_label: str, subtitle: str) -> str:
     <div>
       <div class="kicker">Insight fabric</div>
       <div class="title">{cloud_label} posture at a glance</div>
-      <div class="sub">{subtitle}</div>
+      <div class="sub">{subtitle} · click any tile to drill down</div>
     </div>
   </div>
   <div class="grid">
     {{% assign row = rows[0] %}}
-    <div class="card sev-high">
-      <div class="label">Active alerts</div>
-      <div class="value">{{{{ row["active_alerts"].value | default: 0 }}}}</div>
-      <div class="hint">From Security detection engine</div>
-    </div>
-    <div class="card sev-high">
-      <div class="label">High / critical</div>
-      <div class="value">{{{{ row["high_critical_alerts"].value | default: 0 }}}}</div>
-      <div class="hint">Prioritize these first</div>
-    </div>
-    <div class="card">
-      <div class="label">Audit / activity (24h)</div>
-      <div class="value">{{{{ row["audit_24h"].value | default: row["activity_24h"].value | default: row["cloudtrail_24h"].value | default: 0 }}}}</div>
-      <div class="hint">Management / control-plane volume</div>
-    </div>
-    <div class="card sev-ok">
-      <div class="label">CSPM findings</div>
-      <div class="value">{{{{ row["cspm_findings"].value | default: 0 }}}}</div>
-      <div class="hint">Latest posture snapshot</div>
-    </div>
+{cards_block}
   </div>
 </div>
 </body>
@@ -376,9 +475,11 @@ MATRIX_TMPL = """<html>
   .title { font-size:1rem; font-weight:700; }
   .sub { font-size:.8125rem; opacity:.7; }
   .grid { display:grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: var(--cc-space-s); }
-  .tile { border:1px solid var(--cc-color-border); border-radius: var(--cc-radius); background: var(--cc-color-surface); padding: var(--cc-space-m); min-height: 5.5rem; display:flex; flex-direction:column; gap: .35rem; }
+  a.tile { text-decoration:none; color:inherit; border:1px solid var(--cc-color-border); border-radius: var(--cc-radius); background: var(--cc-color-surface); padding: var(--cc-space-m); min-height: 5.5rem; display:flex; flex-direction:column; gap: .35rem; transition: border-color .15s, transform .15s; cursor:pointer; }
+  a.tile:hover { border-color:#0B64DD; transform: translateY(-1px); }
   .tile .name { font-weight:700; font-size:.875rem; }
   .tile .meta { font-size:.75rem; opacity:.65; }
+  .tile .cta { font-size:.6875rem; font-weight:600; color:#0B64DD; margin-top:auto; }
   .badge { align-self:flex-start; font-size:.625rem; font-weight:700; letter-spacing:.06em; text-transform:uppercase; padding:2px 8px; border-radius: var(--cc-radius-s); border:1px solid var(--cc-color-border); }
   .healthy { background: rgba(32,146,128,.12); color:#176655; border-color: rgba(32,146,128,.35); }
   .stale { background: rgba(254,197,20,.18); color:#8a6a00; border-color: rgba(254,197,20,.45); }
@@ -391,17 +492,18 @@ MATRIX_TMPL = """<html>
 <div class="wrap">
   <div class="head">
     <div class="title">Service coverage</div>
-    <div class="sub">Healthy = telemetry in last window · comparable to Datadog cloud overview tiles</div>
+    <div class="sub">Click a tile to open the OOTB dashboard or Fleet · Datadog-style overview</div>
   </div>
   <div class="grid">
     {% for row in rows %}
       {% assign status = row["status"].value %}
-      <div class="tile">
+      <a class="tile" href="{{ row["link"].value | default: '/app/discover' }}" target="_top" rel="noopener">
         <span class="badge {{ status }}">{{ status }}</span>
         <div class="name">{{ row["label"].value }}</div>
         <div class="meta">{{ row["detail"].value }}</div>
         <div class="meta">{{ row["category"].value }}</div>
-      </div>
+        <div class="cta">Open details →</div>
+      </a>
     {% endfor %}
   </div>
 </div>
@@ -417,7 +519,7 @@ TIMELINE_TMPL = """<html>
   .title { font-size:1rem; font-weight:700; }
   .sub { font-size:.8125rem; opacity:.7; margin-bottom: var(--cc-space-s); }
   .list { display:flex; flex-direction:column; gap: .4rem; }
-  .item { display:grid; grid-template-columns: 7rem 1fr auto; gap: var(--cc-space-m); align-items:center; padding: .55rem .75rem; border:1px solid var(--cc-color-border); border-radius: var(--cc-radius-s); background: var(--cc-color-surface); text-decoration:none; color:inherit; }
+  .item { display:grid; grid-template-columns: 7rem 1fr auto; gap: var(--cc-space-m); align-items:center; padding: .55rem .75rem; border:1px solid var(--cc-color-border); border-radius: var(--cc-radius-s); background: var(--cc-color-surface); text-decoration:none; color:inherit; transition: border-color .15s, transform .15s; cursor:pointer; }
   .item:hover { border-color:#0B64DD; transform: translateX(2px); }
   .src { font-size:.6875rem; font-weight:700; letter-spacing:.05em; text-transform:uppercase; opacity:.65; }
   .ttl { font-size:.875rem; font-weight:600; }
@@ -432,13 +534,13 @@ TIMELINE_TMPL = """<html>
 <body>
 <div class="wrap">
   <div class="title">What changed</div>
-  <div class="sub">Control-plane highlights · recommendation churn</div>
+  <div class="sub">Click a row to investigate · recommendations · failures · health</div>
   <div class="list">
     {% if rows.size == 0 %}
       <div class="empty">No insight events yet — run the insight seeder / wait for the next workflow cycle.</div>
     {% endif %}
     {% for row in rows %}
-      <a class="item" href="{{ row["link"].value | default: '#' }}">
+      <a class="item" href="{{ row["link"].value | default: '/app/discover' }}" target="_top" rel="noopener">
         <div class="src">{{ row["event.source"].value }}</div>
         <div>
           <div class="ttl">{{ row["title"].value }}</div>

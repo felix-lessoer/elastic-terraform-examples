@@ -24,6 +24,7 @@ from insight_fabric_common import (
     ensure_index,
     esql,
     now_iso,
+    recommendation_discover_href,
     scalar,
 )
 
@@ -32,15 +33,19 @@ COVERAGE = "azure-cockpit-coverage"
 ASSETS = "azure-cockpit-assets"
 EVENTS = "azure-cockpit-events"
 
+def _dash(did: str) -> str:
+    return f"/app/dashboards#/view/{did}"
+
+
 SERVICE_CATALOG = [
-    {"service": "vm", "label": "Virtual Machines", "datasets": ["azure.compute_vm"], "category": "compute"},
-    {"service": "storage", "label": "Storage Accounts", "datasets": ["azure.storage_account"], "category": "storage"},
-    {"service": "aci", "label": "Container Instances", "datasets": ["azure.container_instance"], "category": "compute"},
-    {"service": "billing", "label": "Billing", "datasets": ["azure.billing"], "category": "cost"},
-    {"service": "activitylogs", "label": "Activity Logs", "datasets": ["azure.activitylogs"], "category": "security"},
-    {"service": "platformlogs", "label": "Platform Logs", "datasets": ["azure.platformlogs"], "category": "platform"},
-    {"service": "springcloud", "label": "Spring Cloud", "datasets": ["azure.springcloud"], "category": "compute"},
-    {"service": "app_service", "label": "App Service", "datasets": ["azure.app_service"], "category": "compute"},
+    {"service": "vm", "label": "Virtual Machines", "datasets": ["azure.compute_vm"], "category": "compute", "link": _dash("azure_metrics-eb3f05f0-ea9a-11e9-90ec-112a988266d5")},
+    {"service": "storage", "label": "Storage Accounts", "datasets": ["azure.storage_account"], "category": "storage", "link": _dash("azure_metrics-1a151f80-32db-11ea-a83e-25b8612d00cc")},
+    {"service": "aci", "label": "Container Instances", "datasets": ["azure.container_instance"], "category": "compute", "link": _dash("azure_metrics-9c11ac60-6cf6-11ea-8fe8-71add5fd7c38")},
+    {"service": "billing", "label": "Billing", "datasets": ["azure.billing"], "category": "cost", "link": _dash("azure_billing-d3efeb30-c1c7-11ea-b7e7-0f48178cdb3c")},
+    {"service": "activitylogs", "label": "Activity Logs", "datasets": ["azure.activitylogs"], "category": "security", "link": _dash("azure-41e84340-ec20-11e9-90ec-112a988266d5")},
+    {"service": "platformlogs", "label": "Platform Logs", "datasets": ["azure.platformlogs"], "category": "platform", "link": _dash("azure-41e84340-ec20-11e9-90ec-112a988266d5")},
+    {"service": "springcloud", "label": "Spring Cloud", "datasets": ["azure.springcloud"], "category": "compute", "link": "/app/fleet/integrations"},
+    {"service": "app_service", "label": "App Service", "datasets": ["azure.app_service"], "category": "compute", "link": "/app/fleet/integrations"},
 ]
 
 OPTIONAL = {"aci", "springcloud", "app_service", "billing"}
@@ -241,6 +246,40 @@ def seed_events(obs_es, sec_es, obs_user, obs_pass, sec_user, sec_pass) -> None:
 | SORT c DESC
 | LIMIT 8""",
         )
+    # Recommendations first (actionable)
+    recs = esql(
+        obs_es,
+        obs_user,
+        obs_pass,
+        """FROM azure-cockpit-recommendations
+| WHERE @timestamp > NOW() - 7 days
+| STATS c = COUNT(*) BY severity, category
+| SORT c DESC
+| LIMIT 10""",
+    )
+    for row in recs:
+        sev = row.get("severity") or "low"
+        cat = row.get("category") or "insight"
+        label = str(cat).replace("_", " ")
+        docs.append(
+            (
+                f"rec-{sev}-{cat}",
+                {
+                    "@timestamp": ts,
+                    "event.source": "cockpit.recommendations",
+                    "event.severity": sev,
+                    "event.category": cat,
+                    "title": f"{int(row.get('c') or 0)} {label} recommendations",
+                    "detail": f"Open Discover for {sev} {label} findings →",
+                    "service": "recommendations",
+                    "link": recommendation_discover_href(
+                        "azure-cockpit-recommendations", category=str(cat), severity=str(sev)
+                    ),
+                },
+            )
+        )
+
+    activity_dash = "/app/dashboards#/view/azure-41e84340-ec20-11e9-90ec-112a988266d5"
     for row in activity:
         provider = (
             row.get("event.provider")
@@ -256,37 +295,9 @@ def seed_events(obs_es, sec_es, obs_user, obs_pass, sec_user, sec_pass) -> None:
                     "event.severity": "info",
                     "event.category": "api_activity",
                     "title": f"Activity: {provider}",
-                    "detail": f"{int(row.get('c') or 0):,} activity events in the last 24h",
+                    "detail": f"{int(row.get('c') or 0):,} activity events in the last 24h — open overview →",
                     "service": str(provider),
-                    "link": "/app/dashboards",
-                },
-            )
-        )
-    recs = esql(
-        obs_es,
-        obs_user,
-        obs_pass,
-        """FROM azure-cockpit-recommendations
-| WHERE @timestamp > NOW() - 7 days
-| STATS c = COUNT(*) BY severity, category
-| SORT c DESC
-| LIMIT 10""",
-    )
-    for row in recs:
-        sev = row.get("severity") or "low"
-        cat = row.get("category") or "insight"
-        docs.append(
-            (
-                f"rec-{sev}-{cat}",
-                {
-                    "@timestamp": ts,
-                    "event.source": "cockpit.recommendations",
-                    "event.severity": sev,
-                    "event.category": cat,
-                    "title": f"{int(row.get('c') or 0)} {sev} {cat} recommendations",
-                    "detail": "From scheduled Azure recommendation workflows",
-                    "service": "recommendations",
-                    "link": "#azure-recommendations",
+                    "link": activity_dash,
                 },
             )
         )

@@ -80,7 +80,7 @@ def aws_drilldowns_markdown() -> str:
     return "\n".join(
         [
             "### Drill down from the insight fabric",
-            "Custom content panels cannot host links (Kibana strips them) — use these jumps:",
+            "Open the detail view for each aggregate above:",
             "",
             "**Scoreboard** · "
             + " · ".join(
@@ -119,7 +119,7 @@ def gcp_drilldowns_markdown() -> str:
     return "\n".join(
         [
             "### Drill down from the insight fabric",
-            "Custom content panels cannot host links — use these jumps:",
+            "Open the detail view for each aggregate above:",
             "",
             "**Scoreboard** · "
             + " · ".join(
@@ -159,7 +159,7 @@ def azure_drilldowns_markdown() -> str:
     return "\n".join(
         [
             "### Drill down from the insight fabric",
-            "Custom content panels cannot host links — use these jumps:",
+            "Open the detail view for each aggregate above:",
             "",
             "**Scoreboard** · "
             + " · ".join(

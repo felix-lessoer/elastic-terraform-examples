@@ -35,6 +35,11 @@ output "managed_integration_ids" {
   value       = module.stack.managed_integration_ids
 }
 
+output "guardduty_managed_regions" {
+  description = "Regions with automatically reconciled managed GuardDuty policies."
+  value       = sort(keys(data.external.guardduty_detectors.result))
+}
+
 output "agent_policy_id" {
   description = "Fleet policy containing only non-managed AWS integrations."
   value       = module.stack.agent_policy_id
@@ -68,7 +73,7 @@ output "enabled_datasets" {
     for input in values(local.managed_inputs) : keys(input.streams)
     ]), flatten([
     for input in values(local.agent_inputs) : keys(input.streams)
-    ]), length(local.guardduty_managed_integrations) > 0 ? ["aws.guardduty"] : []
+    ]), length(data.external.guardduty_detectors.result) > 0 ? ["aws.guardduty"] : []
   )))
 }
 

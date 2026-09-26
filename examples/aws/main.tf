@@ -596,59 +596,6 @@ locals {
     local.agent_inputs,
   )
 
-  guardduty_managed_integrations = [
-    for region, detector_id in data.external.guardduty_detectors.result : {
-      name            = "aws-managed-guardduty-${region}"
-      description     = "Elastic-managed GuardDuty findings collection in ${region}"
-      package_name    = "aws"
-      managed         = true
-      agent_policy    = false
-      prerelease      = false
-      package_version = null
-      policy_template = "guardduty"
-      vars_json = jsonencode({
-        default_region               = region
-        role_arn                     = aws_iam_role.elastic_managed.arn
-        supports_identity_federation = true
-      })
-      var_group_selections = {
-        credential_type = "identity_federation"
-      }
-      cloud_connector = {
-        enabled            = true
-        cloud_connector_id = null
-        name               = "${var.name_prefix}-guardduty-${region}"
-        target_csp         = "aws"
-      }
-      inputs = {
-        "guardduty-httpjson" = {
-          enabled = true
-          streams = {
-            "aws.guardduty" = {
-              enabled = true
-              vars = jsonencode({
-                interval                         = "1m"
-                initial_interval                 = "24h"
-                detector_id                      = detector_id
-                aws_region                       = region
-                tld                              = "amazonaws.com"
-                http_client_timeout              = "30s"
-                tags                             = ["forwarded", "aws-guardduty"]
-                preserve_original_event          = false
-                preserve_duplicate_custom_fields = false
-              })
-            }
-          }
-        }
-        "guardduty-aws-s3" = {
-          enabled = false
-          streams = {
-            "aws.guardduty" = { enabled = false }
-          }
-        }
-      }
-    }
-  ]
 }
 
 check "required_company_tags" {
@@ -843,10 +790,58 @@ module "stack" {
       cloud_connector = null
       inputs          = local.agent_policy_inputs
     }],
-    local.guardduty_managed_integrations,
   )
 
   depends_on = [module.observability, module.aws_cloud, aws_iam_role_policy.elastic_managed]
+}
+
+# GuardDuty needs one managed policy per regional detector. Reconcile these
+# serially through Terraform because elasticstack 0.16.5 crashes when many
+# managed policies normalize their computed connector fields concurrently.
+resource "terraform_data" "guardduty_integrations" {
+  input = {
+    kibana_url      = module.observability.kibana_endpoint
+    kibana_username = module.observability.username
+    kibana_password = module.observability.password
+    aws_role_arn    = aws_iam_role.elastic_managed.arn
+    detectors_json  = jsonencode(data.external.guardduty_detectors.result)
+    name_prefix     = "aws-managed"
+  }
+
+  triggers_replace = [
+    filesha256("${path.module}/scripts/sync_guardduty_integrations.py"),
+    jsonencode(data.external.guardduty_detectors.result),
+  ]
+
+  provisioner "local-exec" {
+    interpreter = ["/bin/bash", "-c"]
+    command     = "python3 '${path.module}/scripts/sync_guardduty_integrations.py' sync"
+    environment = {
+      KIBANA_URL       = self.input.kibana_url
+      KIBANA_USERNAME  = self.input.kibana_username
+      KIBANA_PASSWORD  = self.input.kibana_password
+      AWS_ROLE_ARN     = self.input.aws_role_arn
+      DETECTORS_JSON   = self.input.detectors_json
+      NAME_PREFIX      = self.input.name_prefix
+    }
+  }
+
+  provisioner "local-exec" {
+    when        = destroy
+    on_failure  = continue
+    interpreter = ["/bin/bash", "-c"]
+    command     = "python3 '${path.module}/scripts/sync_guardduty_integrations.py' cleanup"
+    environment = {
+      KIBANA_URL       = self.input.kibana_url
+      KIBANA_USERNAME  = self.input.kibana_username
+      KIBANA_PASSWORD  = self.input.kibana_password
+      AWS_ROLE_ARN     = self.input.aws_role_arn
+      DETECTORS_JSON   = self.input.detectors_json
+      NAME_PREFIX      = self.input.name_prefix
+    }
+  }
+
+  depends_on = [module.stack, aws_iam_role_policy.elastic_managed]
 }
 
 # One customer-managed agent handles only the inputs unavailable in managed

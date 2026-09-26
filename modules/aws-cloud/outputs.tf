@@ -52,6 +52,17 @@ output "agent_role_arn" {
   value = aws_iam_role.agent.arn
 }
 
+output "fleet_aws_access_key_id" {
+  description = "Access key for agent-based AWS Fleet integrations (GuardDuty/Security Hub httpjson)."
+  value       = aws_iam_access_key.fleet_aws.id
+}
+
+output "fleet_aws_secret_access_key" {
+  description = "Secret key for agent-based AWS Fleet integrations (GuardDuty/Security Hub httpjson)."
+  value       = aws_iam_access_key.fleet_aws.secret
+  sensitive   = true
+}
+
 output "applied_tags" {
   description = "Tags applied to AWS resources."
   value       = local.common_tags

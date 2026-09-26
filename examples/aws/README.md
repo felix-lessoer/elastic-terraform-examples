@@ -67,6 +67,13 @@ required_tag_keys = [
 | AWS Health | `metrics-aws.awshealth` |
 | Trusted Advisor | `metrics-aws.cloudwatch_metrics` filtered to `AWS/TrustedAdvisor` (`RedResources`, `YellowResources`, `ServiceLimitUsage`) |
 
+## Data collection notes
+
+- **GuardDuty / Security Hub** use the AWS package `httpjson` input. Those streams do **not** use the EC2 instance profile when package credentials are empty (AWS returns `403 Missing Authentication Token`). Terraform creates an IAM user `${name_prefix}-fleet-aws` with access keys and injects them into the agent-based `aws` package `vars_json`.
+- **CloudTrail / VPC Flow** use SQS + the agent instance profile (IMDS).
+- **EC2 / S3 / Billing / CloudWatch / Health** metrics use Elastic Managed Integrations (agentless) when `enable_managed_aws_metrics = true`.
+- The Observability EC2 agent (`${name_prefix}-obs-agent`) is required for VPC Flow when SQS collection is enabled.
+
 ## Prerequisites
 
 - Terraform >= 1.2.7

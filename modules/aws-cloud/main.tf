@@ -413,3 +413,36 @@ resource "aws_iam_instance_profile" "agent" {
   role = aws_iam_role.agent.name
   tags = local.common_tags
 }
+
+# -----------------------------------------------------------------------------
+# IAM user + access key for agent-based AWS package httpjson inputs
+# (GuardDuty / Security Hub). Those streams do NOT fall back to IMDS when
+# package credentials are empty — they send unsigned requests and AWS returns
+# "Missing Authentication Token". CloudTrail (aws-s3/SQS) uses the instance
+# profile; httpjson requires explicit access_key_id / secret_access_key.
+# -----------------------------------------------------------------------------
+
+resource "aws_iam_user" "fleet_aws" {
+  name = "${var.name_prefix}-fleet-aws"
+  tags = merge(local.common_tags, { Name = "${var.name_prefix}-fleet-aws" })
+}
+
+resource "aws_iam_user_policy" "fleet_aws" {
+  name   = "${var.name_prefix}-fleet-aws"
+  user   = aws_iam_user.fleet_aws.name
+  policy = data.aws_iam_policy_document.elastic_permissions.json
+}
+
+resource "aws_iam_user_policy_attachment" "fleet_aws_security_audit" {
+  user       = aws_iam_user.fleet_aws.name
+  policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/SecurityAudit"
+}
+
+resource "aws_iam_user_policy_attachment" "fleet_aws_view_only" {
+  user       = aws_iam_user.fleet_aws.name
+  policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/job-function/ViewOnlyAccess"
+}
+
+resource "aws_iam_access_key" "fleet_aws" {
+  user = aws_iam_user.fleet_aws.name
+}

@@ -34,6 +34,24 @@ variable "elastic_managed_collector_role_arn" {
   default     = "arn:aws:iam::254766567737:role/cloud_connectors"
 }
 
+variable "enable_cockpit_dashboard" {
+  type        = bool
+  description = "Import the pinned AWS Observability cockpit dashboard."
+  default     = true
+}
+
+variable "enable_workflows" {
+  type        = bool
+  description = "Deploy pinned Kibana Workflow YAML from examples/aws/workflows."
+  default     = true
+}
+
+variable "execute_workflows_on_apply" {
+  type        = bool
+  description = "Execute each enabled pinned workflow once after create or update."
+  default     = true
+}
+
 variable "company_tags" {
   type        = map(string)
   description = "Company-policy tags applied to AWS resources and sanitized onto the Elastic project."

@@ -6,11 +6,14 @@ This example intentionally creates a small, observability-only setup:
 - one **Elastic-managed AWS integration** (no EC2-hosted Elastic Agent);
 - identity federation through one read-only AWS IAM role; and
 - every AWS observability metrics input supported by managed mode, configured
-  for **all AWS regions**.
+  for **all AWS regions**;
+- the pinned AWS Observability cockpit dashboard; and
+- pinned Kibana workflows from `examples/aws/workflows`.
 
 There is no Security project, Cross-Project Search link, Fleet enrollment
 token, EC2 collector, CloudTrail/S3/SQS pipeline, CSPM policy, detection-rule
-bootstrap, or customer-managed Elastic Agent.
+bootstrap, or customer-managed Elastic Agent. Dashboards and workflows remain
+in the Observability project.
 
 ## Enabled integrations
 
@@ -43,6 +46,31 @@ Log inputs are not enabled: most require a specific regional log group or an
 S3/SQS transport and therefore cannot satisfy both the managed-only and
 all-regions constraints in a single collector.
 
+## Integrations that still require a customer-managed agent
+
+The current AWS package does not offer managed mode for these policy templates:
+
+- CloudTrail
+- NAT Gateway
+- S3 Storage Lens
+- AWS Usage
+- VPC Flow Logs
+- VPN
+- WAF
+- Route 53
+- CloudFront
+- Redshift
+- Kinesis Data Streams
+- API Gateway
+- EMR
+- Amazon MSK
+
+There are also mixed-mode integrations. EC2, ELB, Lambda, S3, Network Firewall,
+and GuardDuty have managed-capable metrics or API collection, but one or more
+of their S3, SQS, or CloudWatch log inputs still require a customer-managed
+Elastic Agent. Network Firewall explicitly marks both log inputs as
+default-mode-only in the package manifest.
+
 ## Prerequisites
 
 - Terraform >= 1.2.7
@@ -70,8 +98,14 @@ terraform plan
 terraform apply
 ```
 
-After apply, use the `kibana_url` output and verify
-`aws-observability-all-regions` under **Fleet → Managed integrations**.
+After apply:
+
+1. Use `kibana_url` and verify `aws-observability-all-regions` under
+   **Fleet → Managed integrations**.
+2. Open `cockpit_dashboard_url`; package-provided AWS dashboards are also
+   installed automatically.
+3. Check `workflow_ids` for the pinned YAML definitions deployed from
+   `examples/aws/workflows`.
 
 ## Cost note
 

@@ -23,7 +23,7 @@ Stand up an Elastic **Security Complete** environment and the cloud collectors n
 
 | Path | Use when |
 |---|---|
-| [`examples/aws`](../examples/aws) | One Serverless Observability project + one Elastic-managed AWS metrics collector for all regions |
+| [`examples/aws`](../examples/aws) | One Serverless Observability project + one Elastic-managed AWS metrics collector for all regions, with cockpit dashboard and workflows |
 | [`examples/azure`](../examples/azure) | Azure-only PoC |
 | [`examples/gcp`](../examples/gcp) | GCP Security + Observability (CPS) + cockpit dashboard |
 | [`examples/multicloud`](../examples/multicloud) | One or more clouds + CPS/CCS hub |

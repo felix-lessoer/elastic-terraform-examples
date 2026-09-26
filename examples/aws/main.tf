@@ -363,3 +363,34 @@ module "stack" {
 
   depends_on = [module.observability, aws_iam_role_policy.elastic_managed]
 }
+
+# Keep the curated AWS cockpit in the same Observability project as the data.
+module "cockpit" {
+  count  = var.enable_cockpit_dashboard ? 1 : 0
+  source = "../../modules/cockpit-dashboard"
+
+  kibana_endpoint        = module.observability.kibana_endpoint
+  elasticsearch_username = module.observability.username
+  elasticsearch_password = module.observability.password
+  title                  = "AWS Observability Cockpit"
+  description            = "AWS service health and metrics collected across all regions."
+  dashboard_id           = "a1b2c3d4-e5f6-4789-a012-3456789abcde"
+  ndjson_path            = "${path.module}/../../modules/cockpit-dashboard/cockpit-aws.ndjson"
+
+  depends_on = [module.stack]
+}
+
+# Deploy every pinned workflow definition in examples/aws/workflows into the
+# Observability project. The directory remains the source of truth.
+module "workflows" {
+  count  = var.enable_workflows ? 1 : 0
+  source = "../../modules/kibana-workflows"
+
+  kibana_endpoint        = module.observability.kibana_endpoint
+  elasticsearch_username = module.observability.username
+  elasticsearch_password = module.observability.password
+  workflows_dir          = "${path.module}/workflows"
+  execute_on_apply       = var.execute_workflows_on_apply
+
+  depends_on = [module.stack, module.cockpit]
+}

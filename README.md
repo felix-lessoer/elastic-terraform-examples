@@ -42,7 +42,8 @@ docs/
 - Elastic Serverless Forwarder / SAR path removed
 - The AWS entry point is intentionally **Observability-only**: one Serverless
   project and one Elastic-managed integration collecting every supported
-  metrics dataset across all AWS regions
+  metrics dataset across all AWS regions, with the pinned cockpit dashboard
+  and Kibana workflow deployment retained
 
 ## Quick start (AWS)
 

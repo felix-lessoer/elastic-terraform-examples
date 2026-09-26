@@ -35,6 +35,16 @@ output "managed_integration_ids" {
   value       = module.stack.managed_integration_ids
 }
 
+output "cockpit_dashboard_url" {
+  description = "Pinned AWS Observability cockpit dashboard."
+  value       = try(module.cockpit[0].dashboard_url, null)
+}
+
+output "workflow_ids" {
+  description = "Pinned Kibana workflows deployed to the Observability project."
+  value       = try(module.workflows[0].workflow_ids, [])
+}
+
 output "enabled_datasets" {
   description = "AWS observability datasets enabled across all regions."
   value = sort(flatten([
@@ -52,6 +62,8 @@ output "next_steps" {
     - Fleet > Managed integrations: confirm aws-observability-all-regions is Healthy
     - Infrastructure > Inventory: inspect AWS hosts and services
     - Dashboards: open the AWS integration dashboards
+    - Cockpit dashboard: ${try(module.cockpit[0].dashboard_url, "(disabled)")}
+    - Workflows: ${join(", ", try(module.workflows[0].workflow_ids, []))}
     - Discover: filter data_stream.dataset by aws.*
   EOT
 }

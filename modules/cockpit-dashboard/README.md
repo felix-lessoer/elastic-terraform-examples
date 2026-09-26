@@ -61,6 +61,7 @@ Cloud link is `enabled`). Security deep-links remain in the OOTB nav.
 | `aws-cockpit-security-kpi` | `scripts/seed_aws_insight_indices.py` (mirrors Security alerts/CSPM/CloudTrail/Health) | Top KPIs + scoreboard |
 | `aws-cockpit-coverage` | Seeder + `aws-cockpit-coverage` workflow | Service coverage matrix |
 | `aws-cockpit-assets` | Seeder + `aws-cockpit-assets` workflow | Inventory charts |
+| `aws-cockpit-health` | Seeder (mirrors Security `metrics-aws.awshealth*`) | Health section panels |
 | `aws-cockpit-events` | Seeder | Events timeline |
 | `aws-cockpit-recommendations` | EC2/S3 workflows (+ optional Python seed) | Recommendations section |
 

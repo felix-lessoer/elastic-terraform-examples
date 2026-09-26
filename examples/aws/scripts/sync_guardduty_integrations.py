@@ -4,6 +4,9 @@
 import base64
 import json
 import os
+from pathlib import Path
+import shutil
+import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -14,6 +17,18 @@ AUTH = base64.b64encode(
     f"{os.environ['KIBANA_USERNAME']}:{os.environ['KIBANA_PASSWORD']}".encode()
 ).decode()
 NAME_PREFIX = os.environ["NAME_PREFIX"]
+AWS_CLI = shutil.which("aws") or str(Path.home() / ".local" / "bin" / "aws")
+
+
+def aws(*args: str) -> dict:
+    result = subprocess.run(
+        [AWS_CLI, *args, "--output", "json"],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    return json.loads(result.stdout)
 
 
 def request(method: str, path: str, body: dict | None = None) -> dict:
@@ -58,6 +73,19 @@ def sync() -> None:
     role_arn = os.environ["AWS_ROLE_ARN"]
 
     for region, detector_id in sorted(detectors.items()):
+        if not detector_id:
+            detector_id = aws(
+                "guardduty",
+                "create-detector",
+                "--region",
+                region,
+                "--enable",
+                "--finding-publishing-frequency",
+                "FIFTEEN_MINUTES",
+                "--tags",
+                "ManagedBy=terraform,ElasticProject=elastic-observability",
+            )["DetectorId"]
+
         name = f"{NAME_PREFIX}-guardduty-{region}"
         if name in existing:
             continue

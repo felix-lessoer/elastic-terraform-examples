@@ -122,9 +122,10 @@ credentials path, or profile name into any Fleet integration or policy. Those
 fields intentionally remain empty after apply.
 
 GuardDuty discovery uses the same AWS provider environment/profile as
-Terraform. It enumerates enabled AWS regions and creates one managed policy for
-each existing detector because the GuardDuty API requires a scalar region and
-detector ID. No detector ID or additional credential is entered by the user.
+Terraform. It enumerates enabled AWS regions, enables and tags a detector where
+one is missing, and creates one managed policy per detector because the
+GuardDuty API requires a scalar region and detector ID. No detector ID or
+additional credential is entered by the user.
 
 ## Apply
 

@@ -49,9 +49,10 @@ def detector_for_region(region: dict[str, str]) -> tuple[str, str] | None:
         # GuardDuty is not available in every AWS region.
         return None
 
-    if ids:
-        return region_name, ids[0]
-    return None
+    # Keep enabled regions with no detector in the result. The apply-time
+    # reconciler will create and tag the missing detector before configuring
+    # its managed integration.
+    return region_name, ids[0] if ids else ""
 
 
 detectors: dict[str, str] = {}

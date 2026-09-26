@@ -809,8 +809,7 @@ resource "terraform_data" "guardduty_integrations" {
   }
 
   triggers_replace = [
-    filesha256("${path.module}/scripts/sync_guardduty_integrations.py"),
-    jsonencode(data.external.guardduty_detectors.result),
+    jsonencode(sort(keys(data.external.guardduty_detectors.result))),
   ]
 
   provisioner "local-exec" {

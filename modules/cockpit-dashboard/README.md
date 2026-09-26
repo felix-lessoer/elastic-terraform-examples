@@ -54,29 +54,31 @@ Observability cockpit uses an **insight fabric** of local indices so panels neve
 depend on broken CPS qualifiers (`no_matching_project_exception` even when the
 Cloud link is `enabled`). Security deep-links remain in the OOTB nav.
 
-## AWS insight fabric (Datadog-comparable)
+## Multi-cloud insight fabric (Datadog-comparable)
 
-| Index | Source | Used by |
-| --- | --- | --- |
-| `aws-cockpit-security-kpi` | `scripts/seed_aws_insight_indices.py` (mirrors Security alerts/CSPM/CloudTrail/Health) | Top KPIs + scoreboard |
-| `aws-cockpit-coverage` | Seeder + `aws-cockpit-coverage` workflow | Service coverage matrix |
-| `aws-cockpit-assets` | Seeder + `aws-cockpit-assets` workflow | Inventory charts |
-| `aws-cockpit-health` | Seeder (mirrors Security `metrics-aws.awshealth*`) | Health section panels |
-| `aws-cockpit-events` | Seeder | Events timeline |
-| `aws-cockpit-recommendations` | EC2/S3 workflows (+ optional Python seed) | Recommendations section |
+Shared helpers live in `scripts/insight_fabric_common.py`. Each cloud has a
+seeder + panel injector + assets/coverage workflows.
+
+| Cloud | Seeder | Inject | Indices |
+| --- | --- | --- | --- |
+| AWS | `seed_aws_insight_indices.py` | `inject_aws_insight_panels.py` | `aws-cockpit-{security-kpi,coverage,assets,events,health,recommendations}` |
+| GCP | `seed_gcp_insight_indices.py` | `inject_gcp_insight_panels.py` | `gcp-cockpit-{security-kpi,coverage,assets,events,recommendations}` |
+| Azure | `seed_azure_insight_indices.py` | `inject_azure_insight_panels.py` | `azure-cockpit-{security-kpi,coverage,assets,events,recommendations}` |
 
 ```bash
-# Refresh insight panels in the NDJSON export
+# Refresh insight panels in the NDJSON exports
 python3 modules/cockpit-dashboard/scripts/inject_aws_insight_panels.py
+python3 modules/cockpit-dashboard/scripts/inject_gcp_insight_panels.py
+python3 modules/cockpit-dashboard/scripts/inject_azure_insight_panels.py
 
 # Seed Observability indices from Security + Observability Elasticsearch
-python3 modules/cockpit-dashboard/scripts/seed_aws_insight_indices.py \
+python3 modules/cockpit-dashboard/scripts/seed_<cloud>_insight_indices.py \
   --obs-es "$OBS_ES" --sec-es "$SEC_ES" \
   --obs-password "$OBS_PASSWORD" --sec-password "$SEC_PASSWORD"
 ```
 
-`examples/aws` wires the seeder as `terraform_data.seed_aws_insight_indices`
-(runs after cockpit + workflows on every apply).
+Each `examples/{aws,gcp,azure}` wires the seeder as
+`terraform_data.seed_<cloud>_insight_indices` (runs after cockpit + workflows).
 
 ## Recommendations index
 

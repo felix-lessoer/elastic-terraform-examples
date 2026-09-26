@@ -1,0 +1,106 @@
+name: Azure Cockpit Asset Inventory
+id: azure-cockpit-assets
+description: >-
+  Builds a live VM/storage asset inventory from Observability metrics into
+  azure-cockpit-assets for the cockpit inventory panels.
+triggers:
+  - type: manual
+  - type: scheduled
+    with:
+      every: "1h"
+
+steps:
+  - name: query_vm
+    type: elasticsearch.esql.query
+    with:
+      format: json
+      query: |
+        FROM metrics-azure.compute_vm-default
+        | WHERE @timestamp > NOW() - 24 hours
+        | STATS avg_cpu = AVG(azure.compute_vm.percentage_cpu.avg), last_seen = MAX(@timestamp)
+            BY cloud.instance.name, cloud.region, cloud.account.id, cloud.machine.type
+        | SORT avg_cpu ASC
+        | LIMIT 200
+
+  - name: map_vm
+    type: data.map
+    items: "{{ steps.query_vm.output.values }}"
+    with:
+      fields:
+        avg_cpu: "{{ item[0] }}"
+        last_seen: "{{ item[1] }}"
+        instance_name: "{{ item[2] }}"
+        region: "{{ item[3] }}"
+        account_id: "{{ item[4] }}"
+        machine_type: "{{ item[5] }}"
+
+  - name: index_vm
+    type: foreach
+    foreach: "{{ steps.map_vm.output }}"
+    steps:
+      - name: write_vm
+        type: elasticsearch.index
+        with:
+          index: azure-cockpit-assets
+          id: "vm-{{ foreach.item.instance_name }}"
+          document:
+            "@timestamp": "{{ now | date_to_xmlschema }}"
+            resource:
+              type: azure_vm
+              name: "{{ foreach.item.instance_name }}"
+              id: "{{ foreach.item.instance_name }}"
+            cloud:
+              region: "{{ foreach.item.region }}"
+              account:
+                id: "{{ foreach.item.account_id }}"
+              machine:
+                type: "{{ foreach.item.machine_type }}"
+            metric_name: cpu_avg_24h
+            metric_value: "{{ foreach.item.avg_cpu }}"
+            last_seen: "{{ foreach.item.last_seen }}"
+
+  - name: query_storage
+    type: elasticsearch.esql.query
+    with:
+      format: json
+      query: |
+        FROM metrics-azure.storage_account-default
+        | WHERE @timestamp > NOW() - 7 days
+        | STATS max_bytes = MAX(COALESCE(azure.storage_account.used_capacity.avg, azure.storage_account.used_capacity.total)), last_seen = MAX(@timestamp)
+            BY account_name = COALESCE(azure.resource.name, azure.storage_account.name), cloud.region, cloud.account.id
+        | SORT max_bytes DESC
+        | LIMIT 300
+
+  - name: map_storage
+    type: data.map
+    items: "{{ steps.query_storage.output.values }}"
+    with:
+      fields:
+        max_bytes: "{{ item[0] }}"
+        last_seen: "{{ item[1] }}"
+        name: "{{ item[2] }}"
+        region: "{{ item[3] }}"
+        account_id: "{{ item[4] }}"
+
+  - name: index_storage
+    type: foreach
+    foreach: "{{ steps.map_storage.output }}"
+    steps:
+      - name: write_storage
+        type: elasticsearch.index
+        with:
+          index: azure-cockpit-assets
+          id: "sa-{{ foreach.item.name }}"
+          document:
+            "@timestamp": "{{ now | date_to_xmlschema }}"
+            resource:
+              type: storage_account
+              name: "{{ foreach.item.name }}"
+              id: "{{ foreach.item.name }}"
+            cloud:
+              region: "{{ foreach.item.region }}"
+              account:
+                id: "{{ foreach.item.account_id }}"
+            metric_name: used_capacity_bytes
+            metric_value: "{{ foreach.item.max_bytes }}"
+            last_seen: "{{ foreach.item.last_seen }}"

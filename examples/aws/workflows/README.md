@@ -29,6 +29,7 @@ on apply (`terraform_data.seed_aws_insight_indices`). It mirrors:
 | `aws-cockpit-security-kpi` | active / high-critical alerts, CSPM, CloudTrail, Health counts |
 | `aws-cockpit-coverage` | service tile health (EC2, S3, VPC Flow, CloudTrail, …) |
 | `aws-cockpit-assets` | EC2 + S3 inventory |
+| `aws-cockpit-health` | mirrored AWS Health events (Security → Observability) |
 | `aws-cockpit-events` | AWS Health + CloudTrail highlights + recommendation churn |
 
 Triggers: workflows = manual + scheduled every `1h`. Seeder = every apply

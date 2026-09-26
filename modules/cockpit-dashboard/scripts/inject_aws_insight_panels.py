@@ -269,10 +269,13 @@ def scrub(panel: dict) -> dict:
         ".ml-anomalies-shared-000001,aws-observe-and-protect-ad5bcf:.ml-anomalies-shared-000001",
         ".ml-anomalies-shared-000001",
     )
+    # Health lives in Security — panels must query the mirrored OBS index.
     raw = raw.replace(
         "aws-observe-and-protect-ad5bcf:metrics-aws.awshealth-default",
-        "metrics-aws.awshealth*",
+        "aws-cockpit-health",
     )
+    raw = raw.replace("metrics-aws.awshealth-default", "aws-cockpit-health")
+    raw = raw.replace("metrics-aws.awshealth*", "aws-cockpit-health")
     # Prefer assets index for inventory charts when they still point at CSPM
     return json.loads(raw)
 
@@ -495,6 +498,7 @@ def main() -> int:
         text = json.dumps(panels)
         assert "aws-observe-and-protect-ad5bcf:" not in text
         assert ".alerts-security.alerts-default" not in text
+        assert "metrics-aws.awshealth" not in text
         attrs["panelsJSON"] = json.dumps(panels, separators=(",", ":"))
         # Prefer description calling out insight fabric
         attrs["description"] = (

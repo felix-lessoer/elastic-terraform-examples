@@ -34,6 +34,7 @@ SECURITY_KPI = "aws-cockpit-security-kpi"
 COVERAGE = "aws-cockpit-coverage"
 ASSETS = "aws-cockpit-assets"
 EVENTS = "aws-cockpit-events"
+HEALTH = "aws-cockpit-health"
 
 # Canonical service tiles for the Datadog-style coverage matrix.
 SERVICE_CATALOG = [
@@ -488,6 +489,80 @@ def seed_assets(obs_es: str, obs_user: str, obs_pass: str) -> None:
     print(f"  {ASSETS}: {len(docs)} resources")
 
 
+def seed_health(obs_es: str, sec_es: str, obs_user: str, obs_pass: str, sec_user: str, sec_pass: str) -> None:
+    """Mirror AWS Health metrics into Observability so Health panels never hit CPS."""
+    ensure_index(
+        obs_es,
+        obs_user,
+        obs_pass,
+        HEALTH,
+        {
+            "@timestamp": {"type": "date"},
+            "aws.awshealth.event_arn": {"type": "keyword"},
+            "aws.awshealth.service": {"type": "keyword"},
+            "aws.awshealth.region": {"type": "keyword"},
+            "aws.awshealth.event_type_category": {"type": "keyword"},
+            "aws.awshealth.event_type_code": {"type": "keyword"},
+            "aws.awshealth.status_code": {"type": "keyword"},
+            "aws.awshealth.event_description": {
+                "type": "text",
+                "fields": {"keyword": {"type": "keyword", "ignore_above": 1024}},
+            },
+            "aws.awshealth.last_updated_time": {"type": "date"},
+            "aws.awshealth.affected_entities_pending": {"type": "long"},
+        },
+    )
+    rows = esql(
+        sec_es,
+        sec_user,
+        sec_pass,
+        """FROM metrics-aws.awshealth-default
+| STATS last_seen = MAX(@timestamp),
+        last_updated = MAX(aws.awshealth.last_updated_time),
+        open_entities = MAX(aws.awshealth.affected_entities_pending),
+        category = VALUES(aws.awshealth.event_type_category),
+        status = VALUES(aws.awshealth.status_code),
+        region = VALUES(aws.awshealth.region),
+        description = VALUES(aws.awshealth.event_description)
+    BY aws.awshealth.event_arn, aws.awshealth.service, aws.awshealth.event_type_code
+| SORT last_seen DESC
+| LIMIT 200""",
+    )
+    docs: list[tuple[str, dict]] = []
+    ts = now_iso()
+    for i, row in enumerate(rows):
+        arn = row.get("aws.awshealth.event_arn") or f"health-{i}"
+
+        def first(v):
+            if isinstance(v, list):
+                return v[0] if v else None
+            return v
+
+        status = first(row.get("status"))
+        category = first(row.get("category"))
+        region = first(row.get("region"))
+        description = first(row.get("description"))
+        docs.append(
+            (
+                f"health-{abs(hash(arn)) % 10_000_000}",
+                {
+                    "@timestamp": row.get("last_seen") or ts,
+                    "aws.awshealth.event_arn": arn,
+                    "aws.awshealth.service": row.get("aws.awshealth.service"),
+                    "aws.awshealth.region": region,
+                    "aws.awshealth.event_type_category": category,
+                    "aws.awshealth.event_type_code": row.get("aws.awshealth.event_type_code"),
+                    "aws.awshealth.status_code": status,
+                    "aws.awshealth.event_description": description,
+                    "aws.awshealth.last_updated_time": row.get("last_updated") or row.get("last_seen") or ts,
+                    "aws.awshealth.affected_entities_pending": int(row.get("open_entities") or 0),
+                },
+            )
+        )
+    bulk_index(obs_es, obs_user, obs_pass, HEALTH, docs)
+    print(f"  {HEALTH}: {len(docs)} events")
+
+
 def seed_events(obs_es: str, sec_es: str, obs_user: str, obs_pass: str, sec_user: str, sec_pass: str) -> None:
     ensure_index(
         obs_es,
@@ -636,6 +711,7 @@ def main() -> int:
     seed_security_kpi(obs_es, sec_es, args.obs_user, args.obs_password, args.sec_user, args.sec_password)
     seed_coverage(obs_es, sec_es, args.obs_user, args.obs_password, args.sec_user, args.sec_password)
     seed_assets(obs_es, args.obs_user, args.obs_password)
+    seed_health(obs_es, sec_es, args.obs_user, args.obs_password, args.sec_user, args.sec_password)
     seed_events(obs_es, sec_es, args.obs_user, args.obs_password, args.sec_user, args.sec_password)
     print("Done.")
     return 0

@@ -263,6 +263,16 @@ def dashboard_href(dashboard_id: str) -> str:
     return f"/app/dashboards#/view/{dashboard_id}"
 
 
+def html_attr(value: str) -> str:
+    """Escape a value for use inside a double-quoted HTML attribute."""
+    return (
+        value.replace("&", "&amp;")
+        .replace('"', "&quot;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+
+
 def discover_esql_href(esql: str) -> str:
     """Deep-link into Discover ES|QL mode (break out of custom_content iframes with target=_top)."""
     one = " ".join(esql.split())
@@ -422,12 +432,15 @@ def scoreboard_template(
         else:
             value_expr = f'{{{{ row["{field}"].value | default: 0 }}}}'
         sev = c.get("sev") or ""
+        # custom_content FORBID_TAGS includes <a>; use form+button (no JS) to navigate.
         cards_html.append(
-            f'''    <a class="card {sev}" href="{c["href"]}" target="_top" rel="noopener">
-      <div class="label">{c["label"]}</div>
-      <div class="value">{value_expr}</div>
-      <div class="hint">{c["hint"]}</div>
-    </a>'''
+            f'''    <form class="card {sev}" action="{html_attr(c["href"])}" method="get" target="_top">
+      <button type="submit" class="card-btn">
+        <div class="label">{c["label"]}</div>
+        <div class="value">{value_expr}</div>
+        <div class="hint">{c["hint"]}</div>
+      </button>
+    </form>'''
         )
     cards_block = "\n".join(cards_html)
     return f"""<html>
@@ -440,8 +453,9 @@ def scoreboard_template(
   .title {{ font-size:1.125rem; font-weight:600; }}
   .sub {{ font-size:.8125rem; color:rgba(255,255,255,.78); }}
   .grid {{ display:grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: var(--cc-space-m); }}
-  a.card {{ display:block; text-decoration:none; color:inherit; background: var(--cc-color-surface); border:1px solid var(--cc-color-border); border-radius: var(--cc-radius); padding: var(--cc-space-m); box-shadow:0 1px 2px rgba(0,0,0,.04); transition: border-color .15s, transform .15s; cursor:pointer; }}
-  a.card:hover {{ border-color:#0B64DD; transform: translateY(-1px); }}
+  form.card {{ margin:0; background: var(--cc-color-surface); border:1px solid var(--cc-color-border); border-radius: var(--cc-radius); box-shadow:0 1px 2px rgba(0,0,0,.04); transition: border-color .15s, transform .15s; }}
+  form.card:hover {{ border-color:#0B64DD; transform: translateY(-1px); }}
+  .card-btn {{ display:block; width:100%; text-align:left; cursor:pointer; color:inherit; background:transparent; border:0; padding: var(--cc-space-m); font: inherit; }}
   .card .label {{ font-size:.75rem; font-weight:700; letter-spacing:.04em; text-transform:uppercase; opacity:.7; }}
   .card .value {{ font-size:1.75rem; font-weight:700; margin-top: var(--cc-space-xs); color:#0B64DD; }}
   .card .hint {{ font-size:.75rem; opacity:.65; margin-top: var(--cc-space-xs); color:#0B64DD; }}
@@ -478,8 +492,9 @@ MATRIX_TMPL = """<html>
   .title { font-size:1rem; font-weight:700; }
   .sub { font-size:.8125rem; opacity:.7; }
   .grid { display:grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: var(--cc-space-s); }
-  a.tile { text-decoration:none; color:inherit; border:1px solid var(--cc-color-border); border-radius: var(--cc-radius); background: var(--cc-color-surface); padding: var(--cc-space-m); min-height: 5.5rem; display:flex; flex-direction:column; gap: .35rem; transition: border-color .15s, transform .15s; cursor:pointer; }
-  a.tile:hover { border-color:#0B64DD; transform: translateY(-1px); }
+  form.tile { margin:0; border:1px solid var(--cc-color-border); border-radius: var(--cc-radius); background: var(--cc-color-surface); transition: border-color .15s, transform .15s; }
+  form.tile:hover { border-color:#0B64DD; transform: translateY(-1px); }
+  .tile-btn { display:flex; flex-direction:column; gap: .35rem; width:100%; min-height: 5.5rem; text-align:left; cursor:pointer; color:inherit; background:transparent; border:0; padding: var(--cc-space-m); font: inherit; }
   .tile .name { font-weight:700; font-size:.875rem; }
   .tile .meta { font-size:.75rem; opacity:.65; }
   .tile .cta { font-size:.6875rem; font-weight:600; color:#0B64DD; margin-top:auto; }
@@ -500,13 +515,15 @@ MATRIX_TMPL = """<html>
   <div class="grid">
     {% for row in rows %}
       {% assign status = row["status"].value %}
-      <a class="tile" href="{{ row["link"].value | default: '/app/discover' }}" target="_top" rel="noopener">
-        <span class="badge {{ status }}">{{ status }}</span>
-        <div class="name">{{ row["label"].value }}</div>
-        <div class="meta">{{ row["detail"].value }}</div>
-        <div class="meta">{{ row["category"].value }}</div>
-        <div class="cta">Open details →</div>
-      </a>
+      <form class="tile" action="{{ row["link"].value | default: '/app/discover' | escape }}" method="get" target="_top">
+        <button type="submit" class="tile-btn">
+          <span class="badge {{ status }}">{{ status }}</span>
+          <div class="name">{{ row["label"].value }}</div>
+          <div class="meta">{{ row["detail"].value }}</div>
+          <div class="meta">{{ row["category"].value }}</div>
+          <div class="cta">Open details →</div>
+        </button>
+      </form>
     {% endfor %}
   </div>
 </div>
@@ -522,8 +539,9 @@ TIMELINE_TMPL = """<html>
   .title { font-size:1rem; font-weight:700; }
   .sub { font-size:.8125rem; opacity:.7; margin-bottom: var(--cc-space-s); }
   .list { display:flex; flex-direction:column; gap: .4rem; }
-  .item { display:grid; grid-template-columns: 7rem 1fr auto; gap: var(--cc-space-m); align-items:center; padding: .55rem .75rem; border:1px solid var(--cc-color-border); border-radius: var(--cc-radius-s); background: var(--cc-color-surface); text-decoration:none; color:inherit; transition: border-color .15s, transform .15s; cursor:pointer; }
-  .item:hover { border-color:#0B64DD; transform: translateX(2px); }
+  form.item { margin:0; border:1px solid var(--cc-color-border); border-radius: var(--cc-radius-s); background: var(--cc-color-surface); transition: border-color .15s, transform .15s; }
+  form.item:hover { border-color:#0B64DD; transform: translateX(2px); }
+  .item-btn { display:grid; grid-template-columns: 7rem 1fr auto; gap: var(--cc-space-m); align-items:center; width:100%; padding: .55rem .75rem; cursor:pointer; color:inherit; background:transparent; border:0; font: inherit; text-align:left; }
   .src { font-size:.6875rem; font-weight:700; letter-spacing:.05em; text-transform:uppercase; opacity:.65; }
   .ttl { font-size:.875rem; font-weight:600; }
   .dtl { font-size:.75rem; opacity:.7; }
@@ -543,14 +561,16 @@ TIMELINE_TMPL = """<html>
       <div class="empty">No insight events yet — run the insight seeder / wait for the next workflow cycle.</div>
     {% endif %}
     {% for row in rows %}
-      <a class="item" href="{{ row["link"].value | default: '/app/discover' }}" target="_top" rel="noopener">
-        <div class="src">{{ row["event.source"].value }}</div>
-        <div>
-          <div class="ttl">{{ row["title"].value }}</div>
-          <div class="dtl">{{ row["detail"].value }}</div>
-        </div>
-        <span class="sev {{ row["event.severity"].value }}">{{ row["event.severity"].value }}</span>
-      </a>
+      <form class="item" action="{{ row["link"].value | default: '/app/discover' | escape }}" method="get" target="_top">
+        <button type="submit" class="item-btn">
+          <div class="src">{{ row["event.source"].value }}</div>
+          <div>
+            <div class="ttl">{{ row["title"].value }}</div>
+            <div class="dtl">{{ row["detail"].value }}</div>
+          </div>
+          <span class="sev {{ row["event.severity"].value }}">{{ row["event.severity"].value }}</span>
+        </button>
+      </form>
     {% endfor %}
   </div>
 </div>

@@ -185,12 +185,14 @@ def render_template(cloud: str) -> str:
     groups = OOTB[cloud]
     primary = list(PRIMARY_LINKS) + list(theme.get("extra_primary") or [])
 
+    # custom_content strips <a>; navigate with form+button (no JS).
     primary_html = []
     for link in primary:
         primary_html.append(
-            f'<a class="chip chip-{_escape(link["tone"])}" href="{_escape(link["href"])}">'
+            f'<form class="chip-form" action="{_escape(link["href"])}" method="get" target="_top">'
+            f'<button type="submit" class="chip chip-{_escape(link["tone"])}">'
             f'<span class="chip-dot"></span>{_escape(link["label"])}'
-            f'<span class="chip-arrow" aria-hidden="true">→</span></a>'
+            f'<span class="chip-arrow" aria-hidden="true">→</span></button></form>'
         )
 
     groups_html = []
@@ -198,9 +200,10 @@ def render_template(cloud: str) -> str:
         links_html = []
         for label, dash_id in group["links"]:
             links_html.append(
-                f'<a class="tile" href="{_escape(_dash_href(dash_id))}">'
+                f'<form class="tile-form" action="{_escape(_dash_href(dash_id))}" method="get" target="_top">'
+                f'<button type="submit" class="tile">'
                 f'<span class="tile-label">{_escape(label)}</span>'
-                f'<span class="tile-meta">OOTB</span></a>'
+                f'<span class="tile-meta">OOTB</span></button></form>'
             )
         groups_html.append(
             '<div class="group">'
@@ -275,6 +278,7 @@ def render_template(cloud: str) -> str:
     gap: var(--cc-space-s);
     justify-content: flex-end;
   }}
+  .chip-form {{ margin: 0; display: inline-flex; }}
 
   .chip {{
     display: inline-flex;
@@ -287,7 +291,8 @@ def render_template(cloud: str) -> str:
     color: #ffffff;
     font-size: 0.75rem;
     font-weight: 600;
-    text-decoration: none;
+    font-family: inherit;
+    cursor: pointer;
     transition: background var(--cc-motion-fast) var(--cc-ease),
                 border-color var(--cc-motion-fast) var(--cc-ease),
                 transform var(--cc-motion-fast) var(--cc-ease);
@@ -343,19 +348,24 @@ def render_template(cloud: str) -> str:
     flex-direction: column;
     gap: 0.35rem;
   }}
+  .tile-form {{ margin: 0; }}
 
   .tile {{
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: var(--cc-space-s);
+    width: 100%;
     padding: 0.45rem 0.65rem;
     border-radius: var(--cc-radius-s);
     border: 1px solid transparent;
     color: var(--cc-color-text);
-    text-decoration: none;
+    background: transparent;
     font-size: 0.8125rem;
     font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    text-align: left;
     transition: background var(--cc-motion-fast) var(--cc-ease),
                 border-color var(--cc-motion-fast) var(--cc-ease),
                 transform var(--cc-motion-fast) var(--cc-ease);

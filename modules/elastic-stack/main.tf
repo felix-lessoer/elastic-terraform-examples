@@ -170,6 +170,14 @@ resource "elasticstack_fleet_managed_integration" "this" {
     username  = var.elasticsearch_username
     password  = var.elasticsearch_password
   }
+
+  # Kibana expands package defaults and assigns cloud_connector_id server-side.
+  # elasticstack 0.16.5 otherwise reports its own successful create/update as
+  # an inconsistent sensitive value. Preserve the API-created representation
+  # until the provider can round-trip these computed fields.
+  lifecycle {
+    ignore_changes = [cloud_connector, inputs]
+  }
 }
 
 # -----------------------------------------------------------------------------

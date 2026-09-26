@@ -212,6 +212,59 @@ locals {
     }
   }
 
+  # Mixed templates default their log inputs on the server. Disable log
+  # transports that managed mode cannot run or that need a concrete source.
+  managed_disabled_inputs = {
+    cloudwatch = {
+      "cloudwatch-aws-cloudwatch" = {
+        enabled = false
+        streams = { "aws.cloudwatch_logs" = { enabled = false } }
+      }
+    }
+    ec2 = {
+      "ec2-aws-s3" = {
+        enabled = false
+        streams = { "aws.ec2_logs" = { enabled = false } }
+      }
+      "ec2-aws-cloudwatch" = {
+        enabled = false
+        streams = { "aws.ec2_logs" = { enabled = false } }
+      }
+    }
+    elb = {
+      "elb-aws-s3" = {
+        enabled = false
+        streams = { "aws.elb_logs" = { enabled = false } }
+      }
+      "elb-aws-cloudwatch" = {
+        enabled = false
+        streams = { "aws.elb_logs" = { enabled = false } }
+      }
+    }
+    lambda = {
+      "lambda-aws-cloudwatch" = {
+        enabled = false
+        streams = { "aws.lambda_logs" = { enabled = false } }
+      }
+    }
+    firewall = {
+      "firewall-aws-s3" = {
+        enabled = false
+        streams = { "aws.firewall_logs" = { enabled = false } }
+      }
+      "firewall-aws-cloudwatch" = {
+        enabled = false
+        streams = { "aws.firewall_logs" = { enabled = false } }
+      }
+    }
+    s3 = {
+      "s3-aws-s3" = {
+        enabled = false
+        streams = { "aws.s3access" = { enabled = false } }
+      }
+    }
+  }
+
   # Inputs whose policy templates are not available in Elastic-managed mode.
   # Metrics use an empty region list to discover all enabled AWS regions. Log
   # inputs use Terraform-provisioned S3/SQS sources or well-known CloudWatch
@@ -696,9 +749,10 @@ module "stack" {
           name               = "${var.name_prefix}-${split("-", input_key)[0]}"
           target_csp         = "aws"
         }
-        inputs = {
-          (input_key) = input_config
-        }
+        inputs = merge(
+          lookup(local.managed_disabled_inputs, split("-", input_key)[0], {}),
+          { (input_key) = input_config },
+        )
       }
     ],
     [{

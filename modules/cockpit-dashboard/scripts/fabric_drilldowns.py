@@ -42,9 +42,17 @@ AWS_SEC_COVERAGE_LINKS = [
 
 
 def _md_link(label: str, href: str) -> str:
-    # Markdown [text](url) truncates on ')' — percent-encode parens in Discover
-    # rison hashes. Kibana markdown also strips raw HTML <a> tags.
-    safe = href.replace("(", "%28").replace(")", "%29")
+    # Markdown [text](url) stops at space / ')' / '"'. Percent-encode those so
+    # Discover ES|QL rison deep-links survive. Kibana also strips raw HTML <a>.
+    safe = (
+        href.replace("%", "%25")
+        .replace("(", "%28")
+        .replace(")", "%29")
+        .replace(" ", "%20")
+        .replace('"', "%22")
+        .replace("|", "%7C")
+        .replace("'", "%27")
+    )
     return f"[{label}]({safe})"
 
 

@@ -40,6 +40,11 @@ output "guardduty_managed_regions" {
   value       = sort(keys(data.external.guardduty_detectors.result))
 }
 
+output "securityhub_managed_regions" {
+  description = "Enabled AWS regions reconciled for managed Security Hub CSPM."
+  value       = sort(keys(data.external.enabled_regions.result))
+}
+
 output "agent_policy_id" {
   description = "Fleet policy containing only non-managed AWS integrations."
   value       = module.stack.agent_policy_id
@@ -73,7 +78,13 @@ output "enabled_datasets" {
     for input in values(local.managed_inputs) : keys(input.streams)
     ]), flatten([
     for input in values(local.agent_inputs) : keys(input.streams)
-    ]), length(data.external.guardduty_detectors.result) > 0 ? ["aws.guardduty"] : []
+    ]),
+    length(data.external.guardduty_detectors.result) > 0 ? ["aws.guardduty"] : [],
+    length(data.external.enabled_regions.result) > 0 ? [
+      "aws.securityhub_findings",
+      "aws.securityhub_findings_full_posture",
+      "aws.securityhub_insights",
+    ] : []
   )))
 }
 

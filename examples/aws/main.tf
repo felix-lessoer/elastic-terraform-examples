@@ -45,6 +45,14 @@ data "external" "guardduty_detectors" {
   }
 }
 
+data "external" "enabled_regions" {
+  program = ["python3", "${path.module}/scripts/discover_enabled_regions.py"]
+
+  query = {
+    bootstrap_region = var.aws_region
+  }
+}
+
 locals {
   elastic_tags = {
     for k, v in var.company_tags :
@@ -697,6 +705,10 @@ data "aws_iam_policy_document" "elastic_managed" {
       "guardduty:GetFindings",
       "guardduty:ListDetectors",
       "guardduty:ListFindings",
+      "securityhub:DescribeHub",
+      "securityhub:GetFindings",
+      "securityhub:GetInsights",
+      "securityhub:ListEnabledProductsForImport",
       "rds:DescribeDBClusters",
       "rds:DescribeDBInstances",
       "rds:ListTagsForResource",
@@ -836,6 +848,54 @@ resource "terraform_data" "guardduty_integrations" {
       KIBANA_PASSWORD = self.input.kibana_password
       AWS_ROLE_ARN    = self.input.aws_role_arn
       DETECTORS_JSON  = self.input.detectors_json
+      NAME_PREFIX     = self.input.name_prefix
+    }
+  }
+
+  depends_on = [module.stack, aws_iam_role_policy.elastic_managed]
+}
+
+# Security Hub is also regional. Enable the service where necessary and
+# reconcile all three CSPM datasets without asking the operator for regions,
+# hub identifiers, or Fleet credentials.
+resource "terraform_data" "securityhub_integrations" {
+  input = {
+    kibana_url      = module.observability.kibana_endpoint
+    kibana_username = module.observability.username
+    kibana_password = module.observability.password
+    aws_role_arn    = aws_iam_role.elastic_managed.arn
+    regions_json    = jsonencode(sort(keys(data.external.enabled_regions.result)))
+    name_prefix     = "aws-managed"
+  }
+
+  triggers_replace = [
+    jsonencode(sort(keys(data.external.enabled_regions.result))),
+  ]
+
+  provisioner "local-exec" {
+    interpreter = ["/bin/bash", "-c"]
+    command     = "python3 '${path.module}/scripts/sync_securityhub_integrations.py' sync"
+    environment = {
+      KIBANA_URL      = self.input.kibana_url
+      KIBANA_USERNAME = self.input.kibana_username
+      KIBANA_PASSWORD = self.input.kibana_password
+      AWS_ROLE_ARN    = self.input.aws_role_arn
+      REGIONS_JSON    = self.input.regions_json
+      NAME_PREFIX     = self.input.name_prefix
+    }
+  }
+
+  provisioner "local-exec" {
+    when        = destroy
+    on_failure  = continue
+    interpreter = ["/bin/bash", "-c"]
+    command     = "python3 '${path.module}/scripts/sync_securityhub_integrations.py' cleanup"
+    environment = {
+      KIBANA_URL      = self.input.kibana_url
+      KIBANA_USERNAME = self.input.kibana_username
+      KIBANA_PASSWORD = self.input.kibana_password
+      AWS_ROLE_ARN    = self.input.aws_role_arn
+      REGIONS_JSON    = self.input.regions_json
       NAME_PREFIX     = self.input.name_prefix
     }
   }

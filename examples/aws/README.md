@@ -38,6 +38,7 @@ The managed policies enable these AWS datasets:
 | SQS | `aws.sqs` |
 | Transit Gateway | `aws.transitgateway` |
 | GuardDuty | `aws.guardduty` (one managed policy per active regional detector) |
+| Security Hub CSPM | `aws.securityhub_findings`, `aws.securityhub_findings_full_posture`, `aws.securityhub_insights` |
 
 Each regional metrics stream sets `regions = []`. In the Elastic AWS
 integration, an empty region selection means that the collector discovers and
@@ -126,6 +127,11 @@ Terraform. It enumerates enabled AWS regions, enables and tags a detector where
 one is missing, and creates one managed policy per detector because the
 GuardDuty API requires a scalar region and detector ID. No detector ID or
 additional credential is entered by the user.
+
+Security Hub follows the same model. Terraform enumerates enabled regions,
+enables Security Hub and its default standards where necessary, and creates one
+managed policy per supported region. The operator enters no region, hub ID, or
+Fleet credential.
 
 ## Apply
 

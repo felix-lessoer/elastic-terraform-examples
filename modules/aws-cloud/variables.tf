@@ -28,6 +28,12 @@ variable "enable_sqs" {
   default     = true
 }
 
+variable "additional_read_bucket_arns" {
+  type        = list(string)
+  description = "Existing S3 bucket ARNs the Elastic Agent may poll directly."
+  default     = []
+}
+
 variable "company_tags" {
   type        = map(string)
   description = "Mandatory company-policy tags applied to every taggable AWS resource."

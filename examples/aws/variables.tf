@@ -34,6 +34,12 @@ variable "bucket_name" {
   default     = "elastic-observability-logs"
 }
 
+variable "existing_cloudtrail_bucket_name" {
+  type        = string
+  description = "Existing multi-region CloudTrail S3 bucket to poll directly. Empty creates a new trail."
+  default     = ""
+}
+
 variable "cloudfront_queue_url" {
   type        = string
   description = "Optional SQS queue URL receiving CloudFront S3 log notifications. Empty leaves CloudFront collection unconfigured."

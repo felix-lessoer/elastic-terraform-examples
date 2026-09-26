@@ -223,7 +223,13 @@ locals {
         streams = {
           "aws.cloudtrail" = {
             enabled = true
-            vars = jsonencode({
+            vars = var.existing_cloudtrail_bucket_name != "" ? jsonencode({
+              bucket_arn              = "arn:${data.aws_partition.current.partition}:s3:::${var.existing_cloudtrail_bucket_name}"
+              bucket_list_prefix      = "AWSLogs/${data.aws_caller_identity.current.account_id}/CloudTrail/"
+              collect_s3_logs         = true
+              preserve_original_event = false
+              actor_target_mapping    = true
+              }) : jsonencode({
               queue_url               = module.aws_cloud.cloudtrail_queue_url
               collect_s3_logs         = false
               preserve_original_event = false
@@ -431,11 +437,14 @@ module "aws_cloud" {
 
   name_prefix          = var.name_prefix
   bucket_name          = var.bucket_name
-  enable_cloudtrail    = true
+  enable_cloudtrail    = var.existing_cloudtrail_bucket_name == ""
   enable_vpc_flow_logs = true
   enable_sqs           = true
   company_tags         = var.company_tags
   required_tag_keys    = var.required_tag_keys
+  additional_read_bucket_arns = var.existing_cloudtrail_bucket_name != "" ? [
+    "arn:${data.aws_partition.current.partition}:s3:::${var.existing_cloudtrail_bucket_name}"
+  ] : []
   additional_tags = {
     Cloud = "aws"
   }

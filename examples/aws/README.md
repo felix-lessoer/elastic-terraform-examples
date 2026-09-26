@@ -67,7 +67,9 @@ across every AWS region.
 
 The agent also collects:
 
-- multi-region CloudTrail through the Terraform-created S3/SQS source;
+- multi-region CloudTrail through a Terraform-created S3/SQS source, or by
+  polling `existing_cloudtrail_bucket_name` when the account trail quota is
+  already exhausted;
 - VPC Flow Logs for the default VPC in `aws_region` through S3/SQS;
 - WAF, Route 53, API Gateway, and EMR logs from their standard CloudWatch log
   group prefixes in `aws_region` (Route 53 public query logs use `us-east-1`);

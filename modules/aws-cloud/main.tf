@@ -19,8 +19,8 @@ locals {
 
   common_tags = merge(
     {
-      Project   = "elastic-cloud-poc"
-      ManagedBy = "terraform"
+      ElasticProject = "elastic-cloud-poc"
+      ManagedBy      = "terraform"
     },
     var.company_tags,
     var.additional_tags
@@ -67,7 +67,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "logs" {
 }
 
 resource "aws_sqs_queue" "cloudtrail" {
-  count = var.enable_sqs ? 1 : 0
+  count = var.enable_sqs && var.enable_cloudtrail ? 1 : 0
 
   name                       = "${var.name_prefix}-cloudtrail"
   visibility_timeout_seconds = 900
@@ -75,7 +75,7 @@ resource "aws_sqs_queue" "cloudtrail" {
 }
 
 resource "aws_sqs_queue_policy" "cloudtrail" {
-  count = var.enable_sqs ? 1 : 0
+  count = var.enable_sqs && var.enable_cloudtrail ? 1 : 0
 
   queue_url = aws_sqs_queue.cloudtrail[0].id
 
@@ -164,14 +164,17 @@ resource "aws_s3_bucket_policy" "logs" {
 }
 
 resource "aws_s3_bucket_notification" "logs" {
-  count = var.enable_sqs ? 1 : 0
+  count = var.enable_sqs && (var.enable_cloudtrail || var.enable_vpc_flow_logs) ? 1 : 0
 
   bucket = aws_s3_bucket.logs.id
 
-  queue {
-    queue_arn     = aws_sqs_queue.cloudtrail[0].arn
-    events        = ["s3:ObjectCreated:*"]
-    filter_prefix = "AWSLogs/${local.account_id}/CloudTrail/"
+  dynamic "queue" {
+    for_each = var.enable_cloudtrail ? [1] : []
+    content {
+      queue_arn     = aws_sqs_queue.cloudtrail[0].arn
+      events        = ["s3:ObjectCreated:*"]
+      filter_prefix = "AWSLogs/${local.account_id}/CloudTrail/"
+    }
   }
 
   dynamic "queue" {
@@ -319,10 +322,14 @@ data "aws_iam_policy_document" "elastic_permissions" {
       "s3:GetObject",
       "s3:ListBucket"
     ]
-    resources = [
-      aws_s3_bucket.logs.arn,
-      "${aws_s3_bucket.logs.arn}/*"
-    ]
+    resources = concat(
+      [
+        aws_s3_bucket.logs.arn,
+        "${aws_s3_bucket.logs.arn}/*",
+      ],
+      var.additional_read_bucket_arns,
+      [for arn in var.additional_read_bucket_arns : "${arn}/*"],
+    )
   }
 
   statement {

@@ -2,6 +2,7 @@
 """Enable Security Hub and reconcile one managed integration per AWS region."""
 
 import base64
+import copy
 import json
 import os
 from pathlib import Path
@@ -58,12 +59,28 @@ def managed_integrations() -> list[dict]:
     ).get("items", [])
 
 
-def cleanup() -> None:
+def package_policies() -> list[dict]:
+    return request("GET", "/api/fleet/package_policies?perPage=10000").get(
+        "items", []
+    )
+
+
+def cleanup_managed() -> None:
     for item in managed_integrations():
-        if item.get("name", "").startswith(f"{NAME_PREFIX}-securityhub-"):
+        if item.get("name", "").startswith("aws-managed-securityhub-"):
             request(
                 "DELETE",
                 f"/api/fleet/managed_integrations/{item['id']}?force=true",
+            )
+
+
+def cleanup() -> None:
+    cleanup_managed()
+    for item in package_policies():
+        if item.get("name", "").startswith(f"{NAME_PREFIX}-securityhub-"):
+            request(
+                "DELETE",
+                f"/api/fleet/package_policies/{item['id']}?force=true",
             )
 
 
@@ -87,9 +104,59 @@ def sync() -> None:
         ensure_security_hub(region)
 
     # Security Hub runs on the shared EC2 Agent to avoid the Serverless
-    # managed-runtime limit. Remove any managed policies created by an older
-    # revision before Terraform creates the regional agent package policies.
-    cleanup()
+    # managed-runtime limit. Remove managed policies from older revisions.
+    cleanup_managed()
+
+    policies = package_policies()
+    existing = {item["name"]: item for item in policies}
+    template = next(
+        item for item in policies if item.get("name") == "aws-agent-only-integrations"
+    )
+    agent_policy_id = os.environ["AGENT_POLICY_ID"]
+
+    for region in sorted(regions):
+        name = f"{NAME_PREFIX}-securityhub-{region}"
+        if name in existing:
+            continue
+
+        body = {
+            "name": name,
+            "namespace": "default",
+            "description": (
+                f"Security Hub CSPM collection in {region} on the shared EC2 Agent"
+            ),
+            "package": {
+                "name": template["package"]["name"],
+                "version": template["package"]["version"],
+            },
+            "enabled": True,
+            "policy_id": agent_policy_id,
+            "inputs": copy.deepcopy(template["inputs"]),
+            "vars": copy.deepcopy(template["vars"]),
+        }
+        body["vars"]["default_region"]["value"] = region
+
+        for input_config in body["inputs"]:
+            input_config["enabled"] = False
+            for stream in input_config.get("streams", []):
+                stream["enabled"] = False
+
+            if input_config.get("policy_template") != "securityhub":
+                continue
+
+            input_config["enabled"] = True
+            for stream in input_config["streams"]:
+                stream["enabled"] = True
+                dataset = stream["data_stream"]["dataset"]
+                variables = stream["vars"]
+                variables["aws_region"]["value"] = region
+                if dataset == "aws.securityhub_findings":
+                    variables["interval"]["value"] = "1h"
+                    variables["initial_interval"]["value"] = "24h"
+                elif dataset == "aws.securityhub_insights":
+                    variables["interval"]["value"] = "1m"
+
+        request("POST", "/api/fleet/package_policies", body)
 
 
 if len(sys.argv) != 2 or sys.argv[1] not in {"sync", "cleanup"}:

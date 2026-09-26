@@ -604,67 +604,6 @@ locals {
     local.agent_inputs,
   )
 
-  securityhub_agent_integrations = [
-    for region in sort(keys(data.external.enabled_regions.result)) : {
-      name            = "aws-securityhub-${region}"
-      description     = "Security Hub CSPM collection in ${region} on the shared EC2 Agent"
-      package_name    = "aws"
-      managed         = false
-      agent_policy    = true
-      prerelease      = false
-      package_version = null
-      policy_template = null
-      vars_json       = jsonencode({ default_region = region })
-      var_group_selections = {
-        credential_type = "default_credentials"
-      }
-      cloud_connector = null
-      inputs = merge(
-        local.agent_disabled_input_stubs,
-        local.agent_required_disabled_overrides,
-        {
-          "securityhub-httpjson" = {
-            enabled = true
-            streams = {
-              "aws.securityhub_findings" = {
-                enabled = true
-                vars = jsonencode({
-                  interval                         = "1h"
-                  initial_interval                 = "24h"
-                  aws_region                       = region
-                  tld                              = "amazonaws.com"
-                  tags                             = ["forwarded", "aws_securityhub_findings"]
-                  preserve_original_event          = false
-                  preserve_duplicate_custom_fields = false
-                })
-              }
-              "aws.securityhub_findings_full_posture" = {
-                enabled = true
-                vars = jsonencode({
-                  aws_region                       = region
-                  tld                              = "amazonaws.com"
-                  tags                             = ["forwarded", "aws_securityhub_findings_full_posture"]
-                  preserve_original_event          = false
-                  preserve_duplicate_custom_fields = false
-                })
-              }
-              "aws.securityhub_insights" = {
-                enabled = true
-                vars = jsonencode({
-                  interval                         = "1m"
-                  aws_region                       = region
-                  tld                              = "amazonaws.com"
-                  tags                             = ["forwarded", "aws_securityhub_insights"]
-                  preserve_original_event          = false
-                  preserve_duplicate_custom_fields = false
-                })
-              }
-            }
-          }
-        },
-      )
-    }
-  ]
 }
 
 check "required_company_tags" {
@@ -863,7 +802,6 @@ module "stack" {
       cloud_connector = null
       inputs          = local.agent_policy_inputs
     }],
-    local.securityhub_agent_integrations,
   )
 
   depends_on = [module.observability, module.aws_cloud, aws_iam_role_policy.elastic_managed]
@@ -927,8 +865,9 @@ resource "terraform_data" "securityhub_integrations" {
     kibana_username = module.observability.username
     kibana_password = module.observability.password
     aws_role_arn    = aws_iam_role.elastic_managed.arn
+    agent_policy_id = module.stack.agent_policy_id
     regions_json    = jsonencode(sort(keys(data.external.enabled_regions.result)))
-    name_prefix     = "aws-managed"
+    name_prefix     = "aws"
   }
 
   triggers_replace = [
@@ -943,6 +882,7 @@ resource "terraform_data" "securityhub_integrations" {
       KIBANA_USERNAME = self.input.kibana_username
       KIBANA_PASSWORD = self.input.kibana_password
       AWS_ROLE_ARN    = self.input.aws_role_arn
+      AGENT_POLICY_ID = self.input.agent_policy_id
       REGIONS_JSON    = self.input.regions_json
       NAME_PREFIX     = self.input.name_prefix
     }
@@ -958,6 +898,7 @@ resource "terraform_data" "securityhub_integrations" {
       KIBANA_USERNAME = self.input.kibana_username
       KIBANA_PASSWORD = self.input.kibana_password
       AWS_ROLE_ARN    = self.input.aws_role_arn
+      AGENT_POLICY_ID = self.input.agent_policy_id
       REGIONS_JSON    = self.input.regions_json
       NAME_PREFIX     = self.input.name_prefix
     }

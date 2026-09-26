@@ -22,7 +22,7 @@ def aws(*args: str, timeout: int = 20) -> dict:
         text=True,
         timeout=timeout,
     )
-    return json.loads(result.stdout)
+    return json.loads(result.stdout) if result.stdout.strip() else {}
 
 
 def cloudwatch_source(region: str, name: str) -> dict:

@@ -1,0 +1,109 @@
+name: AWS Cockpit Asset Inventory
+id: aws-cockpit-assets
+description: >-
+  Builds a live EC2/S3 asset inventory from Observability metrics into
+  aws-cockpit-assets for the cockpit inventory panels.
+triggers:
+  - type: manual
+  - type: scheduled
+    with:
+      every: "1h"
+
+steps:
+  - name: query_ec2
+    type: elasticsearch.esql.query
+    with:
+      format: json
+      query: |
+        FROM metrics-aws.ec2_metrics-default
+        | WHERE @timestamp > NOW() - 24 hours
+        | STATS avg_cpu = AVG(aws.ec2.metrics.CPUUtilization.avg), last_seen = MAX(@timestamp)
+            BY cloud.instance.id, cloud.instance.name, cloud.region, cloud.availability_zone, cloud.account.id, cloud.machine.type
+        | SORT avg_cpu ASC
+        | LIMIT 200
+
+  - name: map_ec2
+    type: data.map
+    items: "{{ steps.query_ec2.output.values }}"
+    with:
+      fields:
+        avg_cpu: "{{ item[0] }}"
+        last_seen: "{{ item[1] }}"
+        instance_id: "{{ item[2] }}"
+        instance_name: "{{ item[3] }}"
+        region: "{{ item[4] }}"
+        availability_zone: "{{ item[5] }}"
+        account_id: "{{ item[6] }}"
+        machine_type: "{{ item[7] }}"
+
+  - name: index_ec2
+    type: foreach
+    foreach: "{{ steps.map_ec2.output }}"
+    steps:
+      - name: write_ec2
+        type: elasticsearch.index
+        with:
+          index: aws-cockpit-assets
+          id: "ec2-{{ foreach.item.instance_id }}"
+          document:
+            "@timestamp": "{{ now | date_to_xmlschema }}"
+            resource:
+              type: ec2_instance
+              name: "{{ foreach.item.instance_name }}"
+              id: "{{ foreach.item.instance_id }}"
+            cloud:
+              region: "{{ foreach.item.region }}"
+              availability_zone: "{{ foreach.item.availability_zone }}"
+              account:
+                id: "{{ foreach.item.account_id }}"
+              machine:
+                type: "{{ foreach.item.machine_type }}"
+            metric_name: cpu_avg_24h
+            metric_value: "{{ foreach.item.avg_cpu }}"
+            last_seen: "{{ foreach.item.last_seen }}"
+
+  - name: query_s3
+    type: elasticsearch.esql.query
+    with:
+      format: json
+      query: |
+        FROM metrics-aws.s3_daily_storage-default
+        | WHERE @timestamp > NOW() - 7 days
+        | STATS max_size = MAX(aws.s3_daily_storage.bucket.size.bytes), last_seen = MAX(@timestamp)
+            BY aws.s3.bucket.name, cloud.region, cloud.account.id
+        | SORT max_size DESC
+        | LIMIT 300
+
+  - name: map_s3
+    type: data.map
+    items: "{{ steps.query_s3.output.values }}"
+    with:
+      fields:
+        max_size: "{{ item[0] }}"
+        last_seen: "{{ item[1] }}"
+        bucket: "{{ item[2] }}"
+        region: "{{ item[3] }}"
+        account_id: "{{ item[4] }}"
+
+  - name: index_s3
+    type: foreach
+    foreach: "{{ steps.map_s3.output }}"
+    steps:
+      - name: write_s3
+        type: elasticsearch.index
+        with:
+          index: aws-cockpit-assets
+          id: "s3-{{ foreach.item.bucket }}"
+          document:
+            "@timestamp": "{{ now | date_to_xmlschema }}"
+            resource:
+              type: s3_bucket
+              name: "{{ foreach.item.bucket }}"
+              id: "{{ foreach.item.bucket }}"
+            cloud:
+              region: "{{ foreach.item.region }}"
+              account:
+                id: "{{ foreach.item.account_id }}"
+            metric_name: bucket_size_bytes
+            metric_value: "{{ foreach.item.max_size }}"
+            last_seen: "{{ foreach.item.last_seen }}"

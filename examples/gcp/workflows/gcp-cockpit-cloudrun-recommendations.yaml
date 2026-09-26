@@ -1,0 +1,81 @@
+id: gcp-cockpit-cloudrun-recommendations
+name: GCP Cloud Run Recommendations
+description: >
+  Analyzes Cloud Run metrics over the last 24 hours and writes recommendation
+  documents for elevated 5xx error rates (performance_risk) and idle
+  instances with no requests (cost_optimization).
+
+triggers:
+  - type: manual
+  - type: scheduled
+    with:
+      every: "1h"
+
+steps:
+  - name: query_metrics
+    type: elasticsearch.esql.query
+    with:
+      query: |
+        FROM metrics-gcp.cloudrun_metrics-default
+        | WHERE @timestamp > NOW() - 24 hours
+        | EVAL is_5xx_count = CASE(gcp.labels.metrics.response_code_class == "5xx", gcp.cloudrun_metrics.request.count, 0)
+        | STATS total_requests = SUM(gcp.cloudrun_metrics.request.count), error_requests = SUM(is_5xx_count), avg_instance_count = AVG(gcp.cloudrun_metrics.container.instance.count) BY service_name = gcp.labels.resource.service_name
+        | EVAL error_rate_pct = TO_DOUBLE(error_requests) / TO_DOUBLE(total_requests) * 100
+        | KEEP service_name, total_requests, error_requests, avg_instance_count, error_rate_pct
+
+  - name: map_rows
+    type: data.map
+    items: "{{ steps.query_metrics.output.values }}"
+    with:
+      fields:
+        service_name: "{{ item[0] }}"
+        total_requests: "{{ item[1] }}"
+        error_requests: "{{ item[2] }}"
+        avg_instance_count: "{{ item[3] }}"
+        error_rate_pct: "{{ item[4] }}"
+
+  - name: process_services
+    type: foreach
+    foreach: "{{ steps.map_rows.output | json }}"
+    steps:
+      - name: check_performance_risk
+        type: if
+        condition: "foreach.item.error_rate_pct > 10"
+        steps:
+          - name: index_performance_risk
+            type: elasticsearch.index
+            with:
+              index: "gcp-cockpit-recommendations"
+              id: "{{ foreach.item.service_name }}-performance_risk-{{ now | date: '%Y%m%dT%H%M' }}"
+              document:
+                "@timestamp": "{{ now | date_to_xmlschema }}"
+                category: "performance_risk"
+                severity: "high"
+                metric_name: "cloudrun_5xx_error_rate_pct"
+                metric_value: "{{ foreach.item.error_rate_pct }}"
+                threshold: 10
+                recommendation: "Cloud Run service has elevated 5xx error rate over 24h (>10%) — investigate deployments/deps."
+                resource:
+                  type: "cloudrun_service"
+                  name: "{{ foreach.item.service_name }}"
+
+      - name: check_cost_optimization
+        type: if
+        condition: "foreach.item.total_requests <= 0 and foreach.item.avg_instance_count > 0.3"
+        steps:
+          - name: index_cost_optimization
+            type: elasticsearch.index
+            with:
+              index: "gcp-cockpit-recommendations"
+              id: "{{ foreach.item.service_name }}-cost_optimization-{{ now | date: '%Y%m%dT%H%M' }}"
+              document:
+                "@timestamp": "{{ now | date_to_xmlschema }}"
+                category: "cost_optimization"
+                severity: "medium"
+                metric_name: "cloudrun_avg_instance_count"
+                metric_value: "{{ foreach.item.avg_instance_count }}"
+                threshold: 0.3
+                recommendation: "Cloud Run service has running instances (avg >0.3 over 24h) but received no requests — consider min instances = 0."
+                resource:
+                  type: "cloudrun_service"
+                  name: "{{ foreach.item.service_name }}"

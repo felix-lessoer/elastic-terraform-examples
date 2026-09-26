@@ -1,0 +1,113 @@
+name: GCP Cockpit Asset Inventory
+id: gcp-cockpit-assets
+description: >-
+  Builds a live GCE/GCS asset inventory from Observability metrics into
+  gcp-cockpit-assets for the cockpit inventory panels.
+triggers:
+  - type: manual
+  - type: scheduled
+    with:
+      every: "1h"
+
+steps:
+  - name: query_compute
+    type: elasticsearch.esql.query
+    with:
+      format: json
+      query: |
+        FROM metrics-gcp.compute-default
+        | WHERE @timestamp > NOW() - 24 hours
+        | STATS avg_cpu = AVG(gcp.compute.instance.cpu.usage.pct), last_seen = MAX(@timestamp)
+            BY cloud.instance.id, cloud.instance.name, cloud.availability_zone, cloud.region, cloud.account.id, cloud.machine.type
+        | SORT avg_cpu ASC
+        | LIMIT 200
+
+  - name: map_compute
+    type: data.map
+    items: "{{ steps.query_compute.output.values }}"
+    with:
+      fields:
+        avg_cpu: "{{ item[0] }}"
+        last_seen: "{{ item[1] }}"
+        instance_id: "{{ item[2] }}"
+        instance_name: "{{ item[3] }}"
+        availability_zone: "{{ item[4] }}"
+        region: "{{ item[5] }}"
+        account_id: "{{ item[6] }}"
+        machine_type: "{{ item[7] }}"
+
+  - name: index_compute
+    type: foreach
+    foreach: "{{ steps.map_compute.output }}"
+    steps:
+      - name: write_compute
+        type: elasticsearch.index
+        with:
+          index: gcp-cockpit-assets
+          id: "gce-{{ foreach.item.instance_id }}"
+          document:
+            "@timestamp": "{{ now | date_to_xmlschema }}"
+            resource:
+              type: gce_instance
+              name: "{{ foreach.item.instance_name }}"
+              id: "{{ foreach.item.instance_id }}"
+            cloud:
+              region: "{{ foreach.item.region }}"
+              availability_zone: "{{ foreach.item.availability_zone }}"
+              account:
+                id: "{{ foreach.item.account_id }}"
+              project:
+                id: "{{ foreach.item.account_id }}"
+              machine:
+                type: "{{ foreach.item.machine_type }}"
+            metric_name: cpu_avg_24h
+            metric_value: "{{ foreach.item.avg_cpu }}"
+            last_seen: "{{ foreach.item.last_seen }}"
+
+  - name: query_storage
+    type: elasticsearch.esql.query
+    with:
+      format: json
+      query: |
+        FROM metrics-gcp.storage-default
+        | WHERE @timestamp > NOW() - 7 days
+        | STATS max_bytes = MAX(gcp.storage.storage.total.bytes), last_seen = MAX(@timestamp)
+            BY gcp.labels.resource.bucket_name, gcp.labels.resource.location, cloud.account.id
+        | SORT max_bytes DESC
+        | LIMIT 300
+
+  - name: map_storage
+    type: data.map
+    items: "{{ steps.query_storage.output.values }}"
+    with:
+      fields:
+        max_bytes: "{{ item[0] }}"
+        last_seen: "{{ item[1] }}"
+        bucket: "{{ item[2] }}"
+        region: "{{ item[3] }}"
+        account_id: "{{ item[4] }}"
+
+  - name: index_storage
+    type: foreach
+    foreach: "{{ steps.map_storage.output }}"
+    steps:
+      - name: write_storage
+        type: elasticsearch.index
+        with:
+          index: gcp-cockpit-assets
+          id: "gcs-{{ foreach.item.bucket }}"
+          document:
+            "@timestamp": "{{ now | date_to_xmlschema }}"
+            resource:
+              type: gcs_bucket
+              name: "{{ foreach.item.bucket }}"
+              id: "{{ foreach.item.bucket }}"
+            cloud:
+              region: "{{ foreach.item.region }}"
+              account:
+                id: "{{ foreach.item.account_id }}"
+              project:
+                id: "{{ foreach.item.account_id }}"
+            metric_name: bucket_size_bytes
+            metric_value: "{{ foreach.item.max_bytes }}"
+            last_seen: "{{ foreach.item.last_seen }}"

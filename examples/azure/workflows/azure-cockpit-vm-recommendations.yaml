@@ -1,0 +1,94 @@
+id: azure-cockpit-vm-recommendations
+name: Azure VM Recommendations
+description: >-
+  Analyzes Azure VM CPU metrics over a 24h window and writes cost
+  optimization / performance risk recommendations into
+  azure-cockpit-recommendations.
+
+triggers:
+  - type: manual
+  - type: scheduled
+    with:
+      every: "1h"
+
+steps:
+  - name: query_metrics
+    type: elasticsearch.esql.query
+    with:
+      query: |
+        FROM metrics-azure.compute_vm-default
+        | WHERE @timestamp > NOW() - 24 hours
+        | STATS avg_cpu = AVG(azure.compute_vm.percentage_cpu.avg)
+          BY azure.resource.name, azure.resource.group, cloud.region, cloud.account.id
+
+  - name: normalize_metrics
+    type: data.map
+    items: "{{ steps.query_metrics.output.values }}"
+    with:
+      fields:
+        avg_cpu: "{{ item[0] }}"
+        vm_name: "{{ item[1] }}"
+        resource_group: "{{ item[2] }}"
+        region: "{{ item[3] }}"
+        account_id: "{{ item[4] }}"
+
+  - name: process_metrics
+    type: foreach
+    foreach: "{{ steps.normalize_metrics.output }}"
+    steps:
+      - name: check_underutilized_cpu
+        type: if
+        condition: "foreach.item.avg_cpu < 5"
+        steps:
+          - name: index_cost_optimization_recommendation
+            type: elasticsearch.index
+            with:
+              index: azure-cockpit-recommendations
+              id: "{{ foreach.item.vm_name }}-cost_optimization-{{ now | date: '%Y%m%dT%H%M' }}"
+              document:
+                "@timestamp": "{{ now | date_to_xmlschema }}"
+                category: cost_optimization
+                severity: medium
+                metric_name: avg_cpu_pct
+                metric_value: "{{ foreach.item.avg_cpu }}"
+                threshold: 5
+                recommendation: >-
+                  Virtual machine {{ foreach.item.vm_name }} in resource group
+                  {{ foreach.item.resource_group }} is underutilized
+                  (avg CPU {{ foreach.item.avg_cpu }}% over 24h) — consider
+                  downsizing or deallocating to reduce cost.
+                resource:
+                  type: azure_vm
+                  name: "{{ foreach.item.vm_name }}"
+                cloud:
+                  region: "{{ foreach.item.region }}"
+                  account:
+                    id: "{{ foreach.item.account_id }}"
+
+      - name: check_near_capacity_cpu
+        type: if
+        condition: "foreach.item.avg_cpu > 85"
+        steps:
+          - name: index_performance_risk_recommendation
+            type: elasticsearch.index
+            with:
+              index: azure-cockpit-recommendations
+              id: "{{ foreach.item.vm_name }}-performance_risk-{{ now | date: '%Y%m%dT%H%M' }}"
+              document:
+                "@timestamp": "{{ now | date_to_xmlschema }}"
+                category: performance_risk
+                severity: high
+                metric_name: avg_cpu_pct
+                metric_value: "{{ foreach.item.avg_cpu }}"
+                threshold: 85
+                recommendation: >-
+                  Virtual machine {{ foreach.item.vm_name }} is near CPU capacity
+                  (avg CPU {{ foreach.item.avg_cpu }}% over 24h) — consider
+                  resizing to a larger SKU or scaling out.
+                resource:
+                  type: azure_vm
+                  name: "{{ foreach.item.vm_name }}"
+                cloud:
+                  region: "{{ foreach.item.region }}"
+                  account:
+                    id: "{{ foreach.item.account_id }}"

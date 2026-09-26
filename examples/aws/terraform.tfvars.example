@@ -1,0 +1,39 @@
+deployment_mode      = "serverless"
+elastic_project_name = "AWS Observe and Protect"
+elastic_region       = "aws-eu-west-1"
+aws_region  = "eu-west-1"
+# Collect metrics from multiple regions via Managed Integrations.
+# Regions without resources contribute zero docs (Billing/TA/Health often only us-east-1).
+aws_regions = ["eu-west-1", "us-east-1"]
+
+enable_cspm              = true
+enable_cnvm              = false
+enable_security_hub      = true
+enable_guardduty         = true
+enable_aws_health        = true
+enable_trusted_advisor   = true
+enable_billing_metrics   = true
+enable_detection_rules   = true
+enable_elastic_agent     = true
+enable_managed_aws_metrics = true
+enable_sqs               = true
+
+# Required: Elastic org tags (same keys as GCP company_labels).
+# Org SCPs deny create for taggable services (SQS, etc.) when these are missing.
+company_tags = {
+  division    = "field"
+  org         = "sa"
+  keep-until  = "2026-10-01"
+  team        = "emea_central_area"
+  project     = "felixroessel"
+  environment = "poc"
+}
+
+required_tag_keys = [
+  "division",
+  "org",
+  "keep-until",
+  "team",
+  "project",
+  "environment",
+]

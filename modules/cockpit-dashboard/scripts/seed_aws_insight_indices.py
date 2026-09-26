@@ -164,6 +164,7 @@ def seed_security_kpi(obs_es: str, sec_es: str, obs_user: str, obs_pass: str, se
             "guardduty_24h": {"type": "long"},
             "securityhub_24h": {"type": "long"},
             "cloudtrail_24h": {"type": "long"},
+            "cloudtrail_failures_24h": {"type": "long"},
             "health_events": {"type": "long"},
         },
     )
@@ -204,6 +205,9 @@ def seed_security_kpi(obs_es: str, sec_es: str, obs_user: str, obs_pass: str, se
     cloudtrail = count_or_zero(
         "FROM logs-aws.cloudtrail* | WHERE @timestamp > NOW() - 24 hours | STATS c = COUNT(*)"
     ) or count_or_zero("FROM logs-aws.cloudtrail* | STATS c = COUNT(*)")
+    cloudtrail_failures = count_or_zero(
+        'FROM logs-aws.cloudtrail* | WHERE @timestamp > NOW() - 24 hours AND event.outcome == "failure" | STATS c = COUNT(*)'
+    )
     health = count_or_zero(
         "FROM metrics-aws.awshealth-default | STATS c = COUNT_DISTINCT(aws.awshealth.event_arn)"
     ) or count_or_zero("FROM metrics-aws.awshealth* | STATS c = COUNT(*)")
@@ -226,6 +230,7 @@ def seed_security_kpi(obs_es: str, sec_es: str, obs_user: str, obs_pass: str, se
         "guardduty_24h": int(guardduty or 0),
         "securityhub_24h": int(securityhub or 0),
         "cloudtrail_24h": int(cloudtrail or 0),
+        "cloudtrail_failures_24h": int(cloudtrail_failures or 0),
         "health_events": int(health or 0),
     }
     bulk_index(obs_es, obs_user, obs_pass, SECURITY_KPI, [("current", doc)])

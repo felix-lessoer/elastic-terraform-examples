@@ -53,17 +53,17 @@ AWS_SCOREBOARD_CARDS = [
         "sev": "sev-high",
     },
     {
-        "label": "CloudTrail (24h)",
-        "field": "cloudtrail_24h",
-        "hint": "Open CloudTrail dashboard →",
-        "href": "/app/dashboards#/view/aws-9c09cd20-7399-11ea-a345-f985c61fe654",
-        "sev": "",
+        "label": "CloudTrail failures (24h)",
+        "field": "cloudtrail_failures_24h",
+        "hint": "Open failed API activity →",
+        "href": 'https://aws-observe-and-protect-ad5bcf.kb.eu-west-1.aws.elastic.cloud/app/discover#/?_a=(dataSource:(type:esql),query:(esql:\'FROM logs-aws.cloudtrail* | WHERE @timestamp > NOW() - 24 hours AND event.outcome == "failure" | KEEP @timestamp, event.action, event.provider, user.name, source.ip, aws.cloudtrail.error_code, aws.cloudtrail.error_message, cloud.region | SORT @timestamp DESC | LIMIT 100\'))',
+        "sev": "sev-high",
     },
     {
         "label": "AWS Health events",
         "field": "health_events",
         "hint": "Open AWS Health dashboard →",
-        "href": "/app/dashboards#/view/aws-9574244b-b538-4cc1-9666-8aac4ecf433e",
+        "href": 'https://aws-observe-and-protect-ad5bcf.kb.eu-west-1.aws.elastic.cloud/app/dashboards#/view/aws-9574244b-b538-4cc1-9666-8aac4ecf433e',
         "sev": "sev-ok",
     },
 ]

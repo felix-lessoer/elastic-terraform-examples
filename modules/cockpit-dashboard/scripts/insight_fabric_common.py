@@ -358,6 +358,7 @@ SECURITY_KPI_MAPPINGS = {
     "activity_24h": {"type": "long"},
     "platform_24h": {"type": "long"},
     "cloudtrail_24h": {"type": "long"},
+    "cloudtrail_failures_24h": {"type": "long"},
     "health_events": {"type": "long"},
 }
 
@@ -414,6 +415,8 @@ def scoreboard_template(
                 '{{ row["audit_24h"].value | default: row["activity_24h"].value '
                 '| default: row["cloudtrail_24h"].value | default: 0 }}'
             )
+        elif field == "cloudtrail_failures_24h":
+            value_expr = '{{ row["cloudtrail_failures_24h"].value | default: 0 }}'
         elif field == "health_events":
             value_expr = '{{ row["health_events"].value | default: 0 }}'
         else:

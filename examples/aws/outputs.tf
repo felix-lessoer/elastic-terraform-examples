@@ -35,13 +35,8 @@ output "managed_integration_ids" {
   value       = module.stack.managed_integration_ids
 }
 
-output "guardduty_managed_regions" {
-  description = "Regions with automatically reconciled managed GuardDuty policies."
-  value       = sort(keys(data.external.guardduty_detectors.result))
-}
-
-output "securityhub_agent_regions" {
-  description = "Enabled AWS regions reconciled on the shared EC2 Agent for Security Hub CSPM."
+output "regional_security_agent_regions" {
+  description = "AWS regions reconciled on the shared EC2 Agent for GuardDuty, Security Hub, Inspector, and Config."
   value       = sort(keys(data.external.enabled_regions.result))
 }
 
@@ -81,6 +76,8 @@ output "enabled_datasets" {
     ]),
     length(data.external.guardduty_detectors.result) > 0 ? ["aws.guardduty"] : [],
     length(data.external.enabled_regions.result) > 0 ? [
+      "aws.config",
+      "aws.inspector",
       "aws.securityhub_findings",
       "aws.securityhub_findings_full_posture",
       "aws.securityhub_insights",

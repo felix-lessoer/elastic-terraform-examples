@@ -807,67 +807,17 @@ module "stack" {
   depends_on = [module.observability, module.aws_cloud, aws_iam_role_policy.elastic_managed]
 }
 
-# GuardDuty needs one managed policy per regional detector. Reconcile these
-# serially through Terraform because elasticstack 0.16.5 crashes when many
-# managed policies normalize their computed connector fields concurrently.
-resource "terraform_data" "guardduty_integrations" {
+# GuardDuty, Security Hub, Inspector, and Config are regional API integrations.
+# Merge them into one package policy per region on the shared EC2 Agent.
+resource "terraform_data" "regional_security_integrations" {
   input = {
     kibana_url      = module.observability.kibana_endpoint
     kibana_username = module.observability.username
     kibana_password = module.observability.password
-    aws_role_arn    = aws_iam_role.elastic_managed.arn
-    detectors_json  = jsonencode(data.external.guardduty_detectors.result)
-    name_prefix     = "aws-managed"
-  }
-
-  triggers_replace = [
-    jsonencode(sort(keys(data.external.guardduty_detectors.result))),
-  ]
-
-  provisioner "local-exec" {
-    interpreter = ["/bin/bash", "-c"]
-    command     = "python3 '${path.module}/scripts/sync_guardduty_integrations.py' sync"
-    environment = {
-      KIBANA_URL      = self.input.kibana_url
-      KIBANA_USERNAME = self.input.kibana_username
-      KIBANA_PASSWORD = self.input.kibana_password
-      AWS_ROLE_ARN    = self.input.aws_role_arn
-      DETECTORS_JSON  = self.input.detectors_json
-      NAME_PREFIX     = self.input.name_prefix
-    }
-  }
-
-  provisioner "local-exec" {
-    when        = destroy
-    on_failure  = continue
-    interpreter = ["/bin/bash", "-c"]
-    command     = "python3 '${path.module}/scripts/sync_guardduty_integrations.py' cleanup"
-    environment = {
-      KIBANA_URL      = self.input.kibana_url
-      KIBANA_USERNAME = self.input.kibana_username
-      KIBANA_PASSWORD = self.input.kibana_password
-      AWS_ROLE_ARN    = self.input.aws_role_arn
-      DETECTORS_JSON  = self.input.detectors_json
-      NAME_PREFIX     = self.input.name_prefix
-    }
-  }
-
-  depends_on = [module.stack, aws_iam_role_policy.elastic_managed]
-}
-
-# Security Hub is also regional. Enable the service where necessary and
-# reconcile all three CSPM datasets without asking the operator for regions,
-# hub identifiers, or Fleet credentials. Collection runs on the shared EC2
-# Agent because the GuardDuty + metrics policies consume most managed slots.
-resource "terraform_data" "securityhub_integrations" {
-  input = {
-    kibana_url      = module.observability.kibana_endpoint
-    kibana_username = module.observability.username
-    kibana_password = module.observability.password
-    aws_role_arn    = aws_iam_role.elastic_managed.arn
     agent_policy_id = module.stack.agent_policy_id
+    aws_account_id  = data.aws_caller_identity.current.account_id
     regions_json    = jsonencode(sort(keys(data.external.enabled_regions.result)))
-    name_prefix     = "aws"
+    detectors_json  = jsonencode(data.external.guardduty_detectors.result)
   }
 
   triggers_replace = [
@@ -876,15 +826,15 @@ resource "terraform_data" "securityhub_integrations" {
 
   provisioner "local-exec" {
     interpreter = ["/bin/bash", "-c"]
-    command     = "python3 '${path.module}/scripts/sync_securityhub_integrations.py' sync"
+    command     = "python3 '${path.module}/scripts/sync_regional_security_integrations.py' sync"
     environment = {
       KIBANA_URL      = self.input.kibana_url
       KIBANA_USERNAME = self.input.kibana_username
       KIBANA_PASSWORD = self.input.kibana_password
-      AWS_ROLE_ARN    = self.input.aws_role_arn
       AGENT_POLICY_ID = self.input.agent_policy_id
+      AWS_ACCOUNT_ID  = self.input.aws_account_id
       REGIONS_JSON    = self.input.regions_json
-      NAME_PREFIX     = self.input.name_prefix
+      DETECTORS_JSON  = self.input.detectors_json
     }
   }
 
@@ -892,19 +842,19 @@ resource "terraform_data" "securityhub_integrations" {
     when        = destroy
     on_failure  = continue
     interpreter = ["/bin/bash", "-c"]
-    command     = "python3 '${path.module}/scripts/sync_securityhub_integrations.py' cleanup"
+    command     = "python3 '${path.module}/scripts/sync_regional_security_integrations.py' cleanup"
     environment = {
       KIBANA_URL      = self.input.kibana_url
       KIBANA_USERNAME = self.input.kibana_username
       KIBANA_PASSWORD = self.input.kibana_password
-      AWS_ROLE_ARN    = self.input.aws_role_arn
       AGENT_POLICY_ID = self.input.agent_policy_id
+      AWS_ACCOUNT_ID  = self.input.aws_account_id
       REGIONS_JSON    = self.input.regions_json
-      NAME_PREFIX     = self.input.name_prefix
+      DETECTORS_JSON  = self.input.detectors_json
     }
   }
 
-  depends_on = [module.stack, aws_iam_role_policy.elastic_managed]
+  depends_on = [module.stack, module.aws_cloud]
 }
 
 # One customer-managed agent handles only the inputs unavailable in managed

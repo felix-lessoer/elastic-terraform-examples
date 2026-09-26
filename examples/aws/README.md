@@ -37,8 +37,7 @@ The managed policies enable these AWS datasets:
 | SNS | `aws.sns` |
 | SQS | `aws.sqs` |
 | Transit Gateway | `aws.transitgateway` |
-| GuardDuty | `aws.guardduty` (one managed policy per active regional detector) |
-| Security Hub CSPM (shared EC2 Agent) | `aws.securityhub_findings`, `aws.securityhub_findings_full_posture`, `aws.securityhub_insights` |
+| Regional security APIs (shared EC2 Agent) | `aws.guardduty`, `aws.securityhub_findings`, `aws.securityhub_findings_full_posture`, `aws.securityhub_insights`, `aws.inspector`, `aws.config` |
 
 Each regional metrics stream sets `regions = []`. In the Elastic AWS
 integration, an empty region selection means that the collector discovers and
@@ -122,18 +121,14 @@ Users must not paste an access key, secret key, session token, shared
 credentials path, or profile name into any Fleet integration or policy. Those
 fields intentionally remain empty after apply.
 
-GuardDuty discovery uses the same AWS provider environment/profile as
-Terraform. It enumerates enabled AWS regions, enables and tags a detector where
-one is missing, and creates one managed policy per detector because the
-GuardDuty API requires a scalar region and detector ID. No detector ID or
-additional credential is entered by the user.
-
-Security Hub follows the same bootstrap model. Terraform enumerates enabled
-regions, enables Security Hub and its default standards where necessary, and
-creates one regional package policy on the shared EC2 Agent. Agent-based
-collection avoids the Serverless managed-runtime limit while retaining
-instance-profile/IMDS authentication. The operator enters no region, hub ID, or
-Fleet credential.
+Regional security discovery uses the same AWS provider environment/profile as
+Terraform. It enumerates enabled regions, enables and tags missing GuardDuty
+detectors, enables Security Hub/default standards and Inspector where
+supported, and creates one merged package policy per region for GuardDuty,
+Security Hub CSPM, Inspector, and AWS Config. Running these policies on the
+shared EC2 Agent avoids the Serverless managed-runtime limit while retaining
+instance-profile/IMDS authentication. The operator enters no region, detector
+ID, hub ID, or Fleet credential.
 
 ## Apply
 

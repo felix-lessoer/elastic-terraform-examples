@@ -129,6 +129,52 @@ module "workflows_obs" {
   depends_on = [module.observability, module.observability_seed, module.cockpit]
 }
 
+# Cross-project insight fabric: mirror Security KPIs + coverage/assets/events into
+# Observability indices so the cockpit never depends on broken CPS qualifiers.
+resource "terraform_data" "seed_aws_insight_indices" {
+  count = length(module.observability) > 0 ? 1 : 0
+
+  triggers_replace = [
+    filesha256("${path.module}/../../modules/cockpit-dashboard/scripts/seed_aws_insight_indices.py"),
+    filesha256("${path.module}/../../modules/cockpit-dashboard/cockpit-aws.ndjson"),
+    module.observability[0].elasticsearch_endpoint,
+    module.elastic.elasticsearch_endpoint,
+  ]
+
+  provisioner "local-exec" {
+    interpreter = ["/bin/bash", "-c"]
+    environment = {
+      OBS_ES   = module.observability[0].elasticsearch_endpoint
+      SEC_ES   = module.elastic.elasticsearch_endpoint
+      OBS_USER = module.observability[0].username
+      SEC_USER = module.elastic.username
+      OBS_PASS = module.observability[0].password
+      SEC_PASS = module.elastic.password
+    }
+    command = <<-EOT
+      set -euo pipefail
+      python3 "${path.module}/../../modules/cockpit-dashboard/scripts/seed_aws_insight_indices.py" \
+        --obs-es "$OBS_ES" \
+        --sec-es "$SEC_ES" \
+        --obs-user "$OBS_USER" \
+        --sec-user "$SEC_USER" \
+        --obs-password "$OBS_PASS" \
+        --sec-password "$SEC_PASS"
+      # Refresh recommendations used by the insight timeline / recs section
+      python3 "${path.module}/../../modules/cockpit-dashboard/scripts/generate_aws_recommendations.py" \
+        --es-url "$OBS_ES" \
+        --user "$OBS_USER" \
+        --password "$OBS_PASS" || true
+    EOT
+  }
+
+  depends_on = [
+    module.cockpit,
+    module.workflows_obs,
+    module.observability_seed,
+  ]
+}
+
 module "workflows_security" {
   count  = var.enable_workflows && var.deploy_workflows_to_security ? 1 : 0
   source = "../../modules/kibana-workflows"

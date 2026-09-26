@@ -50,12 +50,32 @@ cd examples/<cloud> && terraform apply -target=module.cockpit
 
 CPS cross-cluster references in the NDJSON use the live Security project alias
 when ES|QL can resolve it (e.g. `gcp-observe-and-protect-…`). On AWS, the
-Observability cockpit top KPIs and inventory charts use **Observability-local**
-index patterns (`logs-*` / `metrics-*` / `security_solution-*.misconfiguration_latest`)
-because qualified CPS aliases currently raise `no_matching_project_exception`
-even when the Cloud link status is `enabled`. Security deep-links remain in the
-OOTB nav. After a greenfield recreate, re-export from the live UI or
-search-replace aliases before apply.
+Observability cockpit uses an **insight fabric** of local indices so panels never
+depend on broken CPS qualifiers (`no_matching_project_exception` even when the
+Cloud link is `enabled`). Security deep-links remain in the OOTB nav.
+
+## AWS insight fabric (Datadog-comparable)
+
+| Index | Source | Used by |
+| --- | --- | --- |
+| `aws-cockpit-security-kpi` | `scripts/seed_aws_insight_indices.py` (mirrors Security alerts/CSPM/CloudTrail/Health) | Top KPIs + scoreboard |
+| `aws-cockpit-coverage` | Seeder + `aws-cockpit-coverage` workflow | Service coverage matrix |
+| `aws-cockpit-assets` | Seeder + `aws-cockpit-assets` workflow | Inventory charts |
+| `aws-cockpit-events` | Seeder | Events timeline |
+| `aws-cockpit-recommendations` | EC2/S3 workflows (+ optional Python seed) | Recommendations section |
+
+```bash
+# Refresh insight panels in the NDJSON export
+python3 modules/cockpit-dashboard/scripts/inject_aws_insight_panels.py
+
+# Seed Observability indices from Security + Observability Elasticsearch
+python3 modules/cockpit-dashboard/scripts/seed_aws_insight_indices.py \
+  --obs-es "$OBS_ES" --sec-es "$SEC_ES" \
+  --obs-password "$OBS_PASSWORD" --sec-password "$SEC_PASSWORD"
+```
+
+`examples/aws` wires the seeder as `terraform_data.seed_aws_insight_indices`
+(runs after cockpit + workflows on every apply).
 
 ## Recommendations index
 
@@ -70,4 +90,5 @@ Recommendation documents are produced by pinned Kibana Workflows under
 
 Optional Python seeds for offline backfill:
 `scripts/generate_aws_recommendations.py`,
-`scripts/generate_azure_recommendations.py`.
+`scripts/generate_azure_recommendations.py`,
+`scripts/seed_aws_insight_indices.py`.

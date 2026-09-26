@@ -786,7 +786,7 @@ resource "terraform_data" "regional_security_integrations" {
       KIBANA_PASSWORD = self.input.kibana_password
       AGENT_POLICY_ID = self.input.agent_policy_id
       AWS_ACCOUNT_ID  = self.input.aws_account_id
-      AWS_ROLE_ARN     = self.input.aws_role_arn
+      AWS_ROLE_ARN    = try(self.input.aws_role_arn, "")
       REGIONS_JSON    = self.input.regions_json
       DETECTORS_JSON  = self.input.detectors_json
     }
@@ -803,7 +803,7 @@ resource "terraform_data" "regional_security_integrations" {
       KIBANA_PASSWORD = self.input.kibana_password
       AGENT_POLICY_ID = self.input.agent_policy_id
       AWS_ACCOUNT_ID  = self.input.aws_account_id
-      AWS_ROLE_ARN     = self.input.aws_role_arn
+      AWS_ROLE_ARN    = try(self.input.aws_role_arn, "")
       REGIONS_JSON    = self.input.regions_json
       DETECTORS_JSON  = self.input.detectors_json
     }

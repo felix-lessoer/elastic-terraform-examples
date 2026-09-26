@@ -2,6 +2,7 @@
 """Enable Security Hub and reconcile one managed integration per AWS region."""
 
 import base64
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import copy
 import json
 import os
@@ -27,7 +28,7 @@ def aws(*args: str) -> dict:
         check=True,
         capture_output=True,
         text=True,
-        timeout=120,
+        timeout=30,
     )
     return json.loads(result.stdout)
 
@@ -88,11 +89,11 @@ def ensure_security_hub(region: str) -> bool:
     try:
         aws("securityhub", "describe-hub", "--region", region)
         return True
-    except subprocess.CalledProcessError:
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
         try:
             aws("securityhub", "enable-security-hub", "--region", region)
             return True
-        except subprocess.CalledProcessError:
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
             # Security Hub is not offered in every enabled AWS region.
             return False
 
@@ -100,8 +101,15 @@ def ensure_security_hub(region: str) -> bool:
 def sync() -> None:
     regions: list[str] = json.loads(os.environ["REGIONS_JSON"])
 
-    for region in sorted(regions):
-        ensure_security_hub(region)
+    supported_regions: list[str] = []
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        futures = {
+            executor.submit(ensure_security_hub, region): region
+            for region in regions
+        }
+        for future in as_completed(futures):
+            if future.result():
+                supported_regions.append(futures[future])
 
     # Security Hub runs on the shared EC2 Agent to avoid the Serverless
     # managed-runtime limit. Remove managed policies from older revisions.
@@ -114,7 +122,7 @@ def sync() -> None:
     )
     agent_policy_id = os.environ["AGENT_POLICY_ID"]
 
-    for region in sorted(regions):
+    for region in sorted(supported_regions):
         name = f"{NAME_PREFIX}-securityhub-{region}"
         if name in existing:
             continue

@@ -12,6 +12,19 @@ Imports a pinned Kibana NDJSON export so Terraform owns the live cockpit layout
 Panels use Kibana `vis` (Lens attributes with ES|QL `textBased` datasources),
 `markdown`, and `custom_content`.
 
+Each cockpit includes a `custom_content` **OOTB integration dashboard**
+navigation strip (same panel type as the header banner) with curated deep-links
+into the EPR dashboards that ship with the cloud integrations, plus primary
+jumps to Security alerts, ML anomaly explorer, and CSPM findings.
+
+```bash
+# Regenerate / refresh the OOTB nav panels in all three NDJSON exports
+python3 modules/cockpit-dashboard/scripts/inject_ootb_nav.py
+```
+
+Curated link catalogs live in `scripts/ootb_nav.py` (`OOTB` / `PRIMARY_LINKS`).
+AWS and Azure rebuild scripts call `inject_ootb_nav()` automatically.
+
 ## Refresh from a live Observability Kibana
 
 ```bash

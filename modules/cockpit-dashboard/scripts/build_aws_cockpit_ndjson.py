@@ -16,6 +16,8 @@ import sys
 import uuid
 from pathlib import Path
 
+from ootb_nav import PANEL_IDS, inject_ootb_nav
+
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_GCP = Path("/tmp/cockpit-compare/gcp-live.ndjson")
 OUT = ROOT / "cockpit-aws.ndjson"
@@ -317,10 +319,14 @@ def build(gcp_path: Path) -> dict:
 
     # Keep the upper cockpit structure (header + KPIs + data flow + detection intel)
     # Drop GCP-only live metrics section panels (those with sectionId) and rebuild AWS ones.
+    # Skip any prior OOTB nav panels — re-injected for AWS after assembly.
+    ootb_ids = set(PANEL_IDS.values())
     kept = []
     for p in panels_in:
         gd = p.get("gridData") or {}
         if gd.get("sectionId"):
+            continue
+        if p.get("panelIndex") in ootb_ids:
             continue
         kept.append(rewrite_gcp_panel_queries(p))
 
@@ -779,6 +785,7 @@ def build(gcp_path: Path) -> dict:
     ]
 
     panels_out = kept + [cspm_kpi, inv_header, assets_by_type, top_assets, by_eval, live_intro, *live_kpis, *live_charts, *rec_panels]
+    panels_out = inject_ootb_nav(panels_out, "aws")
 
     # Pinned controls (AWS equivalents of GCP filters)
     pinned = {

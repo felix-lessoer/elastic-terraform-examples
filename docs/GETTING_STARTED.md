@@ -79,7 +79,9 @@ Labels/tags are applied to all taggable cloud resources. On AWS, missing org tag
 - **AWS (`examples/aws`)**: Elastic provisions the managed integration runtime
   and Terraform enrolls one EC2 Agent for policy templates and log inputs that
   managed mode does not support. Both use IAM roles; no static AWS keys are
-  stored in Fleet.
+  stored in Fleet. The operator provides only the AWS credentials used by the
+  Terraform provider and `EC_API_KEY`; no credentials are entered into
+  integrations or policies after apply.
 - **Azure / multicloud**: Agentless CSPM works without a host agent. For Event Hub or remaining log inputs, enroll Elastic Agent into the created Fleet policy:
 
 ```bash

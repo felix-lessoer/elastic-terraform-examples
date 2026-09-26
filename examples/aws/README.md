@@ -98,6 +98,27 @@ export AWS_SECRET_ACCESS_KEY="..."
 The managed integration uses a federated IAM role. The EC2 agent uses an
 instance profile and IMDS. No long-lived AWS key is stored in Fleet.
 
+## Authentication is fully bootstrapped
+
+The person running Terraform supplies only the credentials needed to perform
+the deployment:
+
+- AWS credentials through the standard Terraform/AWS provider chain; and
+- `EC_API_KEY` for Elastic Cloud.
+
+Terraform then configures both runtime authentication paths:
+
+1. **Elastic-managed integrations:** Terraform creates a read-only IAM role,
+   configures its trust for Elastic's managed collector, creates the Fleet
+   cloud connectors, and selects `identity_federation`.
+2. **EC2 Elastic Agent:** Terraform creates and attaches an IAM instance
+   profile. The AWS integration uses the default AWS SDK credential chain and
+   obtains short-lived credentials from IMDSv2.
+
+Users must not paste an access key, secret key, session token, shared
+credentials path, or profile name into any Fleet integration or policy. Those
+fields intentionally remain empty after apply.
+
 ## Apply
 
 ```bash

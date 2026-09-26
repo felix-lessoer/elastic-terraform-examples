@@ -41,18 +41,28 @@ def cloudwatch_source(region: str, name: str) -> dict:
             return {
                 "kind": "cloudwatch",
                 "region": region,
-                "log_group_name": name,
+                "log_group_name_prefix": prefix,
                 "policy_template": template,
                 "input_type": "aws-cloudwatch",
                 "dataset": dataset,
             }
+
+    # Group generic logs by their first two path components. This avoids one
+    # package policy per log group while not overlapping the service-specific
+    # prefixes above.
+    parts = name.split("/")
+    if name.startswith("/") and len(parts) >= 3:
+        prefix = f"/{parts[1]}/{parts[2]}/"
+        selector = {"log_group_name_prefix": prefix}
+    else:
+        selector = {"log_group_name": name}
     return {
         "kind": "cloudwatch",
         "region": region,
-        "log_group_name": name,
         "policy_template": "cloudwatch",
         "input_type": "aws-cloudwatch",
         "dataset": "aws.cloudwatch_logs",
+        **selector,
     }
 
 

@@ -69,7 +69,14 @@ def policy_name(source: dict) -> str:
 def configure_stream(stream: dict, source: dict) -> None:
     variables = stream.get("vars", {})
     if source["kind"] == "cloudwatch":
-        set_value(variables, "log_group_name", source["log_group_name"])
+        if "log_group_name_prefix" in source:
+            set_value(
+                variables,
+                "log_group_name_prefix",
+                source["log_group_name_prefix"],
+            )
+        else:
+            set_value(variables, "log_group_name", source["log_group_name"])
         set_value(variables, "region_name", source["region"])
         set_value(variables, "preserve_original_event", False)
     else:

@@ -42,7 +42,10 @@ AWS_SEC_COVERAGE_LINKS = [
 
 
 def _md_link(label: str, href: str) -> str:
-    return f"[{label}]({href})"
+    # Prefer HTML anchors: markdown [text](url) breaks when url contains ')'.
+    # Only escape attribute delimiters — leave ES|QL operators (>, <) intact.
+    safe = href.replace("&", "&amp;").replace('"', "&quot;")
+    return f'<a href="{safe}">{label}</a>'
 
 
 def aws_drilldowns_markdown() -> str:

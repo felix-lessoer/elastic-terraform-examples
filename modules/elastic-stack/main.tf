@@ -109,6 +109,7 @@ resource "elasticstack_fleet_integration_policy" "agent" {
   agent_policy_id     = elasticstack_fleet_agent_policy.cloud[0].policy_id
   integration_name    = each.value.package_name
   integration_version = elasticstack_fleet_integration.packages[each.value.package_name].version
+  space_ids           = [var.space_id]
 
   vars_json = try(each.value.vars_json, null)
   inputs    = try(each.value.inputs, {})

@@ -409,6 +409,127 @@ locals {
       }
     } : {},
   )
+
+  # The AWS package adds every input to an aggregate agent policy unless it is
+  # explicitly disabled. Keep the EC2 policy limited to agent-only collection
+  # and avoid duplicate managed ingestion.
+  aws_all_input_datasets = {
+    "awshealth-aws/metrics"       = ["aws.awshealth"]
+    "billing-aws/metrics"         = ["aws.billing"]
+    "cloudtrail-aws-s3"           = ["aws.cloudtrail"]
+    "cloudtrail-aws-cloudwatch"   = ["aws.cloudtrail"]
+    "cloudwatch-aws-cloudwatch"   = ["aws.cloudwatch_logs"]
+    "cloudwatch-aws/metrics"      = ["aws.cloudwatch_metrics"]
+    "config-cel"                  = ["aws.config"]
+    "dynamodb-aws/metrics"        = ["aws.dynamodb"]
+    "ebs-aws/metrics"             = ["aws.ebs"]
+    "ec2-aws-s3"                  = ["aws.ec2_logs"]
+    "ec2-aws-cloudwatch"          = ["aws.ec2_logs"]
+    "ec2-aws/metrics"             = ["aws.ec2_metrics"]
+    "ecs-aws/metrics"             = ["aws.ecs_metrics"]
+    "elb-aws-s3"                  = ["aws.elb_logs"]
+    "elb-aws-cloudwatch"          = ["aws.elb_logs"]
+    "elb-aws/metrics"             = ["aws.elb_metrics"]
+    "lambda-aws/metrics"          = ["aws.lambda"]
+    "lambda-aws-cloudwatch"       = ["aws.lambda_logs"]
+    "natgateway-aws/metrics"      = ["aws.natgateway"]
+    "firewall-aws-s3"             = ["aws.firewall_logs"]
+    "firewall-aws-cloudwatch"     = ["aws.firewall_logs"]
+    "firewall-aws/metrics"        = ["aws.firewall_metrics"]
+    "rds-aws/metrics"             = ["aws.rds"]
+    "s3-aws-s3"                   = ["aws.s3access"]
+    "s3-aws/metrics"              = ["aws.s3_daily_storage", "aws.s3_request"]
+    "s3_storage_lens-aws/metrics" = ["aws.s3_storage_lens"]
+    "sns-aws/metrics"             = ["aws.sns"]
+    "sqs-aws/metrics"             = ["aws.sqs"]
+    "transitgateway-aws/metrics"  = ["aws.transitgateway"]
+    "usage-aws/metrics"           = ["aws.usage"]
+    "vpcflow-aws-s3"              = ["aws.vpcflow"]
+    "vpcflow-aws-cloudwatch"      = ["aws.vpcflow"]
+    "vpn-aws/metrics"             = ["aws.vpn"]
+    "waf-aws-s3"                  = ["aws.waf"]
+    "waf-aws-cloudwatch"          = ["aws.waf"]
+    "route53-aws-cloudwatch"      = ["aws.route53_public_logs", "aws.route53_resolver_logs"]
+    "route53-aws-s3"              = ["aws.route53_resolver_logs"]
+    "cloudfront-aws-s3"           = ["aws.cloudfront_logs"]
+    "redshift-aws/metrics"        = ["aws.redshift"]
+    "kinesis-aws/metrics"         = ["aws.kinesis"]
+    "securityhub-httpjson"        = ["aws.securityhub_findings", "aws.securityhub_findings_full_posture", "aws.securityhub_insights"]
+    "inspector-httpjson"          = ["aws.inspector"]
+    "guardduty-httpjson"          = ["aws.guardduty"]
+    "guardduty-aws-s3"            = ["aws.guardduty"]
+    "apigateway-aws/metrics"      = ["aws.apigateway_metrics"]
+    "apigateway-aws-s3"           = ["aws.apigateway_logs"]
+    "apigateway-aws-cloudwatch"   = ["aws.apigateway_logs"]
+    "emr-aws/metrics"             = ["aws.emr_metrics"]
+    "emr-aws-s3"                  = ["aws.emr_logs"]
+    "emr-aws-cloudwatch"          = ["aws.emr_logs"]
+    "kafka-aws/metrics"           = ["aws.kafka_metrics"]
+  }
+
+  agent_disabled_input_stubs = {
+    for input_key, datasets in local.aws_all_input_datasets : input_key => {
+      enabled = false
+      streams = { for dataset in datasets : dataset => { enabled = false } }
+    }
+  }
+
+  # Fleet validates required fields on these API streams even while disabled.
+  agent_required_disabled_overrides = {
+    "config-cel" = {
+      enabled = false
+      streams = {
+        "aws.config" = {
+          enabled = false
+          vars    = jsonencode({ aws_region = var.aws_region })
+        }
+      }
+    }
+    "securityhub-httpjson" = {
+      enabled = false
+      streams = {
+        "aws.securityhub_findings" = {
+          enabled = false
+          vars    = jsonencode({ aws_region = var.aws_region })
+        }
+        "aws.securityhub_findings_full_posture" = {
+          enabled = false
+          vars    = jsonencode({ aws_region = var.aws_region })
+        }
+        "aws.securityhub_insights" = {
+          enabled = false
+          vars    = jsonencode({ aws_region = var.aws_region })
+        }
+      }
+    }
+    "inspector-httpjson" = {
+      enabled = false
+      streams = {
+        "aws.inspector" = {
+          enabled = false
+          vars    = jsonencode({ aws_region = var.aws_region })
+        }
+      }
+    }
+    "guardduty-httpjson" = {
+      enabled = false
+      streams = {
+        "aws.guardduty" = {
+          enabled = false
+          vars = jsonencode({
+            aws_region  = var.aws_region
+            detector_id = "00000000000000000000000000000000"
+          })
+        }
+      }
+    }
+  }
+
+  agent_policy_inputs = merge(
+    local.agent_disabled_input_stubs,
+    local.agent_required_disabled_overrides,
+    local.agent_inputs,
+  )
 }
 
 check "required_company_tags" {
@@ -550,33 +671,37 @@ module "stack" {
   elasticsearch_password = module.observability.password
   enable_detection_rules = false
 
-  integrations = [
-    {
-      name            = "aws-observability-all-regions"
-      description     = "Elastic-managed AWS observability collection across all regions"
-      package_name    = "aws"
-      managed         = true
-      agent_policy    = false
-      prerelease      = false
-      package_version = null
-      policy_template = null
-      vars_json = jsonencode({
-        default_region               = var.aws_region
-        role_arn                     = aws_iam_role.elastic_managed.arn
-        supports_identity_federation = true
-      })
-      var_group_selections = {
-        credential_type = "identity_federation"
+  integrations = concat(
+    [
+      for input_key, input_config in local.managed_inputs : {
+        name            = "aws-managed-${split("-", input_key)[0]}-all-regions"
+        description     = "Elastic-managed ${split("-", input_key)[0]} collection across all regions"
+        package_name    = "aws"
+        managed         = true
+        agent_policy    = false
+        prerelease      = false
+        package_version = null
+        policy_template = split("-", input_key)[0]
+        vars_json = jsonencode({
+          default_region               = var.aws_region
+          role_arn                     = aws_iam_role.elastic_managed.arn
+          supports_identity_federation = true
+        })
+        var_group_selections = {
+          credential_type = "identity_federation"
+        }
+        cloud_connector = {
+          enabled            = true
+          cloud_connector_id = null
+          name               = "${var.name_prefix}-${split("-", input_key)[0]}"
+          target_csp         = "aws"
+        }
+        inputs = {
+          (input_key) = input_config
+        }
       }
-      cloud_connector = {
-        enabled            = true
-        cloud_connector_id = null
-        name               = "${var.name_prefix}-aws-observability"
-        target_csp         = "aws"
-      }
-      inputs = local.managed_inputs
-    },
-    {
+    ],
+    [{
       name            = "aws-agent-only-integrations"
       description     = "AWS integrations and log inputs unavailable in Elastic-managed mode"
       package_name    = "aws"
@@ -592,9 +717,9 @@ module "stack" {
         credential_type = "default_credentials"
       }
       cloud_connector = null
-      inputs          = local.agent_inputs
-    },
-  ]
+      inputs          = local.agent_policy_inputs
+    }],
+  )
 
   depends_on = [module.observability, module.aws_cloud, aws_iam_role_policy.elastic_managed]
 }

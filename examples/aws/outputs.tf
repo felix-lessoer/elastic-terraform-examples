@@ -31,7 +31,7 @@ output "aws_managed_collector_role_arn" {
 }
 
 output "managed_integration_ids" {
-  description = "The single Elastic-managed AWS integration."
+  description = "Elastic-managed AWS integration policies."
   value       = module.stack.managed_integration_ids
 }
 
@@ -78,7 +78,7 @@ output "applied_tags" {
 output "next_steps" {
   value = <<-EOT
     Kibana: ${module.observability.kibana_endpoint}
-    - Fleet > Managed integrations: confirm aws-observability-all-regions is Healthy
+    - Fleet > Managed integrations: confirm all aws-managed-*-all-regions policies are Healthy
     - Fleet > Agents: confirm ${module.elastic_agent.instance_name} is Healthy
     - Infrastructure > Inventory: inspect AWS hosts and services
     - Dashboards: open the AWS integration dashboards

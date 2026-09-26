@@ -18,7 +18,7 @@ the agent-only log streams.
 
 ## Enabled integrations
 
-The single managed integration enables these AWS datasets:
+The managed policies enable these AWS datasets:
 
 | Service | Dataset |
 | --- | --- |
@@ -111,7 +111,7 @@ terraform apply
 
 After apply:
 
-1. Use `kibana_url` and verify `aws-observability-all-regions` under
+1. Use `kibana_url` and verify the `aws-managed-*-all-regions` policies under
    **Fleet → Managed integrations**.
 2. Confirm the EC2 collector is healthy under **Fleet → Agents**.
 3. Open `cockpit_dashboard_url`; package-provided AWS dashboards are also

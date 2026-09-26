@@ -41,7 +41,7 @@ docs/
 - Multi-cloud **Cross-Project Search** (Serverless) or CCS remotes (hosted)
 - Elastic Serverless Forwarder / SAR path removed
 - The AWS entry point is intentionally **Observability-only**: one Serverless
-  project, one Elastic-managed integration, and one EC2 Agent for integrations
+  project, Elastic-managed integrations, and one EC2 Agent for integrations
   that do not support managed mode. Metrics cover all AWS regions; the pinned
   cockpit dashboard and Kibana workflow deployment are retained.
 

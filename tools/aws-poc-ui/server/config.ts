@@ -28,6 +28,7 @@ export const generatedVariablesPath = path.join(
 const tagValue = z.string().trim().min(1).max(256);
 
 export const deploymentConfigSchema = z.object({
+  deployment_creator_mode: z.literal(true).default(true),
   elastic_tags_required: z.boolean().default(false),
   elastic_project_name: z.string().trim().min(1).max(100),
   elastic_region: z.string().trim().regex(/^[a-z]{2,}-[a-z]+-[a-z]+-\d+$/),
@@ -71,6 +72,7 @@ export const deploymentConfigSchema = z.object({
 export type DeploymentConfig = z.infer<typeof deploymentConfigSchema>;
 
 export const defaultDeploymentConfig: DeploymentConfig = {
+  deployment_creator_mode: true,
   elastic_tags_required: false,
   elastic_project_name: 'AWS Observability',
   elastic_region: 'aws-eu-west-1',

@@ -25,6 +25,10 @@ The UI can:
 - stream local execution logs; and
 - link to the deployed AWS cockpit and Elastic project.
 
+Generated configuration always sets `deployment_creator_mode = true`. Direct
+Terraform usage defaults this flag to `false`, retaining the existing required
+company-tag behavior and excluding future UI-only resources.
+
 It does not:
 
 - create an example application;

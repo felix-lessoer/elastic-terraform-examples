@@ -62,7 +62,7 @@ data "external" "existing_log_sources" {
 }
 
 locals {
-  effective_company_tags = var.elastic_tags_required ? var.company_tags : {}
+  effective_company_tags = var.deployment_creator_mode && !var.elastic_tags_required ? {} : var.company_tags
 
   elastic_tags = {
     for k, v in local.effective_company_tags :
@@ -572,6 +572,11 @@ locals {
 
 check "required_company_tags" {
   assert {
+    condition     = (var.deployment_creator_mode && !var.elastic_tags_required) || length(var.company_tags) > 0
+    error_message = "Set company_tags according to your company tagging policy."
+  }
+
+  assert {
     condition     = length(local.required_aws_tag_keys_missing) == 0
     error_message = "company_tags is missing required keys: ${join(", ", local.required_aws_tag_keys_missing)}"
   }
@@ -600,6 +605,7 @@ module "aws_cloud" {
   enable_vpc_flow_logs = true
   enable_sqs           = true
   company_tags         = local.effective_company_tags
+  company_tags_required = !(var.deployment_creator_mode && !var.elastic_tags_required)
   required_tag_keys    = var.required_tag_keys
   additional_read_bucket_arns = distinct(concat(
     var.existing_cloudtrail_bucket_name != "" ? [

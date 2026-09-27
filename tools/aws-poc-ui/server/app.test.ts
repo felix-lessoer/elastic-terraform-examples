@@ -100,6 +100,16 @@ describe('deployment configuration', () => {
     ).toThrow();
   });
 
+  it('always marks generated configuration as Deployment Creator mode', () => {
+    expect(defaultDeploymentConfig.deployment_creator_mode).toBe(true);
+    expect(() =>
+      deploymentConfigSchema.parse({
+        ...defaultDeploymentConfig,
+        deployment_creator_mode: false,
+      }),
+    ).toThrow();
+  });
+
   it('rejects invalid AWS regions and empty required tags', () => {
     expect(() =>
       deploymentConfigSchema.parse({

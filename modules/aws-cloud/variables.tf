@@ -34,10 +34,15 @@ variable "additional_read_bucket_arns" {
   default     = []
 }
 
+variable "company_tags_required" {
+  type        = bool
+  description = "Whether company_tags must contain at least one organization-specific tag."
+  default     = true
+}
+
 variable "company_tags" {
   type        = map(string)
-  description = "Optional organization-specific tags applied to taggable AWS resources."
-  default     = {}
+  description = "Company-policy tags applied to every taggable AWS resource."
 }
 
 variable "required_tag_keys" {

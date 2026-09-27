@@ -27,12 +27,17 @@ locals {
   )
 
   missing_required_keys = [
-    for key in var.required_tag_keys : key
+    for key in (var.company_tags_required ? var.required_tag_keys : []) : key
     if !contains(keys(var.company_tags), key)
   ]
 }
 
 check "required_company_tags" {
+  assert {
+    condition     = !var.company_tags_required || length(var.company_tags) > 0
+    error_message = "company_tags must contain at least one tag required by company policy."
+  }
+
   assert {
     condition     = length(local.missing_required_keys) == 0
     error_message = "company_tags is missing required keys: ${join(", ", local.missing_required_keys)}"

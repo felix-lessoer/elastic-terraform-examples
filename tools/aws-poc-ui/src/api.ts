@@ -1,4 +1,5 @@
 export interface DeploymentConfig {
+  deployment_creator_mode: true;
   elastic_tags_required: boolean;
   elastic_project_name: string;
   elastic_region: string;

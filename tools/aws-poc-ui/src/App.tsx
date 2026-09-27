@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   EuiBadge,
+  EuiBasicTable,
   EuiButton,
   EuiButtonEmpty,
   EuiCallOut,
@@ -29,6 +30,7 @@ import {
   EuiSwitch,
   EuiText,
   EuiTitle,
+  type EuiBasicTableColumn,
 } from '@elastic/eui';
 import {
   api,
@@ -38,6 +40,8 @@ import {
   type CredentialsStatus,
   type DeploymentConfig,
   type DeploymentStatus,
+  type PlannedResource,
+  type PlanSummary,
   type PreflightCheck,
   type RunRecord,
 } from './api';
@@ -458,7 +462,92 @@ function PreflightResults({ checks }: { checks?: PreflightCheck[] }) {
   );
 }
 
-function PlanProgress({ run }: { run?: RunRecord }) {
+function PlanResourceTable({ summary }: { summary?: PlanSummary | null }) {
+  const [pageIndex, setPageIndex] = useState(0);
+  const [pageSize, setPageSize] = useState(10);
+  if (!summary) return null;
+  if (summary.resources.length === 0) {
+    return (
+      <EuiCallOut
+        size="s"
+        color="success"
+        title="No managed resource changes"
+      >
+        <p>Terraform found no resources to create, update, replace, or delete.</p>
+      </EuiCallOut>
+    );
+  }
+  const badgeColor = {
+    create: 'success',
+    update: 'primary',
+    replace: 'warning',
+    delete: 'danger',
+    read: 'default',
+  } as const;
+  const columns: EuiBasicTableColumn<PlannedResource>[] = [
+    {
+      field: 'action',
+      name: 'Action',
+      width: '110px',
+      render: (action: PlannedResource['action']) => (
+        <EuiBadge color={badgeColor[action]}>{action.toUpperCase()}</EuiBadge>
+      ),
+    },
+    {
+      field: 'address',
+      name: 'Terraform resource',
+      render: (address: string) => <code>{address}</code>,
+    },
+    { field: 'type', name: 'Resource type' },
+    { field: 'module', name: 'Module' },
+  ];
+  const firstItem = pageIndex * pageSize;
+  const visibleResources = summary.resources.slice(
+    firstItem,
+    firstItem + pageSize,
+  );
+  const countItems = (
+    ['create', 'update', 'replace', 'delete'] as const
+  ).filter((action) => summary.counts[action] > 0);
+  return (
+    <>
+      <EuiFlexGroup gutterSize="s" wrap>
+        {countItems.map((action) => (
+          <EuiFlexItem key={action} grow={false}>
+            <EuiBadge color={badgeColor[action]}>
+              {summary.counts[action]} {action}
+            </EuiBadge>
+          </EuiFlexItem>
+        ))}
+      </EuiFlexGroup>
+      <EuiSpacer size="s" />
+      <EuiBasicTable
+        items={visibleResources}
+        columns={columns}
+        tableCaption="Managed resources changed by the saved Terraform plan"
+        pagination={{
+          pageIndex,
+          pageSize,
+          totalItemCount: summary.resources.length,
+          pageSizeOptions: [10, 25, 50],
+        }}
+        onChange={({ page }) => {
+          if (!page) return;
+          setPageIndex(page.index);
+          setPageSize(page.size);
+        }}
+      />
+    </>
+  );
+}
+
+function PlanProgress({
+  run,
+  summary,
+}: {
+  run?: RunRecord;
+  summary?: PlanSummary | null;
+}) {
   if (!run) return null;
   const output = run.logs.join('\n');
   const inspecting =
@@ -584,6 +673,8 @@ function PlanProgress({ run }: { run?: RunRecord }) {
         </>
       )}
       <EuiSpacer size="m" />
+      <PlanResourceTable summary={summary} />
+      {summary && <EuiSpacer size="m" />}
       <details>
         <summary style={{ cursor: 'pointer' }}>Show technical output</summary>
         <EuiSpacer size="s" />
@@ -695,6 +786,7 @@ export default function App() {
   const [bootstrap, setBootstrap] = useState<Bootstrap>();
   const [credentials, setCredentials] = useState<CredentialsStatus>();
   const [brownfield, setBrownfield] = useState<BrownfieldStatus>();
+  const [planSummary, setPlanSummary] = useState<PlanSummary | null>(null);
   const [status, setStatus] = useState<DeploymentStatus>();
   const [config, setConfig] = useState<DeploymentConfig>();
   const [runs, setRuns] = useState<RunRecord[]>([]);
@@ -704,27 +796,48 @@ export default function App() {
   const [confirmApply, setConfirmApply] = useState(false);
 
   const refresh = async () => {
-    const [nextStatus, nextRuns, nextCredentials, nextBrownfield] = await Promise.all([
+    const [
+      nextStatus,
+      nextRuns,
+      nextCredentials,
+      nextBrownfield,
+      nextPlanSummary,
+    ] = await Promise.all([
       api.status(),
       api.runs(),
       api.credentials(),
       api.brownfield(),
+      api.plan(),
     ]);
     setStatus(nextStatus);
     setRuns(nextRuns);
     setCredentials(nextCredentials);
     setBrownfield(nextBrownfield);
+    setPlanSummary(nextPlanSummary);
   };
 
   useEffect(() => {
-    void Promise.all([api.bootstrap(), api.config(), api.runs(), api.brownfield()])
-      .then(([loadedBootstrap, loadedConfig, loadedRuns, loadedBrownfield]) => {
+    void Promise.all([
+      api.bootstrap(),
+      api.config(),
+      api.runs(),
+      api.brownfield(),
+      api.plan(),
+    ])
+      .then(([
+        loadedBootstrap,
+        loadedConfig,
+        loadedRuns,
+        loadedBrownfield,
+        loadedPlanSummary,
+      ]) => {
         setBootstrap(loadedBootstrap);
         setCredentials(loadedBootstrap.credentials);
         setStatus(loadedBootstrap.status);
         setConfig(loadedConfig.config);
         setRuns(loadedRuns);
         setBrownfield(loadedBrownfield);
+        setPlanSummary(loadedPlanSummary);
         setActiveRun(loadedRuns.find((run) => run.status === 'running'));
         setLoadState('ready');
       })
@@ -757,6 +870,7 @@ export default function App() {
     setPendingStep(step);
     try {
       const run = await operation();
+      if (run.step === 'plan') setPlanSummary(null);
       setActiveRun(run);
       setRuns((current) => [run, ...current.filter((item) => item.id !== run.id)]);
       const unsubscribe = api.subscribe(run.id, (updated) => {
@@ -1010,7 +1124,7 @@ export default function App() {
             {operationRunning('plan') ? 'Creating plan…' : 'Create plan'}
           </EuiButton>
           <EuiSpacer size="m" />
-          <PlanProgress run={runFor('plan')} />
+          <PlanProgress run={runFor('plan')} summary={planSummary} />
         </>
       ),
     },

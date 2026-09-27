@@ -26,6 +26,22 @@ export interface DeploymentStatus {
   };
 }
 
+export type PlanAction = 'create' | 'update' | 'replace' | 'delete' | 'read';
+
+export interface PlannedResource {
+  address: string;
+  module: string;
+  type: string;
+  name: string;
+  action: PlanAction;
+}
+
+export interface PlanSummary {
+  generatedAt?: string;
+  resources: PlannedResource[];
+  counts: Record<PlanAction, number>;
+}
+
 export interface CredentialsStatus {
   path: string;
   elasticCloudApiKey: {
@@ -155,6 +171,9 @@ export const api = {
   },
   async status(): Promise<DeploymentStatus> {
     return query<DeploymentStatus>('/api/status');
+  },
+  async plan(): Promise<PlanSummary | null> {
+    return query<PlanSummary | null>('/api/plan');
   },
   async brownfield(): Promise<BrownfieldStatus> {
     return query<BrownfieldStatus>('/api/brownfield');

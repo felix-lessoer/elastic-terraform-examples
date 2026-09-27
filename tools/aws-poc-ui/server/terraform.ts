@@ -19,6 +19,22 @@ interface TerraformOutput {
 
 type TerraformOutputs = Record<string, TerraformOutput>;
 
+export type PlanAction = 'create' | 'update' | 'replace' | 'delete' | 'read';
+
+export interface PlannedResource {
+  address: string;
+  module: string;
+  type: string;
+  name: string;
+  action: PlanAction;
+}
+
+export interface PlanSummary {
+  generatedAt?: string;
+  resources: PlannedResource[];
+  counts: Record<PlanAction, number>;
+}
+
 async function exists(filePath: string): Promise<boolean> {
   try {
     await access(filePath, constants.F_OK);
@@ -42,6 +58,97 @@ async function capture(
     stdout: result.stdout,
     stderr: result.stderr,
   };
+}
+
+export function summarizeTerraformPlan(input: unknown): PlanSummary {
+  const plan = input as {
+    timestamp?: unknown;
+    resource_changes?: unknown;
+  };
+  const counts: Record<PlanAction, number> = {
+    create: 0,
+    update: 0,
+    replace: 0,
+    delete: 0,
+    read: 0,
+  };
+  const changes = Array.isArray(plan.resource_changes)
+    ? plan.resource_changes
+    : [];
+  const resources = changes.flatMap((entry): PlannedResource[] => {
+    if (!entry || typeof entry !== 'object') return [];
+    const change = entry as {
+      address?: unknown;
+      module_address?: unknown;
+      mode?: unknown;
+      type?: unknown;
+      name?: unknown;
+      change?: { actions?: unknown };
+    };
+    if (change.mode !== 'managed' || !Array.isArray(change.change?.actions)) {
+      return [];
+    }
+    const actions = change.change.actions.filter(
+      (action): action is string => typeof action === 'string',
+    );
+    let action: PlanAction | undefined;
+    if (actions.includes('create') && actions.includes('delete')) {
+      action = 'replace';
+    } else if (actions.includes('create')) {
+      action = 'create';
+    } else if (actions.includes('update')) {
+      action = 'update';
+    } else if (actions.includes('delete')) {
+      action = 'delete';
+    } else if (actions.includes('read')) {
+      action = 'read';
+    }
+    if (
+      !action ||
+      typeof change.address !== 'string' ||
+      typeof change.type !== 'string' ||
+      typeof change.name !== 'string'
+    ) {
+      return [];
+    }
+    counts[action] += 1;
+    return [
+      {
+        address: change.address,
+        module:
+          typeof change.module_address === 'string'
+            ? change.module_address
+            : 'root',
+        type: change.type,
+        name: change.name,
+        action,
+      },
+    ];
+  });
+  resources.sort(
+    (left, right) =>
+      left.action.localeCompare(right.action) ||
+      left.address.localeCompare(right.address),
+  );
+  return {
+    generatedAt:
+      typeof plan.timestamp === 'string' ? plan.timestamp : undefined,
+    resources,
+    counts,
+  };
+}
+
+export async function readPlanSummary(): Promise<PlanSummary | null> {
+  if (!(await exists(planFile))) return null;
+  const result = await capture('terraform', [
+    'show',
+    '-json',
+    path.basename(planFile),
+  ]);
+  if (result.exitCode !== 0) {
+    throw new Error(result.stderr || 'Unable to read the saved Terraform plan');
+  }
+  return summarizeTerraformPlan(JSON.parse(result.stdout));
 }
 
 export interface PreflightCheck {

@@ -13,6 +13,7 @@ import { executeCommand } from './run-manager.js';
 import {
   explainPreflightFailure,
   sanitizeTerraformOutputs,
+  summarizeTerraformPlan,
 } from './terraform.js';
 
 describe('local API security', () => {
@@ -247,5 +248,44 @@ describe('Terraform output filtering', () => {
       kibana_url: 'https://kibana.example',
       workflow_ids: ['coverage'],
     });
+  });
+});
+
+describe('Terraform plan summary', () => {
+  it('returns only reviewable managed resource metadata', () => {
+    const summary = summarizeTerraformPlan({
+      timestamp: '2026-09-27T18:00:00Z',
+      resource_changes: [
+        {
+          address: 'aws_iam_role.collector',
+          mode: 'managed',
+          type: 'aws_iam_role',
+          name: 'collector',
+          change: {
+            actions: ['create'],
+            after: { secret_value: 'must-not-be-returned' },
+          },
+        },
+        {
+          address: 'module.stack.ec_deployment.project',
+          module_address: 'module.stack',
+          mode: 'managed',
+          type: 'ec_deployment',
+          name: 'project',
+          change: { actions: ['delete', 'create'] },
+        },
+        {
+          address: 'data.aws_caller_identity.current',
+          mode: 'data',
+          type: 'aws_caller_identity',
+          name: 'current',
+          change: { actions: ['read'] },
+        },
+      ],
+    });
+    expect(summary.counts.create).toBe(1);
+    expect(summary.counts.replace).toBe(1);
+    expect(summary.resources).toHaveLength(2);
+    expect(JSON.stringify(summary)).not.toContain('must-not-be-returned');
   });
 });

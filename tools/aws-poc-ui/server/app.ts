@@ -23,6 +23,7 @@ import { runElasticWorkflow } from './elastic.js';
 import { RunManager } from './run-manager.js';
 import {
   deploymentStatus,
+  readPlanSummary,
   runPreflight,
   terraformApply,
   terraformInit,
@@ -78,6 +79,10 @@ export function createApp(options?: {
 
   app.get('/api/status', async (_request, response) => {
     response.json(await deploymentStatus());
+  });
+
+  app.get('/api/plan', async (_request, response) => {
+    response.json(await readPlanSummary());
   });
 
   app.get('/api/brownfield', async (_request, response) => {

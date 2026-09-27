@@ -921,6 +921,9 @@ function VisibilityExpansionOptions({
       !status.deployedProposalIds.includes(id)
     );
   });
+  const blockedCount = status.selectedProposalIds.filter(
+    (id) => !optionByProposalId.get(id)?.adapter.available,
+  ).length;
   const toggle = async (proposalId: string) => {
     setSaving(proposalId);
     setError(undefined);
@@ -1152,9 +1155,11 @@ function VisibilityExpansionOptions({
         }
       >
         <p>
-          Approval readiness and adapter readiness are separate controls.
-          Workload instrumentation remains non-executing until all approvals
-          are complete and a deployment adapter is available.
+          {blockedCount
+            ? `${blockedCount} selected canary ${
+                blockedCount === 1 ? 'is' : 'are'
+              } not deployable from the current discovery data. Rerun analysis to select an active target.`
+            : 'Approval readiness and adapter readiness are separate controls. Workload instrumentation remains non-executing until all approvals are complete.'}
         </p>
       </EuiCallOut>
       <EuiSpacer size="m" />

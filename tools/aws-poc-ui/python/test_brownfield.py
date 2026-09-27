@@ -188,6 +188,46 @@ class AnalysisTest(unittest.TestCase):
             json.dumps(second, sort_keys=True),
         )
 
+    def test_prioritizes_running_ecs_services_for_canary_selection(self):
+        manifest = self.manifest()
+
+        def ecs_service(name, desired, running):
+            return {
+                "arn": (
+                    "arn:aws:ecs:eu-west-1:123456789012:"
+                    f"service/test/{name}"
+                ),
+                "resource_uid": name,
+                "type": "aws.ecs.service",
+                "name": name,
+                "account_id": "123456789012",
+                "region": "eu-west-1",
+                "state": "active",
+                "tags": {},
+                "ownership": {"candidates": []},
+                "configuration": {
+                    "desired_count": desired,
+                    "running_count": running,
+                },
+                "telemetry": {"traces": "unknown"},
+                "evidence": [{"source": "ecs:DescribeServices"}],
+            }
+
+        manifest["resources"].extend(
+            [
+                ecs_service("alphabetically-first", 0, 0),
+                ecs_service("running-canary", 1, 1),
+            ]
+        )
+        result = analyze(manifest, "2026-09-27T16:05:00+00:00")
+        ecs_proposals = [
+            item
+            for item in result["proposals"]
+            if item["resource_type"] == "aws.ecs.service"
+        ]
+        recommended = max(ecs_proposals, key=lambda item: item["priority"])
+        self.assertEqual(recommended["resource_name"], "running-canary")
+
     def test_rejects_duplicate_resource_arns(self):
         manifest = self.manifest()
         manifest["resources"].append(dict(manifest["resources"][0]))

@@ -379,6 +379,9 @@ def analyze(manifest: dict[str, Any], analyzed_at: str) -> dict[str, Any]:
             "unknown",
             "not_observed",
         ):
+            config = resource.get("configuration", {})
+            running = int(config.get("running_count") or 0)
+            desired = int(config.get("desired_count") or 0)
             proposals.append(
                 proposal(
                     resource,
@@ -388,7 +391,7 @@ def analyze(manifest: dict[str, Any], analyzed_at: str) -> dict[str, Any]:
                     ["Task CPU/memory", "Trace ingestion", "Deployment replacement"],
                     ["Canary task is healthy", "Trace continuity is demonstrated"],
                     ["Redeploy the previous task definition revision"],
-                    60,
+                    80 if running > 0 and desired > 0 else 60,
                 )
             )
         elif resource["type"] == "aws.eks.cluster":

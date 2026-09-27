@@ -32,6 +32,11 @@ interface VisibilityProposal {
   rollback: string[];
 }
 
+interface DiscoveredResource {
+  arn: string;
+  configuration?: Record<string, unknown>;
+}
+
 export interface VisibilityOption {
   id: string;
   title: string;
@@ -96,6 +101,21 @@ async function readProposals(): Promise<VisibilityProposal[]> {
   return Array.isArray(parsed.proposals) ? parsed.proposals : [];
 }
 
+async function readResourceConfigurations(): Promise<
+  Map<string, Record<string, unknown>>
+> {
+  if (!(await exists(manifestPath))) return new Map();
+  const parsed = JSON.parse(await readFile(manifestPath, 'utf8')) as {
+    resources?: DiscoveredResource[];
+  };
+  return new Map(
+    (parsed.resources ?? []).map((resource) => [
+      resource.arn,
+      resource.configuration ?? {},
+    ]),
+  );
+}
+
 async function readVisibilitySelection(): Promise<{
   selectedProposalIds: string[];
   approvals: Record<string, VisibilityApproval>;
@@ -150,13 +170,46 @@ const optionTitle = (resourceType: string, signal: string): string => {
   return titles[`${resourceType}:${signal}`] ?? `Expand ${signal} visibility`;
 };
 
+function adapterFor(
+  proposal: VisibilityProposal,
+  resourceConfiguration: Record<string, unknown> = {},
+): VisibilityOption['adapter'] {
+  const id = `${proposal.resource_type}:${proposal.signal}`;
+  if (
+    id === 'aws.ecs.service:traces' &&
+    Number(resourceConfiguration.desired_count ?? 0) < 1
+  ) {
+    return {
+      available: false,
+      label: 'Inactive ECS service — choose a canary with running tasks',
+    };
+  }
+  return {
+    available: true,
+    label:
+      {
+        'aws.lambda.function:logs':
+          'Elastic CloudWatch log collection adapter',
+        'aws.lambda.function:traces':
+          'Elastic Python Lambda tracing adapter',
+        'aws.ecs.service:traces': 'Runtime-aware ECS tracing adapter',
+        'aws.eks.cluster:metrics':
+          'OpenTelemetry Kubernetes metrics adapter',
+        'aws.rds.instance:database': 'RDS Performance Insights adapter',
+      }[id] ?? 'Dedicated visibility adapter',
+  };
+}
+
 export async function visibilityExpansionStatus(): Promise<{
   options: VisibilityOption[];
   selectedProposalIds: string[];
   approvals: Record<string, VisibilityApproval>;
   deployedProposalIds: string[];
 }> {
-  const proposals = await readProposals();
+  const [proposals, resourceConfigurations] = await Promise.all([
+    readProposals(),
+    readResourceConfigurations(),
+  ]);
   const grouped = new Map<string, VisibilityProposal[]>();
   for (const proposal of proposals) {
     const key = `${proposal.resource_type}:${proposal.signal}`;
@@ -176,22 +229,10 @@ export async function visibilityExpansionStatus(): Promise<{
         resourceType: items[0].resource_type,
         affectedResources: items.length,
         recommendedCanary: items[0],
-        adapter: {
-          available: true,
-          label:
-            {
-              'aws.lambda.function:logs':
-                'Elastic CloudWatch log collection adapter',
-              'aws.lambda.function:traces':
-                'Elastic Python Lambda tracing adapter',
-              'aws.ecs.service:traces':
-                'Runtime-aware ECS tracing adapter',
-              'aws.eks.cluster:metrics':
-                'OpenTelemetry Kubernetes metrics adapter',
-              'aws.rds.instance:database':
-                'RDS Performance Insights adapter',
-            }[id] ?? 'Dedicated visibility adapter',
-        },
+        adapter: adapterFor(
+          items[0],
+          resourceConfigurations.get(items[0].resource_arn),
+        ),
       };
     })
     .sort((left, right) => left.title.localeCompare(right.title));
@@ -409,17 +450,42 @@ export async function deployVisibilityExpansions(
 ): Promise<unknown> {
   const selection = await readVisibilitySelection();
   const proposals = await readProposals();
+  const resourceConfigurations = await readResourceConfigurations();
   const byId = new Map(proposals.map((proposal) => [proposal.id, proposal]));
-  const deployable = selection.selectedProposalIds
+  const approved = selection.selectedProposalIds
     .filter((id) => !selection.deployedProposalIds.includes(id))
     .map((id) => byId.get(id))
     .filter(
       (proposal): proposal is VisibilityProposal =>
         Boolean(proposal && approvalComplete(selection.approvals[proposal.id])),
     );
+  const deployable = approved.filter(
+    (proposal) =>
+      adapterFor(
+        proposal,
+        resourceConfigurations.get(proposal.resource_arn),
+      ).available,
+  );
+  const blocked = approved.filter(
+    (proposal) =>
+      !adapterFor(
+        proposal,
+        resourceConfigurations.get(proposal.resource_arn),
+      ).available,
+    );
   if (!deployable.length) {
     throw new Error(
       'No approved, adapter-ready visibility canaries are waiting for deployment',
+    );
+  }
+  for (const proposal of blocked) {
+    write(
+      `Skipping ${proposal.resource_name}: ${
+        adapterFor(
+          proposal,
+          resourceConfigurations.get(proposal.resource_arn),
+        ).label
+      }`,
     );
   }
   write(`Deploying ${deployable.length} approved visibility canary adapters`);

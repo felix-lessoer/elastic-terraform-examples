@@ -882,9 +882,19 @@ function BrownfieldResults({ status }: { status: BrownfieldStatus }) {
 function VisibilityExpansionOptions({
   status,
   onUpdated,
+  onDeploy,
+  onRollback,
+  deployRun,
+  rollbackRun,
+  operationRunning,
 }: {
   status: VisibilityExpansionStatus;
   onUpdated: (status: VisibilityExpansionStatus) => void;
+  onDeploy: () => void;
+  onRollback: () => void;
+  deployRun?: RunRecord;
+  rollbackRun?: RunRecord;
+  operationRunning: boolean;
 }) {
   const [saving, setSaving] = useState<string>();
   const [error, setError] = useState<string>();
@@ -897,6 +907,20 @@ function VisibilityExpansionOptions({
       approval.rollbackReviewed
     );
   }).length;
+  const optionByProposalId = new Map(
+    status.options.map((option) => [option.recommendedCanary.id, option]),
+  );
+  const readyToDeploy = status.selectedProposalIds.filter((id) => {
+    const option = optionByProposalId.get(id);
+    const approval = status.approvals[id];
+    return (
+      option?.adapter.available &&
+      approval?.ownerApproved &&
+      approval.costReviewed &&
+      approval.rollbackReviewed &&
+      !status.deployedProposalIds.includes(id)
+    );
+  });
   const toggle = async (proposalId: string) => {
     setSaving(proposalId);
     setError(undefined);
@@ -974,6 +998,7 @@ function VisibilityExpansionOptions({
             approval.ownerApproved &&
             approval.costReviewed &&
             approval.rollbackReviewed;
+          const deployed = status.deployedProposalIds.includes(proposal.id);
           return (
             <EuiFlexItem key={option.id} css={{ minWidth: 300 }}>
               <EuiPanel hasBorder color={selected ? 'primary' : 'plain'}>
@@ -1024,8 +1049,20 @@ function VisibilityExpansionOptions({
                   </EuiText>
                 </details>
                 <EuiSpacer size="m" />
-                <EuiHealth color="subdued">
-                  Deployment adapter required
+                <EuiHealth
+                  color={
+                    deployed
+                      ? 'success'
+                      : option.adapter.available
+                        ? 'primary'
+                        : 'subdued'
+                  }
+                >
+                  {deployed
+                    ? 'Deployed'
+                    : option.adapter.available
+                      ? option.adapter.label
+                      : option.adapter.label}
                 </EuiHealth>
                 <EuiSpacer size="s" />
                 <EuiButton
@@ -1115,6 +1152,37 @@ function VisibilityExpansionOptions({
           are complete and a deployment adapter is available.
         </p>
       </EuiCallOut>
+      <EuiSpacer size="m" />
+      <EuiFlexGroup gutterSize="s" wrap>
+        <EuiFlexItem grow={false}>
+          <EuiButton
+            fill
+            iconType="launch"
+            onClick={onDeploy}
+            isLoading={deployRun?.status === 'running'}
+            isDisabled={!readyToDeploy.length || operationRunning}
+          >
+            {readyToDeploy.length === 1
+              ? 'Deploy 1 approved canary'
+              : `Deploy ${readyToDeploy.length} approved canaries`}
+          </EuiButton>
+        </EuiFlexItem>
+        {status.deployedProposalIds.length > 0 && (
+          <EuiFlexItem grow={false}>
+            <EuiButton
+              color="warning"
+              onClick={onRollback}
+              isLoading={rollbackRun?.status === 'running'}
+              isDisabled={operationRunning}
+            >
+              Roll back deployed canaries
+            </EuiButton>
+          </EuiFlexItem>
+        )}
+      </EuiFlexGroup>
+      <EuiSpacer size="m" />
+      <RunPanel run={deployRun} nextAction="Validate incoming visibility" />
+      <RunPanel run={rollbackRun} />
     </>
   );
 }
@@ -1130,6 +1198,7 @@ export default function App() {
       options: [],
       selectedProposalIds: [],
       approvals: {},
+      deployedProposalIds: [],
     });
   const [status, setStatus] = useState<DeploymentStatus>();
   const [config, setConfig] = useState<DeploymentConfig>();
@@ -1591,6 +1660,19 @@ export default function App() {
             <VisibilityExpansionOptions
               status={visibilityExpansions}
               onUpdated={setVisibilityExpansions}
+              onDeploy={() =>
+                void start('visibility:deploy', () =>
+                  api.deployVisibilityExpansions(),
+                )
+              }
+              onRollback={() =>
+                void start('visibility:rollback', () =>
+                  api.rollbackVisibilityExpansions(),
+                )
+              }
+              deployRun={runFor('visibility:deploy')}
+              rollbackRun={runFor('visibility:rollback')}
+              operationRunning={anyOperationRunning}
             />
           )}
         </>

@@ -21,14 +21,20 @@ export type RunTask = (write: LogWriter) => Promise<unknown>;
 
 const MAX_LOG_LINES = 2_000;
 
-function redact(input: string): string {
+function redact(
+  input: string,
+  environment: NodeJS.ProcessEnv = process.env,
+): string {
   let output = input;
   for (const key of [
     'EC_API_KEY',
     'AWS_SECRET_ACCESS_KEY',
     'AWS_SESSION_TOKEN',
+    'KIBANA_PASSWORD',
+    'ELASTICSEARCH_PASSWORD',
+    'ELASTIC_APM_API_KEY',
   ]) {
-    const value = process.env[key];
+    const value = environment[key];
     if (value && value.length >= 6) {
       output = output.split(value).join('[REDACTED]');
     }
@@ -65,18 +71,18 @@ export async function executeCommand(
 
   child.stdout?.on('data', (chunk: Buffer | string) => {
     for (const line of String(chunk).split(/\r?\n/)) {
-      if (line) options.write(line);
+      if (line) options.write(redact(line, options.env));
     }
   });
   child.stderr?.on('data', (chunk: Buffer | string) => {
     for (const line of String(chunk).split(/\r?\n/)) {
-      if (line) options.write(line);
+      if (line) options.write(redact(line, options.env));
     }
   });
 
   const result = await child;
   if (result.exitCode !== 0 && !result.stderr && result.shortMessage) {
-    options.write(result.shortMessage);
+    options.write(redact(result.shortMessage, options.env));
   }
   return {
     exitCode: result.exitCode ?? 1,

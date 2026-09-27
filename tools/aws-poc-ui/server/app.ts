@@ -5,7 +5,9 @@ import express from 'express';
 import { ZodError } from 'zod';
 import {
   brownfieldStatus,
+  deployVisibilityExpansions,
   readBrownfieldArtifact,
+  rollbackVisibilityExpansions,
   runBrownfieldAnalysis,
   runBrownfieldDiscovery,
   saveVisibilitySelection,
@@ -171,6 +173,38 @@ export function createApp(options?: {
       response.json(await saveVisibilitySelection(request.body));
     } catch (error) {
       response.status(400).json({
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+
+  app.post('/api/visibility-expansions/deploy', (_request, response) => {
+    try {
+      response.status(202).json(
+        runs.start(
+          'visibility:deploy',
+          'Deploy approved visibility canaries',
+          deployVisibilityExpansions,
+        ),
+      );
+    } catch (error) {
+      response.status(409).json({
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+
+  app.post('/api/visibility-expansions/rollback', (_request, response) => {
+    try {
+      response.status(202).json(
+        runs.start(
+          'visibility:rollback',
+          'Roll back visibility canaries',
+          rollbackVisibilityExpansions,
+        ),
+      );
+    } catch (error) {
+      response.status(409).json({
         message: error instanceof Error ? error.message : String(error),
       });
     }

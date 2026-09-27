@@ -366,6 +366,23 @@ export async function readTerraformOutputs(): Promise<TerraformOutputs> {
   return JSON.parse(result.stdout) as TerraformOutputs;
 }
 
+export async function readPrivateTerraformOutput(
+  name:
+    | 'agent_policy_id'
+    | 'elasticsearch_url'
+    | 'kibana_url'
+    | 'password'
+    | 'username',
+): Promise<string> {
+  const result = await capture('terraform', ['output', '-raw', name]);
+  if (result.exitCode !== 0 || !result.stdout.trim()) {
+    throw new Error(
+      result.stderr || `Unable to read required Terraform output ${name}`,
+    );
+  }
+  return result.stdout.trim();
+}
+
 export async function readSafeTerraformOutputs(): Promise<
   Record<string, unknown>
 > {

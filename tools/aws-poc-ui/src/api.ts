@@ -143,6 +143,10 @@ export interface VisibilityOption {
   resourceType: string;
   affectedResources: number;
   recommendedCanary: VisibilityProposal;
+  adapter: {
+    available: boolean;
+    label: string;
+  };
 }
 
 export interface VisibilityExpansionStatus {
@@ -156,6 +160,7 @@ export interface VisibilityExpansionStatus {
       rollbackReviewed: boolean;
     }
   >;
+  deployedProposalIds: string[];
 }
 
 let bootstrapPromise: Promise<Bootstrap> | undefined;
@@ -242,6 +247,20 @@ export const api = {
       '/api/visibility-expansions',
       'PUT',
       { selectedProposalIds, approvals },
+    );
+  },
+  deployVisibilityExpansions() {
+    return mutate<RunRecord>(
+      '/api/visibility-expansions/deploy',
+      'POST',
+      {},
+    );
+  },
+  rollbackVisibilityExpansions() {
+    return mutate<RunRecord>(
+      '/api/visibility-expansions/rollback',
+      'POST',
+      {},
     );
   },
   startStep(

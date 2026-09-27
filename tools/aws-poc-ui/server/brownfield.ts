@@ -3,6 +3,7 @@ import { access, readFile, stat, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { readDeploymentConfig, repoRoot } from './config.js';
 import { executeCommand, type LogWriter } from './run-manager.js';
+import { readPrivateTerraformOutput } from './terraform.js';
 
 const toolDirectory = path.join(repoRoot, 'tools/aws-poc-ui');
 const dataDirectory = path.join(toolDirectory, '.elastic-poc');
@@ -11,6 +12,10 @@ const analysisPath = path.join(dataDirectory, 'analysis.json');
 const visibilitySelectionPath = path.join(
   dataDirectory,
   'visibility-selection.json',
+);
+const visibilityAdapterStatePath = path.join(
+  dataDirectory,
+  'visibility-adapter-state.json',
 );
 
 interface VisibilityProposal {
@@ -34,6 +39,10 @@ export interface VisibilityOption {
   resourceType: string;
   affectedResources: number;
   recommendedCanary: VisibilityProposal;
+  adapter: {
+    available: boolean;
+    label: string;
+  };
 }
 
 export interface VisibilityApproval {
@@ -90,13 +99,15 @@ async function readProposals(): Promise<VisibilityProposal[]> {
 async function readVisibilitySelection(): Promise<{
   selectedProposalIds: string[];
   approvals: Record<string, VisibilityApproval>;
+  deployedProposalIds: string[];
 }> {
   if (!(await exists(visibilitySelectionPath))) {
-    return { selectedProposalIds: [], approvals: {} };
+    return { selectedProposalIds: [], approvals: {}, deployedProposalIds: [] };
   }
   const parsed = JSON.parse(await readFile(visibilitySelectionPath, 'utf8')) as {
     selectedProposalIds?: unknown;
     approvals?: unknown;
+    deployedProposalIds?: unknown;
   };
   const selectedProposalIds = Array.isArray(parsed.selectedProposalIds)
     ? parsed.selectedProposalIds.filter(
@@ -120,7 +131,12 @@ async function readVisibilitySelection(): Promise<{
       }
     }
   }
-  return { selectedProposalIds, approvals };
+  const deployedProposalIds = Array.isArray(parsed.deployedProposalIds)
+    ? parsed.deployedProposalIds.filter(
+        (id): id is string => typeof id === 'string',
+      )
+    : [];
+  return { selectedProposalIds, approvals, deployedProposalIds };
 }
 
 const optionTitle = (resourceType: string, signal: string): string => {
@@ -138,6 +154,7 @@ export async function visibilityExpansionStatus(): Promise<{
   options: VisibilityOption[];
   selectedProposalIds: string[];
   approvals: Record<string, VisibilityApproval>;
+  deployedProposalIds: string[];
 }> {
   const proposals = await readProposals();
   const grouped = new Map<string, VisibilityProposal[]>();
@@ -159,6 +176,22 @@ export async function visibilityExpansionStatus(): Promise<{
         resourceType: items[0].resource_type,
         affectedResources: items.length,
         recommendedCanary: items[0],
+        adapter: {
+          available: true,
+          label:
+            {
+              'aws.lambda.function:logs':
+                'Elastic CloudWatch log collection adapter',
+              'aws.lambda.function:traces':
+                'Elastic Python Lambda tracing adapter',
+              'aws.ecs.service:traces':
+                'Runtime-aware ECS tracing adapter',
+              'aws.eks.cluster:metrics':
+                'OpenTelemetry Kubernetes metrics adapter',
+              'aws.rds.instance:database':
+                'RDS Performance Insights adapter',
+            }[id] ?? 'Dedicated visibility adapter',
+        },
       };
     })
     .sort((left, right) => left.title.localeCompare(right.title));
@@ -166,10 +199,31 @@ export async function visibilityExpansionStatus(): Promise<{
   return { options, ...selection };
 }
 
+async function persistVisibilitySelection(selection: {
+  selectedProposalIds: string[];
+  approvals: Record<string, VisibilityApproval>;
+  deployedProposalIds: string[];
+}): Promise<void> {
+  await writeFile(
+    visibilitySelectionPath,
+    `${JSON.stringify(
+      {
+        schema_version: '1.0',
+        selected_at: new Date().toISOString(),
+        ...selection,
+      },
+      null,
+      2,
+    )}\n`,
+    { mode: 0o600 },
+  );
+}
+
 export async function saveVisibilitySelection(input: unknown): Promise<{
   options: VisibilityOption[];
   selectedProposalIds: string[];
   approvals: Record<string, VisibilityApproval>;
+  deployedProposalIds: string[];
 }> {
   const selectedProposalIds =
     input &&
@@ -211,20 +265,192 @@ export async function saveVisibilitySelection(input: unknown): Promise<{
       rollbackReviewed: approval.rollbackReviewed === true,
     };
   }
-  await writeFile(
-    visibilitySelectionPath,
-    `${JSON.stringify(
-      {
-        schema_version: '1.0',
-        selected_at: new Date().toISOString(),
-        selectedProposalIds: uniqueIds,
-        approvals,
-      },
-      null,
-      2,
-    )}\n`,
-    { mode: 0o600 },
+  const currentSelection = await readVisibilitySelection();
+  const deployedProposalIds = currentSelection.deployedProposalIds.filter(
+    (id) => uniqueIds.includes(id),
   );
+  await persistVisibilitySelection({
+    selectedProposalIds: uniqueIds,
+    approvals,
+    deployedProposalIds,
+  });
+  return visibilityExpansionStatus();
+}
+
+const approvalComplete = (approval?: VisibilityApproval): boolean =>
+  Boolean(
+    approval?.ownerApproved &&
+      approval.costReviewed &&
+      approval.rollbackReviewed,
+  );
+
+const lambdaLogSource = (proposal: VisibilityProposal) => ({
+  kind: 'cloudwatch',
+  region: proposal.resource_arn.split(':')[3],
+  log_group_name: `/aws/lambda/${proposal.resource_name}`,
+  policy_template: 'lambda',
+  input_type: 'aws-cloudwatch',
+  dataset: 'aws.lambda_logs',
+});
+
+async function runLambdaLogAdapter(
+  action: 'deploy' | 'rollback',
+  proposal: VisibilityProposal,
+  write: LogWriter,
+): Promise<void> {
+  const [kibanaUrl, username, password, agentPolicyId] = await Promise.all([
+    readPrivateTerraformOutput('kibana_url'),
+    readPrivateTerraformOutput('username'),
+    readPrivateTerraformOutput('password'),
+    readPrivateTerraformOutput('agent_policy_id'),
+  ]);
+  const result = await executeCommand(
+    'python3',
+    [
+      path.join(
+        repoRoot,
+        'examples/aws/scripts/sync_existing_log_integrations.py',
+      ),
+      action === 'deploy' ? 'sync-selected' : 'cleanup-selected',
+    ],
+    {
+      cwd: repoRoot,
+      write,
+      env: {
+        ...process.env,
+        AGENT_POLICY_ID: agentPolicyId,
+        KIBANA_PASSWORD: password,
+        KIBANA_URL: kibanaUrl,
+        KIBANA_USERNAME: username,
+        SOURCES_JSON: JSON.stringify([lambdaLogSource(proposal)]),
+      },
+    },
+  );
+  if (result.exitCode !== 0) {
+    throw Object.assign(new Error(`Lambda log adapter ${action} failed`), {
+      exitCode: result.exitCode,
+    });
+  }
+}
+
+async function runWorkloadAdapter(
+  action: 'deploy' | 'rollback',
+  proposal: VisibilityProposal,
+  write: LogWriter,
+): Promise<void> {
+  const [kibanaUrl, username, password] = await Promise.all([
+    readPrivateTerraformOutput('kibana_url'),
+    readPrivateTerraformOutput('username'),
+    readPrivateTerraformOutput('password'),
+  ]);
+  let elasticsearchUrl: string;
+  try {
+    elasticsearchUrl = await readPrivateTerraformOutput('elasticsearch_url');
+  } catch {
+    elasticsearchUrl = kibanaUrl.replace('.kb.', '.es.');
+    if (elasticsearchUrl === kibanaUrl) {
+      throw new Error(
+        'Unable to determine the Elasticsearch endpoint for this deployment',
+      );
+    }
+  }
+  const result = await executeCommand(
+    'python3',
+    [
+      path.join(toolDirectory, 'python/visibility_adapters.py'),
+      action,
+      '--proposal-json',
+      JSON.stringify(proposal),
+      '--state',
+      visibilityAdapterStatePath,
+    ],
+    {
+      cwd: repoRoot,
+      write,
+      env: {
+        ...process.env,
+        ELASTICSEARCH_PASSWORD: password,
+        ELASTICSEARCH_URL: elasticsearchUrl,
+        ELASTICSEARCH_USERNAME: username,
+      },
+    },
+  );
+  if (result.exitCode !== 0) {
+    throw Object.assign(
+      new Error(`${optionTitle(proposal.resource_type, proposal.signal)} failed`),
+      { exitCode: result.exitCode },
+    );
+  }
+}
+
+async function runVisibilityAdapter(
+  action: 'deploy' | 'rollback',
+  proposal: VisibilityProposal,
+  write: LogWriter,
+): Promise<void> {
+  if (
+    proposal.resource_type === 'aws.lambda.function' &&
+    proposal.signal === 'logs'
+  ) {
+    await runLambdaLogAdapter(action, proposal, write);
+  } else {
+    await runWorkloadAdapter(action, proposal, write);
+  }
+}
+
+export async function deployVisibilityExpansions(
+  write: LogWriter,
+): Promise<unknown> {
+  const selection = await readVisibilitySelection();
+  const proposals = await readProposals();
+  const byId = new Map(proposals.map((proposal) => [proposal.id, proposal]));
+  const deployable = selection.selectedProposalIds
+    .filter((id) => !selection.deployedProposalIds.includes(id))
+    .map((id) => byId.get(id))
+    .filter(
+      (proposal): proposal is VisibilityProposal =>
+        Boolean(proposal && approvalComplete(selection.approvals[proposal.id])),
+    );
+  if (!deployable.length) {
+    throw new Error(
+      'No approved, adapter-ready visibility canaries are waiting for deployment',
+    );
+  }
+  write(`Deploying ${deployable.length} approved visibility canary adapters`);
+  for (const proposal of deployable) {
+    write(`Deploying ${optionTitle(proposal.resource_type, proposal.signal)}`);
+    await runVisibilityAdapter('deploy', proposal, write);
+    selection.deployedProposalIds = [
+      ...new Set([...selection.deployedProposalIds, proposal.id]),
+    ];
+    await persistVisibilitySelection(selection);
+    write(`${proposal.resource_name}: adapter deployed`);
+  }
+  return visibilityExpansionStatus();
+}
+
+export async function rollbackVisibilityExpansions(
+  write: LogWriter,
+): Promise<unknown> {
+  const selection = await readVisibilitySelection();
+  const proposals = await readProposals();
+  const byId = new Map(proposals.map((proposal) => [proposal.id, proposal]));
+  const deployed = selection.deployedProposalIds
+    .map((id) => byId.get(id))
+    .filter((proposal): proposal is VisibilityProposal => Boolean(proposal));
+  if (!deployed.length) {
+    throw new Error('No deployed visibility canaries are available to roll back');
+  }
+  write(`Rolling back ${deployed.length} visibility canary adapters`);
+  for (const proposal of [...deployed].reverse()) {
+    write(`Rolling back ${optionTitle(proposal.resource_type, proposal.signal)}`);
+    await runVisibilityAdapter('rollback', proposal, write);
+    selection.deployedProposalIds = selection.deployedProposalIds.filter(
+      (id) => id !== proposal.id,
+    );
+    await persistVisibilitySelection(selection);
+    write(`${proposal.resource_name}: rollback complete`);
+  }
   return visibilityExpansionStatus();
 }
 

@@ -103,7 +103,7 @@ def configure_stream(stream: dict, source: dict) -> None:
         set_value(variables, "preserve_original_event", False)
 
 
-def sync() -> None:
+def sync(*, preserve_unselected: bool = False) -> None:
     sources: list[dict] = json.loads(os.environ["SOURCES_JSON"])
     policies = package_policies()
     existing = {item["name"]: item for item in policies}
@@ -115,7 +115,11 @@ def sync() -> None:
 
     # Remove policies for sources where customer-side logging was disabled.
     for name, item in existing.items():
-        if name.startswith(POLICY_PREFIX) and name not in desired_names:
+        if (
+            not preserve_unselected
+            and name.startswith(POLICY_PREFIX)
+            and name not in desired_names
+        ):
             request(
                 "DELETE",
                 f"/api/fleet/package_policies/{item['id']}?force=true",
@@ -177,8 +181,33 @@ def sync() -> None:
     with ThreadPoolExecutor(max_workers=5) as executor:
         list(executor.map(reconcile, sources))
 
+def cleanup_selected() -> None:
+    sources: list[dict] = json.loads(os.environ["SOURCES_JSON"])
+    selected_names = {policy_name(source) for source in sources}
+    for item in package_policies():
+        if item.get("name") in selected_names:
+            request(
+                "DELETE",
+                f"/api/fleet/package_policies/{item['id']}?force=true",
+            )
 
-if len(sys.argv) != 2 or sys.argv[1] not in {"sync", "cleanup"}:
-    raise SystemExit("usage: sync_existing_log_integrations.py sync|cleanup")
 
-sync() if sys.argv[1] == "sync" else cleanup()
+if len(sys.argv) != 2 or sys.argv[1] not in {
+    "sync",
+    "sync-selected",
+    "cleanup",
+    "cleanup-selected",
+}:
+    raise SystemExit(
+        "usage: sync_existing_log_integrations.py "
+        "sync|sync-selected|cleanup|cleanup-selected"
+    )
+
+if sys.argv[1] == "sync":
+    sync()
+elif sys.argv[1] == "sync-selected":
+    sync(preserve_unselected=True)
+elif sys.argv[1] == "cleanup-selected":
+    cleanup_selected()
+else:
+    cleanup()

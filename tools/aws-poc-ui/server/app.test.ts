@@ -212,6 +212,22 @@ describe('credential persistence', () => {
 });
 
 describe('command progress output', () => {
+  it('redacts secrets supplied only to a child command', async () => {
+    const logs: string[] = [];
+    const secret = 'adapter-password-that-must-not-leak';
+    await executeCommand(
+      process.execPath,
+      ['-e', 'process.stdout.write(process.env.KIBANA_PASSWORD)'],
+      {
+        cwd: os.tmpdir(),
+        write: (line) => logs.push(line),
+        env: { ...process.env, KIBANA_PASSWORD: secret },
+      },
+    );
+    expect(logs.join('\n')).toContain('[REDACTED]');
+    expect(logs.join('\n')).not.toContain(secret);
+  });
+
   it('reports an actionable error when a required command is unavailable', async () => {
     const logs: string[] = [];
     const result = await executeCommand(

@@ -3,6 +3,11 @@ output "kibana_url" {
   value       = module.observability.kibana_endpoint
 }
 
+output "elasticsearch_url" {
+  description = "Elastic Serverless Observability Elasticsearch URL."
+  value       = module.observability.elasticsearch_endpoint
+}
+
 output "project_id" {
   description = "Elastic Serverless Observability project ID."
   value       = module.observability.id

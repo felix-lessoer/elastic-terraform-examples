@@ -26,6 +26,7 @@ import { RunManager } from './run-manager.js';
 import {
   deploymentStatus,
   readPlanSummary,
+  readSafeTerraformOutputs,
   runPreflight,
   terraformApply,
   terraformInit,
@@ -268,6 +269,39 @@ export function createApp(options?: {
         `workflow:${workflowId}`,
         `Run ${workflowId}`,
         (write) => runElasticWorkflow(workflowId, write),
+      );
+      response.status(202).json(run);
+    } catch (error) {
+      response.status(409).json({
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+
+  app.post('/api/workflows/run-all', (_request, response) => {
+    try {
+      const run = runs.start(
+        'workflows:all',
+        'Refresh Elastic insights',
+        async (write) => {
+          const outputs = await readSafeTerraformOutputs();
+          const workflowIds = Array.isArray(outputs.workflow_ids)
+            ? outputs.workflow_ids.filter(
+                (id): id is string => typeof id === 'string',
+              )
+            : [];
+          if (!workflowIds.length) {
+            throw new Error('No deployed Elastic workflows were reported');
+          }
+          write(`Refreshing Elastic insights with ${workflowIds.length} workflows`);
+          const executions = [];
+          for (const [index, workflowId] of workflowIds.entries()) {
+            write(`Running insight workflow ${index + 1} of ${workflowIds.length}`);
+            executions.push(await runElasticWorkflow(workflowId, write));
+          }
+          write('Elastic insight refresh requests completed');
+          return { executions };
+        },
       );
       response.status(202).json(run);
     } catch (error) {

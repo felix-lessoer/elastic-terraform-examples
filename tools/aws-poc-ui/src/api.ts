@@ -249,6 +249,9 @@ export const api = {
       {},
     );
   },
+  runAllWorkflows() {
+    return mutate<RunRecord>('/api/workflows/run-all', 'POST', {});
+  },
   subscribe(runId: string, onRun: (run: RunRecord) => void): () => void {
     const events = new EventSource(`/api/runs/${runId}/events`);
     events.onmessage = (event) => {

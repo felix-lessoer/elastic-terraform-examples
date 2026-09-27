@@ -1492,36 +1492,43 @@ export default function App() {
         <>
           <EuiText>
             <p>
-              Run the deployed deterministic Workflows. These use customer
-              telemetry already collected by Elastic.
+              Refresh recommendations and PoC evidence from telemetry already
+              collected by Elastic.
             </p>
           </EuiText>
-          <EuiFlexGroup wrap gutterSize="s">
-            {workflowIds.map((workflowId) => (
-              <EuiFlexItem key={workflowId} grow={false}>
-                <EuiButtonEmpty
-                  iconType="play"
-                  onClick={() =>
-                    void start(`workflow:${workflowId}`, () =>
-                      api.runWorkflow(workflowId),
-                    )
-                  }
-                  isLoading={operationRunning(`workflow:${workflowId}`)}
-                  isDisabled={anyOperationRunning}
-                >
-                  {workflowId}
-                </EuiButtonEmpty>
-              </EuiFlexItem>
-            ))}
-            {workflowIds.length === 0 && (
-              <EuiFlexItem>
-                <EuiCallOut
-                  color="primary"
-                  title="No deployed workflows reported yet"
-                />
-              </EuiFlexItem>
-            )}
-          </EuiFlexGroup>
+          <EuiButton
+            iconType="refresh"
+            onClick={() =>
+              void start('workflows:all', () => api.runAllWorkflows())
+            }
+            isLoading={operationRunning('workflows:all')}
+            isDisabled={!workflowIds.length || anyOperationRunning}
+          >
+            {operationRunning('workflows:all')
+              ? 'Refreshing Elastic insights…'
+              : 'Refresh Elastic insights'}
+          </EuiButton>
+          <EuiSpacer size="m" />
+          <RunPanel
+            run={runFor('workflows:all')}
+            nextAction="Investigate results"
+          />
+          {!workflowIds.length && (
+            <EuiCallOut
+              color="primary"
+              title="Insight automation becomes available after deployment"
+            />
+          )}
+          {workflowIds.length > 0 && (
+            <details>
+              <summary style={{ cursor: 'pointer' }}>
+                Technical workflow details
+              </summary>
+              <EuiText size="xs" color="subdued">
+                <p>{workflowIds.join(', ')}</p>
+              </EuiText>
+            </details>
+          )}
         </>
       ),
     },

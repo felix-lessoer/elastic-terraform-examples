@@ -1,0 +1,52 @@
+name: AWS Cockpit Coverage Scout
+id: aws-cockpit-coverage
+description: >-
+  Builds a Datadog-style service coverage snapshot from Observability datasets
+  into aws-cockpit-coverage for the cockpit service matrix panel.
+triggers:
+  - type: manual
+  - type: scheduled
+    with:
+      every: "1h"
+
+steps:
+  - name: dataset_stats
+    type: elasticsearch.esql.query
+    with:
+      format: json
+      query: |
+        FROM logs-*, metrics-*
+        | WHERE @timestamp > NOW() - 7 days
+        | STATS docs = COUNT(*), last_seen = MAX(@timestamp) BY data_stream.dataset
+        | SORT docs DESC
+        | LIMIT 100
+
+  - name: map_datasets
+    type: data.map
+    items: "{{ steps.dataset_stats.output.values }}"
+    with:
+      fields:
+        docs: "{{ item[0] }}"
+        last_seen: "{{ item[1] }}"
+        dataset: "{{ item[2] }}"
+
+  - name: index_rows
+    type: foreach
+    foreach: "{{ steps.map_datasets.output }}"
+    steps:
+      - name: write_coverage_row
+        type: elasticsearch.index
+        with:
+          index: aws-cockpit-coverage
+          id: "dataset-{{ foreach.item.dataset }}"
+          document:
+            "@timestamp": "{{ now | date_to_xmlschema }}"
+            service: "{{ foreach.item.dataset }}"
+            label: "{{ foreach.item.dataset }}"
+            category: dataset
+            status: healthy
+            docs_24h: "{{ foreach.item.docs }}"
+            last_seen: "{{ foreach.item.last_seen }}"
+            datasets:
+              - "{{ foreach.item.dataset }}"
+            detail: "{{ foreach.item.docs }} docs"

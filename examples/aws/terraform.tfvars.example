@@ -1,0 +1,36 @@
+elastic_project_name = "AWS Observability"
+elastic_region       = "aws-eu-west-1"
+
+# Do not add AWS access keys here or in Fleet. Terraform uses the AWS provider
+# credential chain only for bootstrap; runtime integrations use identity
+# federation (managed) or the EC2 instance profile/IMDSv2 (agent).
+
+# Used only as the bootstrap/default region. Every regional metrics input uses
+# regions = [], which is the AWS integration's "all regions" setting.
+aws_region = "eu-west-1"
+
+# One EC2 Elastic Agent collects policy templates that do not support managed
+# mode. CloudFront requires an existing S3-notification SQS source.
+elastic_agent_instance_type = "t3.medium"
+# Reuse an existing multi-region trail when the account trail quota is full:
+# existing_cloudtrail_bucket_name = "existing-cloudtrail-bucket"
+# cloudfront_queue_url       = "https://sqs.eu-west-1.amazonaws.com/123456789012/cloudfront-logs"
+
+# Required: company-policy tags.
+company_tags = {
+  division    = "field"
+  org         = "sa"
+  keep-until  = "2026-10-01"
+  team        = "emea_central_area"
+  project     = "aws-observability"
+  environment = "poc"
+}
+
+required_tag_keys = [
+  "division",
+  "org",
+  "keep-until",
+  "team",
+  "project",
+  "environment",
+]

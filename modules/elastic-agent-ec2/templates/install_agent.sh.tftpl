@@ -1,0 +1,46 @@
+#!/bin/bash
+set -euo pipefail
+exec > >(tee -a /var/log/elastic-agent-bootstrap.log) 2>&1
+
+echo "==> Bootstrap Elastic Agent ${agent_version} at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+export DEBIAN_FRONTEND=noninteractive
+apt-get update -y
+apt-get install -y curl ca-certificates tar
+
+FLEET_URL='${fleet_url}'
+ENROLLMENT_TOKEN='${enrollment_token}'
+AGENT_VERSION='${agent_version}'
+ARCH='linux-x86_64'
+ARTIFACT="elastic-agent-$${AGENT_VERSION}-$${ARCH}"
+WORKDIR=/opt/elastic-agent-install
+
+mkdir -p "$${WORKDIR}"
+cd "$${WORKDIR}"
+
+if [[ ! -x /usr/bin/elastic-agent ]] && [[ ! -x /opt/Elastic/Agent/elastic-agent ]]; then
+  echo "==> Downloading $${ARTIFACT}.tar.gz"
+  curl -fsSL -o "$${ARTIFACT}.tar.gz" \
+    "https://artifacts.elastic.co/downloads/beats/elastic-agent/$${ARTIFACT}.tar.gz"
+  tar xzf "$${ARTIFACT}.tar.gz"
+  cd "$${ARTIFACT}"
+  echo "==> Installing and enrolling with Fleet"
+  ./elastic-agent install \
+    --url="$${FLEET_URL}" \
+    --enrollment-token="$${ENROLLMENT_TOKEN}" \
+    --force \
+    --non-interactive
+else
+  echo "==> Agent binary already present; attempting enroll/reconfigure"
+  AGENT_BIN=$(command -v elastic-agent || true)
+  if [[ -z "$${AGENT_BIN}" ]]; then
+    AGENT_BIN=/opt/Elastic/Agent/elastic-agent
+  fi
+  "$${AGENT_BIN}" enroll \
+    --url="$${FLEET_URL}" \
+    --enrollment-token="$${ENROLLMENT_TOKEN}" \
+    --force || true
+fi
+
+echo "==> Done at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+systemctl is-active elastic-agent.service || systemctl status elastic-agent.service --no-pager || true

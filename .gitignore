@@ -1,0 +1,24 @@
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+override.tf
+*_override.tf
+.DS_Store
+examples/*/local_env/
+
+# local secrets
+**/creds.json
+**/*credentials*.json
+
+# local AWS / Elastic Cloud creds for PoC runs (written by
+# scripts/bootstrap-agent-env.sh from Cloud Agent environment secrets)
+examples/aws/.env.aws
+**/.env.aws
+!**/.env.aws.example
+
+*.tfvars
+!*.tfvars.example
+__pycache__/

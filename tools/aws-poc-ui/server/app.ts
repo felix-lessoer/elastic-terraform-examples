@@ -192,10 +192,21 @@ export function createApp(options?: {
     }
     if (step === 'init') {
       const preflight = runs.list().find((run) => run.step === 'preflight');
-      const result = preflight?.result as { passed?: boolean } | undefined;
-      if (preflight?.status !== 'succeeded' || result?.passed !== true) {
+      const result = preflight?.result as
+        | {
+            checks?: Array<{ id: string; status: string }>;
+          }
+        | undefined;
+      const initializationReady =
+        preflight?.status === 'succeeded' &&
+        ['configuration', 'terraform'].every((id) =>
+          result?.checks?.some(
+            (check) => check.id === id && check.status === 'passed',
+          ),
+        );
+      if (!initializationReady) {
         response.status(409).json({
-          message: 'Run and pass the prerequisite checks before initializing Terraform',
+          message: 'Pass the Terraform and configuration prerequisite checks before initializing',
         });
         return;
       }

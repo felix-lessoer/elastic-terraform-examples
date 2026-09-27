@@ -594,6 +594,13 @@ export default function App() {
   const latestPreflightPassed =
     latestPreflight?.status === 'succeeded' &&
     latestPreflight.result?.passed === true;
+  const initializationReady =
+    latestPreflight?.status === 'succeeded' &&
+    ['configuration', 'terraform'].every((id) =>
+      latestPreflight.result?.checks?.some(
+        (check) => check.id === id && check.status === 'passed',
+      ),
+    );
 
   const start = async (
     step: string,
@@ -733,21 +740,21 @@ export default function App() {
       title: 'Initialize Terraform',
       status: status.initialized
         ? ('complete' as const)
-        : latestPreflightPassed
+        : initializationReady
           ? ('current' as const)
           : ('disabled' as const),
       children: (
         <>
-          {!latestPreflightPassed && (
+          {!initializationReady && (
             <>
               <EuiCallOut
                 color="warning"
-                title="Pass all prerequisite checks first"
+                title="Check Terraform prerequisites first"
               >
                 <p>
-                  Terraform initialization remains disabled until Terraform,
-                  Python, AWS credentials, and the saved configuration pass the
-                  prerequisite check above.
+                  Initialization remains disabled until the saved configuration
+                  and Terraform executable pass the prerequisite check above.
+                  Cloud credentials are checked separately for planning.
                 </p>
               </EuiCallOut>
               <EuiSpacer size="m" />
@@ -765,7 +772,7 @@ export default function App() {
             isDisabled={
               !status.configured ||
               !credentialsReady ||
-              !latestPreflightPassed ||
+              !initializationReady ||
               anyOperationRunning
             }
           >

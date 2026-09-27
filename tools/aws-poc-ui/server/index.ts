@@ -1,4 +1,18 @@
+import path from 'node:path';
+import os from 'node:os';
 import { createApp } from './app.js';
+
+const userExecutableDirectories = [
+  path.join(os.homedir(), '.local', 'bin'),
+  path.join(os.homedir(), 'bin'),
+];
+const currentPath = process.env.PATH?.split(path.delimiter) ?? [];
+process.env.PATH = [
+  ...userExecutableDirectories,
+  ...currentPath.filter(
+    (entry) => !userExecutableDirectories.includes(entry),
+  ),
+].join(path.delimiter);
 
 const port = Number(process.env.AWS_POC_UI_PORT ?? 5602);
 if (!Number.isInteger(port) || port < 1024 || port > 65_535) {

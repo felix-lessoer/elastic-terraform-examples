@@ -47,9 +47,11 @@ It does not:
 - an Elastic Cloud API key
 - an AWS shared profile or access/session credentials
 
-`terraform` must be available on the `PATH` of the process that starts the UI.
-Verify this with `terraform version`; the prerequisite step blocks initialization
-and reports the missing executable when it is unavailable.
+`terraform` and `aws` must be available on the `PATH` of the process that starts
+the UI. The server automatically includes `~/.local/bin` and `~/bin`, where
+user-local installers commonly place them. Verify the tools with
+`terraform version` and `aws --version`; preflight reports a missing executable
+before enabling the dependent step.
 
 Credentials can be entered in the first UI step. They are saved to the ignored
 `tools/aws-poc-ui/.env` file with mode `0600`, loaded immediately into the

@@ -228,6 +228,16 @@ def inject(panels: list[dict]) -> list[dict]:
             (p.get("embeddableConfig") or {}).get("content") or ""
         ):
             continue
+        serialized = json.dumps(p)
+        if any(
+            fragile_index in serialized
+            for fragile_index in (
+                "metrics-aws.ec2_metrics",
+                "metrics-aws.s3_daily_storage",
+                "metrics-aws.billing",
+            )
+        ):
+            continue
         kept.append(scrub(p))
 
     # Ensure OOTB nav present / positioned at y=8
@@ -396,6 +406,21 @@ def main() -> int:
         assert ".alerts-security.alerts-default" not in text
         assert "metrics-aws.awshealth" not in text
         attrs["panelsJSON"] = json.dumps(panels, separators=(",", ":"))
+        pinned = attrs.get("pinned_panels") or {}
+        pinned_panels = pinned.get("panels") or {}
+        pinned["panels"] = {
+            panel_id: panel
+            for panel_id, panel in pinned_panels.items()
+            if not any(
+                fragile_index in json.dumps(panel)
+                for fragile_index in (
+                    "metrics-aws.ec2_metrics",
+                    "metrics-aws.s3_daily_storage",
+                    "metrics-aws.billing",
+                )
+            )
+        }
+        attrs["pinned_panels"] = pinned
         # Prefer description calling out insight fabric
         attrs["description"] = (
             "AWS Observe & Protect cockpit with Datadog-comparable insight fabric: "

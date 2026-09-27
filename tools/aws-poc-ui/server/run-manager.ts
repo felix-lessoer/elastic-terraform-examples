@@ -61,7 +61,7 @@ export async function executeCommand(
   stderr: string;
   failureMessage?: string;
 }> {
-  options.write(`$ ${command} ${args.join(' ')}`);
+  options.write(redact(`$ ${command} ${args.join(' ')}`, options.env));
   const child = execa(command, args, {
     cwd: options.cwd,
     env: options.env,

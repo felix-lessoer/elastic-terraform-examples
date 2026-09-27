@@ -107,6 +107,16 @@ def main() -> int:
     es = args.es_url.rstrip("/")
 
     ensure_index(es, args.user, args.password)
+    try:
+        req(
+            "POST",
+            f"{es}/{INDEX}/_delete_by_query?refresh=true",
+            args.user,
+            args.password,
+            {"query": {"match_all": {}}},
+        )
+    except RuntimeError as exc:
+        print(f"Recommendation snapshot cleanup warning: {exc}", file=sys.stderr)
 
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M")
@@ -118,7 +128,7 @@ def main() -> int:
         args.user,
         args.password,
         """
-FROM metrics-aws.ec2_metrics-default
+FROM metrics-aws.ec2_metrics*
 | WHERE @timestamp >= NOW() - 24 hours
 | STATS avg_cpu = AVG(`aws.ec2.metrics.CPUUtilization.avg`),
         max_cpu = MAX(`aws.ec2.metrics.CPUUtilization.avg`),
@@ -214,7 +224,7 @@ FROM metrics-aws.ec2_metrics-default
         args.user,
         args.password,
         """
-FROM metrics-aws.s3_daily_storage-default
+FROM metrics-aws.s3_daily_storage*
 | WHERE @timestamp >= NOW() - 7 days
 | STATS size = MAX(`aws.s3_daily_storage.bucket.size.bytes`),
         objects = MAX(`aws.s3_daily_storage.number_of_objects`)
@@ -257,8 +267,29 @@ FROM metrics-aws.s3_daily_storage-default
         )
 
     if not docs:
-        print("No recommendations generated from current metrics.", file=sys.stderr)
-        return 0
+        docs.append(
+            (
+                f"telemetry-readiness-{stamp}",
+                {
+                    "@timestamp": now,
+                    "category": "telemetry_readiness",
+                    "severity": "low",
+                    "metric_name": "recommendation_inputs_available",
+                    "metric_value": 0,
+                    "threshold": 1,
+                    "recommendation": (
+                        "No EC2 or S3 optimization recommendation inputs are "
+                        "available yet. EC2 metrics arrive every few minutes; "
+                        "S3 daily storage metrics can take up to 24 hours."
+                    ),
+                    "resource": {
+                        "type": "observability_input",
+                        "name": "AWS metrics",
+                    },
+                    "cloud": {},
+                },
+            )
+        )
 
     # Bulk index
     bulk_lines = []

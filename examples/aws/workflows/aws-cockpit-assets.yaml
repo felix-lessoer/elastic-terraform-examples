@@ -15,10 +15,11 @@ steps:
     with:
       format: json
       query: |
-        FROM metrics-aws.ec2_metrics-default
+        FROM aws-cockpit-assets
         | WHERE @timestamp > NOW() - 24 hours
-        | STATS avg_cpu = AVG(aws.ec2.metrics.CPUUtilization.avg), last_seen = MAX(@timestamp)
-            BY cloud.instance.id, cloud.instance.name, cloud.region, cloud.availability_zone, cloud.account.id, cloud.machine.type
+            AND resource.type == "ec2_instance"
+        | STATS avg_cpu = MAX(metric_value), last_seen = MAX(last_seen)
+            BY resource.id, resource.name, cloud.region, cloud.availability_zone, cloud.account.id, cloud.machine.type
         | SORT avg_cpu ASC
         | LIMIT 200
 
@@ -67,10 +68,11 @@ steps:
     with:
       format: json
       query: |
-        FROM metrics-aws.s3_daily_storage-default
+        FROM aws-cockpit-assets
         | WHERE @timestamp > NOW() - 7 days
-        | STATS max_size = MAX(aws.s3_daily_storage.bucket.size.bytes), last_seen = MAX(@timestamp)
-            BY aws.s3.bucket.name, cloud.region, cloud.account.id
+            AND resource.type == "s3_bucket"
+        | STATS max_size = MAX(metric_value), last_seen = MAX(last_seen)
+            BY resource.name, cloud.region, cloud.account.id
         | SORT max_size DESC
         | LIMIT 300
 

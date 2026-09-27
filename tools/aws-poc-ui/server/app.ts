@@ -23,7 +23,10 @@ import {
   credentialsStatus,
   saveCredentials,
 } from './credentials.js';
-import { runElasticWorkflow } from './elastic.js';
+import {
+  refreshElasticInsights,
+  runElasticWorkflow,
+} from './elastic.js';
 import { RunManager } from './run-manager.js';
 import {
   deploymentStatus,
@@ -317,25 +320,7 @@ export function createApp(options?: {
       const run = runs.start(
         'workflows:all',
         'Refresh Elastic insights',
-        async (write) => {
-          const outputs = await readSafeTerraformOutputs();
-          const workflowIds = Array.isArray(outputs.workflow_ids)
-            ? outputs.workflow_ids.filter(
-                (id): id is string => typeof id === 'string',
-              )
-            : [];
-          if (!workflowIds.length) {
-            throw new Error('No deployed Elastic workflows were reported');
-          }
-          write(`Refreshing Elastic insights with ${workflowIds.length} workflows`);
-          const executions = [];
-          for (const [index, workflowId] of workflowIds.entries()) {
-            write(`Running insight workflow ${index + 1} of ${workflowIds.length}`);
-            executions.push(await runElasticWorkflow(workflowId, write));
-          }
-          write('Elastic insight refresh requests completed');
-          return { executions };
-        },
+        refreshElasticInsights,
       );
       response.status(202).json(run);
     } catch (error) {

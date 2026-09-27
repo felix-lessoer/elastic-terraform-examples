@@ -1,9 +1,13 @@
 import contextlib
 import io
+import json
+from pathlib import Path
+import tempfile
 import unittest
 from unittest.mock import patch
 
 import generate_aws_recommendations as recommendations
+from seed_aws_insight_indices import aws_s3_asset_docs, manifest_asset_docs
 
 
 class EsqlTests(unittest.TestCase):
@@ -49,6 +53,54 @@ class EsqlTests(unittest.TestCase):
                     "bad-secret",
                     "FROM metrics-aws.ec2_metrics-default",
                 )
+
+
+class ManifestAssetFallbackTests(unittest.TestCase):
+    @patch("seed_aws_insight_indices.subprocess.run")
+    def test_builds_s3_inventory_without_daily_metrics(self, run):
+        run.return_value.returncode = 0
+        run.return_value.stdout = json.dumps(
+            {
+                "Buckets": [
+                    {
+                        "Name": "customer-logs",
+                        "BucketRegion": "eu-west-1",
+                    }
+                ]
+            }
+        )
+        docs = aws_s3_asset_docs("2026-09-27T19:05:00.000Z")
+        self.assertEqual(len(docs), 1)
+        self.assertEqual(docs[0][1]["resource"]["type"], "s3_bucket")
+        self.assertEqual(docs[0][1]["metric_name"], "inventory_only")
+
+    def test_builds_inventory_docs_when_metric_streams_are_absent(self):
+        manifest = {
+            "discovered_at": "2026-09-27T19:00:00+00:00",
+            "resources": [
+                {
+                    "type": "aws.s3.bucket",
+                    "name": "customer-logs",
+                    "arn": "arn:aws:s3:::customer-logs",
+                    "region": "eu-west-1",
+                    "account_id": "123456789012",
+                    "configuration": {},
+                },
+                {
+                    "type": "aws.lambda.function",
+                    "name": "ignored",
+                },
+            ],
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "manifest.json"
+            path.write_text(json.dumps(manifest))
+            docs = manifest_asset_docs(
+                str(path), "2026-09-27T19:05:00.000Z"
+            )
+        self.assertEqual(len(docs), 1)
+        self.assertEqual(docs[0][1]["resource"]["type"], "s3_bucket")
+        self.assertEqual(docs[0][1]["metric_name"], "inventory_only")
 
 
 if __name__ == "__main__":

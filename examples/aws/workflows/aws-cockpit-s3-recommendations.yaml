@@ -12,10 +12,12 @@ steps:
     with:
       format: json
       query: |
-        FROM metrics-aws.s3_daily_storage-default
+        FROM aws-cockpit-assets
         | WHERE @timestamp > NOW() - 7 days
-        | STATS max_size = MAX(aws.s3_daily_storage.bucket.size.bytes), max_objects = MAX(aws.s3_daily_storage.number_of_objects) BY aws.s3.bucket.name, cloud.region, cloud.account.id
-        | WHERE max_size == 0 OR max_objects == 0
+            AND resource.type == "s3_bucket"
+            AND metric_name == "bucket_size_bytes"
+        | STATS max_size = MAX(metric_value) BY resource.name, cloud.region, cloud.account.id
+        | WHERE max_size == 0
 
   - name: map_empty_buckets
     type: data.map
@@ -23,10 +25,9 @@ steps:
     with:
       fields:
         max_size: "{{ item[0] }}"
-        max_objects: "{{ item[1] }}"
-        bucket: "{{ item[2] }}"
-        region: "{{ item[3] }}"
-        account_id: "{{ item[4] }}"
+        bucket: "{{ item[1] }}"
+        region: "{{ item[2] }}"
+        account_id: "{{ item[3] }}"
 
   - name: process_empty_buckets
     type: foreach
@@ -44,8 +45,8 @@ steps:
             metric_value: "{{ foreach.item.max_size }}"
             threshold: 0
             recommendation: >-
-              S3 bucket {{ foreach.item.bucket }} appears empty (size={{ foreach.item.max_size }} bytes,
-              objects={{ foreach.item.max_objects }}) — confirm it is still needed or remove it.
+              S3 bucket {{ foreach.item.bucket }} appears empty
+              (size={{ foreach.item.max_size }} bytes) — confirm it is still needed or remove it.
             resource:
               type: s3_bucket
               name: "{{ foreach.item.bucket }}"

@@ -23,6 +23,8 @@ from __future__ import annotations
 
 import argparse
 import json
+from pathlib import Path
+import subprocess
 import sys
 import time
 from base64 import b64encode
@@ -439,7 +441,100 @@ def seed_coverage(
     print(f"  {COVERAGE}: {healthy}/{len(docs)} healthy services")
 
 
-def seed_assets(obs_es: str, obs_user: str, obs_pass: str) -> None:
+def manifest_asset_docs(manifest_path: str, timestamp: str) -> list[tuple[str, dict]]:
+    if not manifest_path:
+        return []
+    path = Path(manifest_path)
+    if not path.exists():
+        return []
+    manifest = json.loads(path.read_text())
+    docs = []
+    supported = {
+        "aws.ec2.instance": "ec2_instance",
+        "aws.s3.bucket": "s3_bucket",
+    }
+    for resource in manifest.get("resources", []):
+        resource_type = supported.get(resource.get("type"))
+        if not resource_type:
+            continue
+        resource_id = (
+            resource.get("configuration", {}).get("instance_id")
+            or resource.get("name")
+            or resource.get("arn")
+        )
+        docs.append(
+            (
+                f"{resource_type}-{resource_id}",
+                {
+                    "@timestamp": timestamp,
+                    "resource": {
+                        "type": resource_type,
+                        "name": resource.get("name") or resource_id,
+                        "id": resource_id,
+                    },
+                    "cloud": {
+                        "region": resource.get("region"),
+                        "account": {"id": resource.get("account_id")},
+                    },
+                    "metric_name": "inventory_only",
+                    "metric_value": 0,
+                    "last_seen": manifest.get("discovered_at") or timestamp,
+                },
+            )
+        )
+    return docs
+
+
+def aws_s3_asset_docs(timestamp: str) -> list[tuple[str, dict]]:
+    try:
+        result = subprocess.run(
+            ["aws", "s3api", "list-buckets", "--output", "json"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        print(f"  S3 inventory fallback unavailable: {exc}", file=sys.stderr)
+        return []
+    if result.returncode != 0:
+        print(
+            f"  S3 inventory fallback unavailable: {result.stderr[-500:]}",
+            file=sys.stderr,
+        )
+        return []
+    buckets = json.loads(result.stdout).get("Buckets", [])
+    return [
+        (
+            f"s3_bucket-{bucket['Name']}",
+            {
+                "@timestamp": timestamp,
+                "resource": {
+                    "type": "s3_bucket",
+                    "name": bucket["Name"],
+                    "id": bucket["Name"],
+                },
+                "cloud": {
+                    "region": bucket.get("BucketRegion") or "global",
+                    "account": {"id": None},
+                },
+                "metric_name": "inventory_only",
+                "metric_value": 0,
+                "last_seen": timestamp,
+            },
+        )
+        for bucket in buckets
+        if bucket.get("Name")
+    ]
+
+
+def seed_assets(
+    obs_es: str,
+    obs_user: str,
+    obs_pass: str,
+    *,
+    manifest_path: str = "",
+) -> None:
     ensure_index(
         obs_es,
         obs_user,
@@ -473,7 +568,7 @@ def seed_assets(obs_es: str, obs_user: str, obs_pass: str) -> None:
         obs_es,
         obs_user,
         obs_pass,
-        """FROM metrics-aws.ec2_metrics-default
+        """FROM metrics-aws.ec2_metrics*
 | WHERE @timestamp > NOW() - 24 hours
 | STATS avg_cpu = AVG(aws.ec2.metrics.CPUUtilization.avg), last_seen = MAX(@timestamp)
     BY cloud.instance.id, cloud.instance.name, cloud.region, cloud.availability_zone, cloud.account.id, cloud.machine.type
@@ -505,7 +600,7 @@ def seed_assets(obs_es: str, obs_user: str, obs_pass: str) -> None:
         obs_es,
         obs_user,
         obs_pass,
-        """FROM metrics-aws.s3_daily_storage-default
+        """FROM metrics-aws.s3_daily_storage*
 | WHERE @timestamp > NOW() - 7 days
 | STATS max_size = MAX(aws.s3_daily_storage.bucket.size.bytes), last_seen = MAX(@timestamp)
     BY aws.s3.bucket.name, cloud.region, cloud.account.id
@@ -530,6 +625,24 @@ def seed_assets(obs_es: str, obs_user: str, obs_pass: str) -> None:
                 },
             )
         )
+    metric_resource_types = {doc["resource"]["type"] for _, doc in docs}
+    fallback_docs = [
+        *manifest_asset_docs(manifest_path, ts),
+        *aws_s3_asset_docs(ts),
+    ]
+    for doc_id, doc in fallback_docs:
+        if doc["resource"]["type"] not in metric_resource_types:
+            docs.append((doc_id, doc))
+    try:
+        req(
+            "POST",
+            f"{obs_es}/{ASSETS}/_delete_by_query?refresh=true",
+            obs_user,
+            obs_pass,
+            {"query": {"match_all": {}}},
+        )
+    except RuntimeError as exc:
+        print(f"  asset snapshot cleanup warning: {exc}", file=sys.stderr)
     bulk_index(obs_es, obs_user, obs_pass, ASSETS, docs)
     print(f"  {ASSETS}: {len(docs)} resources")
 
@@ -806,6 +919,11 @@ def main() -> int:
     p.add_argument("--obs-password", required=True)
     p.add_argument("--sec-password", required=True)
     p.add_argument(
+        "--manifest",
+        default="",
+        help="Optional brownfield manifest used as inventory fallback",
+    )
+    p.add_argument(
         "--sec-kibana",
         default="",
         help="Security Kibana base URL for absolute CloudTrail/Health drill-downs",
@@ -825,7 +943,12 @@ def main() -> int:
         args.sec_password,
         sec_kibana=args.sec_kibana,
     )
-    seed_assets(obs_es, args.obs_user, args.obs_password)
+    seed_assets(
+        obs_es,
+        args.obs_user,
+        args.obs_password,
+        manifest_path=args.manifest,
+    )
     seed_health(obs_es, sec_es, args.obs_user, args.obs_password, args.sec_user, args.sec_password)
     seed_events(
         obs_es,

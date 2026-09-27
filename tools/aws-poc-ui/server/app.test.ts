@@ -217,7 +217,11 @@ describe('command progress output', () => {
     const secret = 'adapter-password-that-must-not-leak';
     await executeCommand(
       process.execPath,
-      ['-e', 'process.stdout.write(process.env.KIBANA_PASSWORD)'],
+      [
+        '-e',
+        'process.stdout.write(process.env.KIBANA_PASSWORD)',
+        secret,
+      ],
       {
         cwd: os.tmpdir(),
         write: (line) => logs.push(line),

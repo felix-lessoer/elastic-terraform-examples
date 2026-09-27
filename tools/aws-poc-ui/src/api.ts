@@ -119,8 +119,14 @@ async function parse<T>(response: Response): Promise<T> {
 }
 
 export function getBootstrap(): Promise<Bootstrap> {
-  bootstrapPromise ??= fetch('/api/bootstrap').then(parse<Bootstrap>);
+  bootstrapPromise ??= fetch('/api/bootstrap', { cache: 'no-store' }).then(
+    parse<Bootstrap>,
+  );
   return bootstrapPromise;
+}
+
+function query<T>(path: string): Promise<T> {
+  return fetch(path, { cache: 'no-store' }).then(parse<T>);
 }
 
 async function mutate<T>(
@@ -142,21 +148,19 @@ async function mutate<T>(
 export const api = {
   bootstrap: getBootstrap,
   async config(): Promise<{ config: DeploymentConfig; saved: boolean }> {
-    return fetch('/api/config').then(
-      parse<{ config: DeploymentConfig; saved: boolean }>,
-    );
+    return query<{ config: DeploymentConfig; saved: boolean }>('/api/config');
   },
   async credentials(): Promise<CredentialsStatus> {
-    return fetch('/api/credentials').then(parse<CredentialsStatus>);
+    return query<CredentialsStatus>('/api/credentials');
   },
   async status(): Promise<DeploymentStatus> {
-    return fetch('/api/status').then(parse<DeploymentStatus>);
+    return query<DeploymentStatus>('/api/status');
   },
   async brownfield(): Promise<BrownfieldStatus> {
-    return fetch('/api/brownfield').then(parse<BrownfieldStatus>);
+    return query<BrownfieldStatus>('/api/brownfield');
   },
   async runs(): Promise<RunRecord[]> {
-    return fetch('/api/runs').then(parse<RunRecord[]>);
+    return query<RunRecord[]>('/api/runs');
   },
   saveConfig(config: DeploymentConfig) {
     return mutate<{ config: DeploymentConfig; saved: boolean }>(

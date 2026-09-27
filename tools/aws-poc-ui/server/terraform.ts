@@ -1,5 +1,5 @@
 import { constants } from 'node:fs';
-import { access } from 'node:fs/promises';
+import { access, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import { execa } from 'execa';
 import {
@@ -216,6 +216,7 @@ export async function terraformInit(write: LogWriter): Promise<void> {
 }
 
 export async function terraformPlan(write: LogWriter): Promise<void> {
+  if (await exists(planFile)) await unlink(planFile);
   const result = await executeCommand(
     'terraform',
     [
@@ -247,6 +248,7 @@ export async function terraformApply(write: LogWriter): Promise<void> {
       exitCode: result.exitCode,
     });
   }
+  await unlink(planFile);
 }
 
 export async function readTerraformOutputs(): Promise<TerraformOutputs> {

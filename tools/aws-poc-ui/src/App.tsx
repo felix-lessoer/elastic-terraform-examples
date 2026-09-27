@@ -767,7 +767,24 @@ export default function App() {
         ]);
         if (updated.status !== 'running') {
           unsubscribe();
-          void refresh();
+          if (updated.status === 'succeeded') {
+            setStatus((current) => {
+              if (!current) return current;
+              if (updated.step === 'init') {
+                return { ...current, initialized: true };
+              }
+              if (updated.step === 'plan') {
+                return { ...current, planned: true };
+              }
+              if (updated.step === 'apply') {
+                return { ...current, planned: false, deployed: true };
+              }
+              return current;
+            });
+          }
+          void refresh().catch((caught) => {
+            setError(caught instanceof Error ? caught.message : String(caught));
+          });
         }
       });
     } catch (caught) {
@@ -939,7 +956,7 @@ export default function App() {
     },
     {
       title: 'Review deployment plan',
-      status: status.planned
+      status: status.planned || status.deployed
         ? ('complete' as const)
         : status.initialized && latestPreflightPassed
           ? ('current' as const)

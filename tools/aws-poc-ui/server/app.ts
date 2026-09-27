@@ -53,6 +53,10 @@ export function createApp(options?: {
 
   app.disable('x-powered-by');
   app.use(express.json({ limit: '100kb' }));
+  app.use('/api', (_request, response, next) => {
+    response.setHeader('Cache-Control', 'no-store');
+    next();
+  });
 
   app.get('/api/bootstrap', async (_request, response) => {
     response.json({

@@ -23,6 +23,7 @@ describe('local API security', () => {
     });
     const response = await request(app).get('/api/bootstrap').expect(200);
     expect(response.headers['x-powered-by']).toBeUndefined();
+    expect(response.headers['cache-control']).toBe('no-store');
     expect(response.body.csrfToken).toBe('test-token');
   });
 

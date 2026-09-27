@@ -135,11 +135,11 @@ ID, hub ID, or Fleet credential.
 
 ### Guided local UI
 
-The [Elastic AWS PoC Guide](../../tools/aws-poc-ui/README.md) provides an
-EUI-based local interface for the workstation that runs Terraform. It guides
-configuration, preflight checks, plan review, apply, Workflow execution, and
-opening the resulting Elastic cockpit. AWS and Elastic credentials stay in the
-local server process and are never entered into browser fields.
+The [Elastic PoC Deployment Creator](../../tools/aws-poc-ui/README.md) provides
+an EUI-based local interface for the workstation that runs Terraform. It
+guides credential entry, configuration, preflight checks, plan review, apply,
+Workflow execution, and opening the resulting Elastic cockpit. Saved AWS and
+Elastic credentials remain on the workstation.
 
 ```bash
 cd ../../tools/aws-poc-ui

@@ -47,7 +47,8 @@ docs/
 
 ## Quick start (AWS)
 
-For a guided local EUI experience on the Terraform workstation:
+Run the **Elastic PoC Deployment Creator** for a guided local EUI experience
+on the Terraform workstation:
 
 ```bash
 export EC_API_KEY="your-elastic-cloud-api-key"

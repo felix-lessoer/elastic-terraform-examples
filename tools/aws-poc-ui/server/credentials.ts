@@ -134,7 +134,7 @@ export async function credentialsStatus(): Promise<CredentialsStatus> {
 
 function serialize(values: CredentialValues): string {
   const lines = [
-    '# Local credentials for the Elastic AWS PoC Guide.',
+    '# Local credentials for the Elastic PoC Deployment Creator.',
     '# Never commit this file.',
   ];
   for (const key of managedKeys) {

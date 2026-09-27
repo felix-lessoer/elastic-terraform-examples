@@ -7,6 +7,6 @@ if (!Number.isInteger(port) || port < 1024 || port > 65_535) {
 
 const { app } = createApp();
 app.listen(port, '127.0.0.1', () => {
-  console.log(`Elastic AWS PoC Guide: http://127.0.0.1:${port}`);
+  console.log(`Elastic PoC Deployment Creator: http://127.0.0.1:${port}`);
   console.log('Saved credential values remain in this local process and are never returned to the browser.');
 });

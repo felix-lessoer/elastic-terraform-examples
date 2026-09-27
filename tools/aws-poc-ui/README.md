@@ -1,4 +1,4 @@
-# Elastic AWS PoC Guide
+# Elastic PoC Deployment Creator
 
 A local React application built with Elastic UI (EUI) that guides an operator
 through the AWS Terraform deployment in `examples/aws`.

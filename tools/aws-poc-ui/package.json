@@ -1,5 +1,5 @@
 {
-  "name": "elastic-aws-poc-ui",
+  "name": "elastic-poc-deployment-creator",
   "version": "0.1.0",
   "private": true,
   "type": "module",

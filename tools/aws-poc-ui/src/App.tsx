@@ -690,7 +690,7 @@ export default function App() {
               <EuiHeaderLogo iconTitle="Elastic" logoType="horizontal" />
             </EuiFlexItem>
             <EuiFlexItem grow={false}>
-              <strong>AWS PoC Guide</strong>
+              <strong>Elastic PoC Deployment Creator</strong>
             </EuiFlexItem>
           </EuiFlexGroup>
         </EuiHeaderSectionItem>

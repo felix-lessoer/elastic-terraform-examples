@@ -8,6 +8,7 @@ import {
   defaultDeploymentConfig,
   deploymentConfigSchema,
 } from './config.js';
+import { documentDbMetricSpec } from './brownfield.js';
 import { saveCredentialsAt } from './credentials.js';
 import { executeCommand } from './run-manager.js';
 import {
@@ -174,6 +175,26 @@ describe('deployment configuration', () => {
         },
       }),
     ).toThrow();
+  });
+});
+
+describe('visibility adapter specifications', () => {
+  it('uses the AWS package metric input for DocumentDB CloudWatch data', () => {
+    const spec = documentDbMetricSpec({
+      id: 'proposal',
+      resource_arn: 'arn:aws:rds:us-east-2:123:db:test-docdb',
+      resource_name: 'test-docdb',
+      resource_type: 'aws.rds.instance',
+      signal: 'database',
+      priority: 1,
+      change_summary: 'Collect DocumentDB metrics',
+      prerequisites: [],
+      cost_dimensions: [],
+      validation: [],
+      rollback: [],
+    });
+    expect(spec.inputs['cloudwatch-aws/metrics']).toBeDefined();
+    expect(spec.inputs).not.toHaveProperty('cloudwatch-aws-cloudwatch');
   });
 });
 

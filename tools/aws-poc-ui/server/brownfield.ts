@@ -439,7 +439,7 @@ async function runWorkloadAdapter(
   }
 }
 
-function documentDbMetricSpec(proposal: VisibilityProposal) {
+export function documentDbMetricSpec(proposal: VisibilityProposal) {
   const region = proposal.resource_arn.split(':')[3];
   return {
     name: 'aws-managed-docdb-canary',
@@ -448,7 +448,7 @@ function documentDbMetricSpec(proposal: VisibilityProposal) {
     default_region: region,
     connector_name: 'elastic-observability-docdb-canary',
     inputs: {
-      'cloudwatch-aws-cloudwatch': {
+      'cloudwatch-aws/metrics': {
         enabled: true,
         streams: {
           'aws.cloudwatch_metrics': {
@@ -653,7 +653,14 @@ export async function reconcileDeployedVisibilityExpansions(
       proposal.resource_type === 'aws.rds.instance' &&
       proposal.signal === 'database'
     ) {
-      await runDocumentDbMetricAdapter('sync', proposal, write);
+      try {
+        await runDocumentDbMetricAdapter('sync', proposal, write);
+      } catch (error) {
+        write(
+          `${proposal.resource_name}: DocumentDB collector reconciliation needs attention`,
+        );
+        write(error instanceof Error ? error.message : String(error));
+      }
     }
     if (
       proposal.resource_type === 'aws.lambda.function' &&

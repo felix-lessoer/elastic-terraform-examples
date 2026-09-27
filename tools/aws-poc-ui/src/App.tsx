@@ -74,6 +74,32 @@ function ElapsedTime({
   return <>{minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`}</>;
 }
 
+function DiscoveryRegionProgress({ logs }: { logs: string[] }) {
+  const totalMatch = logs
+    .map((line) => line.match(/Scanning (\d+) enabled AWS regions/))
+    .find((match) => match);
+  const total = totalMatch ? Number(totalMatch[1]) : 0;
+  const completed = logs.filter((line) => /^\[[^\]]+\] Complete:/.test(line))
+    .length;
+  if (!total) return null;
+  return (
+    <>
+      <EuiProgress
+        value={Math.min(completed, total)}
+        max={total}
+        color="primary"
+        size="m"
+      />
+      <EuiSpacer size="xs" />
+      <EuiText size="xs" color="subdued">
+        <p>
+          {completed} of {total} regions complete
+        </p>
+      </EuiText>
+    </>
+  );
+}
+
 function CredentialsForm({
   status,
   onSaved,
@@ -407,6 +433,9 @@ function RunPanel({
 }) {
   if (!run) return null;
   const blocked = run.result?.passed === false;
+  const latestActivity = [...run.logs]
+    .reverse()
+    .find((line) => line.trim() && !line.startsWith('$ '));
   const color =
     blocked
       ? 'danger'
@@ -439,6 +468,24 @@ function RunPanel({
         </EuiFlexItem>
       </EuiFlexGroup>
       <EuiSpacer size="s" />
+      {run.status === 'running' && latestActivity && (
+        <>
+          <EuiPanel color="primary" paddingSize="s">
+            <EuiText size="s">
+              <p aria-live="polite">
+                <strong>Current activity:</strong> {latestActivity}
+              </p>
+            </EuiText>
+          </EuiPanel>
+          <EuiSpacer size="s" />
+        </>
+      )}
+      {run.step === 'discovery' && (
+        <>
+          <DiscoveryRegionProgress logs={run.logs} />
+          <EuiSpacer size="s" />
+        </>
+      )}
       <EuiText size="s" color="subdued">
         <p>
           {run.status === 'running'

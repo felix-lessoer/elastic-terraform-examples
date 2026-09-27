@@ -91,6 +91,16 @@ output "ai_agent_ids" {
   value = try(module.observability_seed[0].ai_agent_ids, [])
 }
 
+output "insight_tool_ids" {
+  description = "Agent Builder tools bound to aws-cockpit-* insight indices."
+  value       = try(module.observability_seed[0].insight_tool_ids, [])
+}
+
+output "workflow_tool_ids" {
+  description = "Agent Builder workflow tools for recommendation / coverage / assets generators."
+  value       = keys(elasticstack_kibana_agentbuilder_tool.aws_workflow)
+}
+
 output "workflow_ids" {
   description = "Pinned Kibana workflow ids deployed to Observability (and Security when enabled)."
   value = distinct(concat(
@@ -115,7 +125,9 @@ output "next_steps" {
     - Fleet > Agents: confirm ${try(module.elastic_agent_obs[0].instance_name, "elastic-poc-obs-agent")} is Healthy (vpcflow + metrics + Trusted Advisor)
     - Discover: metrics-aws.cloudwatch_metrics (AWS/TrustedAdvisor)
     - Cockpit dashboard: ${try(module.cockpit[0].dashboard_url, "(pending)")}
-    - Agent Builder: aws-security-analyst, aws-obs-triage
+    - Agent Builder: ${join(", ", try(module.observability_seed[0].ai_agent_ids, ["aws-security-analyst", "aws-obs-triage", "aws-recs-advisor"]))}
+    - Insight tools: ${join(", ", try(module.observability_seed[0].insight_tool_ids, []))}
+    - Workflow tools: ${join(", ", keys(elasticstack_kibana_agentbuilder_tool.aws_workflow))}
     - ML jobs: aws-event-rate, aws-cspm-findings-rate
     - Workflows: ${join(", ", distinct(concat(try(module.workflows_obs[0].workflow_ids, []), try(module.workflows_security[0].workflow_ids, []))))}
   EOT

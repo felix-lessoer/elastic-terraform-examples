@@ -64,3 +64,9 @@ variable "cloud_display_name" {
   description = "Human-readable cloud name used in alert/agent copy."
   default     = "GCP"
 }
+
+variable "additional_tool_ids" {
+  type        = list(string)
+  description = "Extra Agent Builder tool IDs to attach to cockpit agents (e.g. workflow tools created after this module)."
+  default     = []
+}

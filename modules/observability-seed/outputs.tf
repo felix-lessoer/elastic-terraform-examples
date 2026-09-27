@@ -2,6 +2,7 @@ output "ai_agent_ids" {
   value = concat(
     length(elasticstack_kibana_agentbuilder_agent.security_analyst) > 0 ? [elasticstack_kibana_agentbuilder_agent.security_analyst[0].agent_id] : [],
     length(elasticstack_kibana_agentbuilder_agent.obs_triage) > 0 ? [elasticstack_kibana_agentbuilder_agent.obs_triage[0].agent_id] : [],
+    length(elasticstack_kibana_agentbuilder_agent.recs_advisor) > 0 ? [elasticstack_kibana_agentbuilder_agent.recs_advisor[0].agent_id] : [],
   )
 }
 
@@ -10,15 +11,25 @@ output "ai_agents" {
   value = concat(
     length(elasticstack_kibana_agentbuilder_agent.security_analyst) > 0 ? [{
       id    = elasticstack_kibana_agentbuilder_agent.security_analyst[0].agent_id
-      role  = "Triage CSPM + detection alerts across CPS"
+      role  = "Triage CSPM + detection alerts via insight fabric"
       state = "Ready in Agent Builder"
     }] : [],
     length(elasticstack_kibana_agentbuilder_agent.obs_triage) > 0 ? [{
       id    = elasticstack_kibana_agentbuilder_agent.obs_triage[0].agent_id
-      role  = "Explain telemetry gaps and alert bursts"
+      role  = "Explain telemetry gaps and coverage holes"
+      state = "Ready in Agent Builder"
+    }] : [],
+    length(elasticstack_kibana_agentbuilder_agent.recs_advisor) > 0 ? [{
+      id    = elasticstack_kibana_agentbuilder_agent.recs_advisor[0].agent_id
+      role  = "Prioritize cost/performance recommendations"
       state = "Ready in Agent Builder"
     }] : [],
   )
+}
+
+output "insight_tool_ids" {
+  description = "Agent Builder tools bound to cockpit insight indices."
+  value       = local.insight_tool_ids
 }
 
 output "ml_job_ids" {

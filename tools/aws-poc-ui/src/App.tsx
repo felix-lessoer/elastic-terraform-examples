@@ -21,6 +21,7 @@ import {
   EuiLoadingSpinner,
   EuiPageTemplate,
   EuiPanel,
+  EuiProgress,
   EuiSelect,
   EuiSpacer,
   EuiStat,
@@ -366,7 +367,13 @@ function ConfigurationForm({
   );
 }
 
-function RunPanel({ run }: { run?: RunRecord }) {
+function RunPanel({
+  run,
+  nextAction,
+}: {
+  run?: RunRecord;
+  nextAction?: string;
+}) {
   if (!run) return null;
   const color =
     run.status === 'succeeded'
@@ -376,6 +383,9 @@ function RunPanel({ run }: { run?: RunRecord }) {
         : 'primary';
   return (
     <EuiPanel hasBorder>
+      {run.status === 'running' && (
+        <EuiProgress size="xs" color="primary" />
+      )}
       <EuiFlexGroup alignItems="center" justifyContent="spaceBetween">
         <EuiFlexItem>
           <EuiTitle size="xs">
@@ -388,6 +398,18 @@ function RunPanel({ run }: { run?: RunRecord }) {
           </EuiHealth>
         </EuiFlexItem>
       </EuiFlexGroup>
+      <EuiSpacer size="s" />
+      <EuiText size="s" color="subdued">
+        <p>
+          {run.status === 'running'
+            ? 'Keep this page open. Live command output appears below and the next step unlocks automatically after this operation succeeds.'
+            : run.status === 'failed'
+              ? 'This operation did not complete. Review the output below, correct the reported issue, and retry this step.'
+              : nextAction
+                ? `${nextAction} is now available.`
+                : 'Operation completed successfully.'}
+        </p>
+      </EuiText>
       <EuiSpacer size="s" />
       <EuiCodeBlock
         language="shell"
@@ -500,6 +522,7 @@ export default function App() {
   const [config, setConfig] = useState<DeploymentConfig>();
   const [runs, setRuns] = useState<RunRecord[]>([]);
   const [activeRun, setActiveRun] = useState<RunRecord>();
+  const [pendingStep, setPendingStep] = useState<string>();
   const [error, setError] = useState<string>();
   const [confirmApply, setConfirmApply] = useState(false);
 
@@ -540,9 +563,11 @@ export default function App() {
   );
 
   const start = async (
+    step: string,
     operation: () => Promise<RunRecord>,
   ): Promise<void> => {
     setError(undefined);
+    setPendingStep(step);
     try {
       const run = await operation();
       setActiveRun(run);
@@ -560,6 +585,8 @@ export default function App() {
       });
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setPendingStep(undefined);
     }
   };
 
@@ -595,6 +622,12 @@ export default function App() {
   const workflowIds = status.outputs.workflow_ids ?? [];
   const credentialsReady =
     credentials.elasticCloudApiKey.configured && credentials.aws.configured;
+  const runFor = (step: string) => runs.find((run) => run.step === step);
+  const operationRunning = (step: string) =>
+    pendingStep === step ||
+    (activeRun?.step === step && activeRun.status === 'running');
+  const anyOperationRunning =
+    pendingStep !== undefined || activeRun?.status === 'running';
   const steps = [
     {
       title: 'Store local credentials',
@@ -640,15 +673,25 @@ export default function App() {
             </p>
           </EuiText>
           <EuiButton
-            onClick={() => void start(() => api.startStep('preflight'))}
+            onClick={() =>
+              void start('preflight', () => api.startStep('preflight'))
+            }
+            isLoading={operationRunning('preflight')}
             isDisabled={
               !status.configured ||
               !credentialsReady ||
-              activeRun?.status === 'running'
+              anyOperationRunning
             }
           >
-            Run preflight
+            {operationRunning('preflight')
+              ? 'Checking prerequisites…'
+              : 'Run preflight'}
           </EuiButton>
+          <EuiSpacer size="m" />
+          <RunPanel
+            run={runFor('preflight')}
+            nextAction="Initialize Terraform"
+          />
         </>
       ),
     },
@@ -660,16 +703,34 @@ export default function App() {
           ? ('current' as const)
           : ('disabled' as const),
       children: (
-        <EuiButton
-          onClick={() => void start(() => api.startStep('init'))}
-          isDisabled={
-            !status.configured ||
-            !credentialsReady ||
-            activeRun?.status === 'running'
-          }
-        >
-          Initialize
-        </EuiButton>
+        <>
+          <EuiText>
+            <p>
+              Downloads and prepares the required Terraform providers and
+              modules. No AWS or Elastic resources are created in this step.
+            </p>
+          </EuiText>
+          <EuiButton
+            onClick={() => void start('init', () => api.startStep('init'))}
+            isLoading={operationRunning('init')}
+            isDisabled={
+              !status.configured ||
+              !credentialsReady ||
+              anyOperationRunning
+            }
+          >
+            {operationRunning('init')
+              ? 'Initializing Terraform…'
+              : status.initialized
+                ? 'Initialize again'
+                : 'Initialize Terraform'}
+          </EuiButton>
+          <EuiSpacer size="m" />
+          <RunPanel
+            run={runFor('init')}
+            nextAction="Review deployment plan"
+          />
+        </>
       ),
     },
     {
@@ -688,11 +749,17 @@ export default function App() {
             </p>
           </EuiText>
           <EuiButton
-            onClick={() => void start(() => api.startStep('plan'))}
-            isDisabled={!status.initialized || activeRun?.status === 'running'}
+            onClick={() => void start('plan', () => api.startStep('plan'))}
+            isLoading={operationRunning('plan')}
+            isDisabled={!status.initialized || anyOperationRunning}
           >
-            Create plan
+            {operationRunning('plan') ? 'Creating plan…' : 'Create plan'}
           </EuiButton>
+          <EuiSpacer size="m" />
+          <RunPanel
+            run={runFor('plan')}
+            nextAction="Deploy collectors and Elastic content"
+          />
         </>
       ),
     },
@@ -721,10 +788,18 @@ export default function App() {
             fill
             color="warning"
             onClick={() => setConfirmApply(true)}
-            isDisabled={!status.planned || activeRun?.status === 'running'}
+            isLoading={operationRunning('apply')}
+            isDisabled={!status.planned || anyOperationRunning}
           >
-            Apply reviewed plan
+            {operationRunning('apply')
+              ? 'Applying reviewed plan…'
+              : 'Apply reviewed plan'}
           </EuiButton>
+          <EuiSpacer size="m" />
+          <RunPanel
+            run={runFor('apply')}
+            nextAction="Discover customer environment"
+          />
         </>
       ),
     },
@@ -745,11 +820,21 @@ export default function App() {
             </p>
           </EuiText>
           <EuiButton
-            onClick={() => void start(() => api.startStep('discovery'))}
-            isDisabled={!credentialsReady || activeRun?.status === 'running'}
+            onClick={() =>
+              void start('discovery', () => api.startStep('discovery'))
+            }
+            isLoading={operationRunning('discovery')}
+            isDisabled={!credentialsReady || anyOperationRunning}
           >
-            Discover customer environment
+            {operationRunning('discovery')
+              ? 'Discovering customer environment…'
+              : 'Discover customer environment'}
           </EuiButton>
+          <EuiSpacer size="m" />
+          <RunPanel
+            run={runFor('discovery')}
+            nextAction="Analyze discovered services"
+          />
         </>
       ),
     },
@@ -770,11 +855,21 @@ export default function App() {
             </p>
           </EuiText>
           <EuiButton
-            onClick={() => void start(() => api.startStep('analysis'))}
-            isDisabled={!brownfield.manifest || activeRun?.status === 'running'}
+            onClick={() =>
+              void start('analysis', () => api.startStep('analysis'))
+            }
+            isLoading={operationRunning('analysis')}
+            isDisabled={!brownfield.manifest || anyOperationRunning}
           >
-            Analyze local manifest
+            {operationRunning('analysis')
+              ? 'Analyzing local manifest…'
+              : 'Analyze local manifest'}
           </EuiButton>
+          <EuiSpacer size="m" />
+          <RunPanel
+            run={runFor('analysis')}
+            nextAction="Review findings and instrumentation proposals"
+          />
           <EuiSpacer size="m" />
           <BrownfieldResults status={brownfield} />
         </>
@@ -797,9 +892,12 @@ export default function App() {
                 <EuiButtonEmpty
                   iconType="play"
                   onClick={() =>
-                    void start(() => api.runWorkflow(workflowId))
+                    void start(`workflow:${workflowId}`, () =>
+                      api.runWorkflow(workflowId),
+                    )
                   }
-                  isDisabled={activeRun?.status === 'running'}
+                  isLoading={operationRunning(`workflow:${workflowId}`)}
+                  isDisabled={anyOperationRunning}
                 >
                   {workflowId}
                 </EuiButtonEmpty>
@@ -918,8 +1016,6 @@ export default function App() {
           </EuiPanel>
           <EuiSpacer size="l" />
           <EuiSteps steps={steps} titleSize="s" />
-          <EuiSpacer size="l" />
-          <RunPanel run={activeRun} />
           {runs.length > 0 && (
             <>
               <EuiSpacer size="l" />
@@ -949,7 +1045,7 @@ export default function App() {
           onCancel={() => setConfirmApply(false)}
           onConfirm={() => {
             setConfirmApply(false);
-            void start(() => api.startStep('apply'));
+            void start('apply', () => api.startStep('apply'));
           }}
           cancelButtonText="Cancel"
           confirmButtonText="Apply plan"

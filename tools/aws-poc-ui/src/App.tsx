@@ -30,6 +30,7 @@ import {
   EuiSwitch,
   EuiText,
   EuiTitle,
+  type Criteria,
   type EuiBasicTableColumn,
 } from '@elastic/eui';
 import {
@@ -531,7 +532,7 @@ function PlanResourceTable({ summary }: { summary?: PlanSummary | null }) {
           totalItemCount: summary.resources.length,
           pageSizeOptions: [10, 25, 50],
         }}
-        onChange={({ page }) => {
+        onChange={({ page }: Criteria<PlannedResource>) => {
           if (!page) return;
           setPageIndex(page.index);
           setPageSize(page.size);

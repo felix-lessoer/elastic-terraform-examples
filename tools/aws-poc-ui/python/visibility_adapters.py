@@ -8,8 +8,11 @@ import base64
 import json
 import os
 from pathlib import Path
+import ssl
 import subprocess
 import tempfile
+import time
+import urllib.error
 import urllib.request
 
 
@@ -57,11 +60,14 @@ def elastic_request(method: str, path: str, body: dict) -> dict:
         return json.load(response)
 
 
-def api_key() -> tuple[str, str]:
+def api_key(suffix: str) -> tuple[str, str]:
     result = elastic_request(
         "POST",
         "/_security/api_key",
-        {"name": "aws-poc-visibility-canary", "expiration": "30d"},
+        {
+            "name": f"aws-poc-visibility-canary-{suffix[:12]}",
+            "expiration": "30d",
+        },
     )
     encoded = base64.b64encode(
         f"{result['id']}:{result['api_key']}".encode()
@@ -71,6 +77,26 @@ def api_key() -> tuple[str, str]:
 
 def invalidate_api_key(identifier: str) -> None:
     elastic_request("DELETE", "/_security/api_key", {"ids": [identifier]})
+
+
+def cleanup_orphaned_api_keys(state: dict) -> None:
+    tracked = {
+        adapter["api_key_id"]
+        for adapter in state.get("adapters", {}).values()
+        if adapter.get("api_key_id")
+    }
+    result = elastic_request(
+        "GET",
+        "/_security/api_key?name=aws-poc-visibility-canary*",
+        {},
+    )
+    orphaned = [
+        item["id"]
+        for item in result.get("api_keys", [])
+        if item["id"] not in tracked and not item.get("invalidated")
+    ]
+    if orphaned:
+        elastic_request("DELETE", "/_security/api_key", {"ids": orphaned})
 
 
 def apm_endpoint() -> str:
@@ -114,7 +140,7 @@ def deploy_lambda(proposal: dict) -> dict:
         f"layer:elastic-apm-extension-ver-1-7-1-{architecture}:1"
     )
     variables = dict(current.get("Environment", {}).get("Variables", {}))
-    key_id, encoded_key = api_key()
+    key_id, encoded_key = api_key(proposal["id"])
     variables.update(
         {
             "AWS_LAMBDA_EXEC_WRAPPER": "/opt/python/bin/elasticapm-lambda",
@@ -339,41 +365,315 @@ spec:
 """
 
 
+class KubernetesApi:
+    def __init__(self, cluster: dict, token: str):
+        self.endpoint = cluster["endpoint"].rstrip("/")
+        certificate = base64.b64decode(
+            cluster["certificateAuthority"]["data"]
+        )
+        self.ca_file = tempfile.NamedTemporaryFile(delete=False)
+        self.ca_file.write(certificate)
+        self.ca_file.close()
+        self.context = ssl.create_default_context(cafile=self.ca_file.name)
+        self.token = token
+
+    def close(self) -> None:
+        Path(self.ca_file.name).unlink(missing_ok=True)
+
+    def request(
+        self,
+        method: str,
+        path: str,
+        body: dict | None = None,
+        *,
+        ignore_not_found: bool = False,
+        content_type: str = "application/json",
+    ) -> dict | None:
+        request = urllib.request.Request(
+            f"{self.endpoint}{path}",
+            data=json.dumps(body).encode() if body is not None else None,
+            method=method,
+            headers={
+                "Authorization": f"Bearer {self.token}",
+                "Content-Type": content_type,
+                "Accept": "application/json",
+            },
+        )
+        try:
+            with urllib.request.urlopen(
+                request, timeout=120, context=self.context
+            ) as response:
+                payload = response.read()
+                return json.loads(payload) if payload else None
+        except urllib.error.HTTPError as error:
+            if ignore_not_found and error.code == 404:
+                return None
+            detail = error.read().decode()[:1000]
+            raise RuntimeError(
+                f"Kubernetes API {method} {path} failed "
+                f"({error.code}): {detail}"
+            ) from error
+
+    def apply(self, collection: str, resource: dict) -> None:
+        name = resource["metadata"]["name"]
+        item_path = f"{collection}/{name}"
+        if self.request("GET", item_path, ignore_not_found=True) is None:
+            self.request("POST", collection, resource)
+        else:
+            self.request(
+                "PATCH",
+                item_path,
+                resource,
+                content_type="application/merge-patch+json",
+            )
+
+    def delete(self, path: str) -> None:
+        self.request("DELETE", path, ignore_not_found=True)
+
+
+def kubernetes_api(region: str, cluster_name: str) -> KubernetesApi:
+    cluster = aws(
+        region, "eks", "describe-cluster", "--name", cluster_name
+    )["cluster"]
+    token = aws(
+        region, "eks", "get-token", "--cluster-name", cluster_name
+    )["status"]["token"]
+    return KubernetesApi(cluster, token)
+
+
+def eks_resources(namespace: str, endpoint: str, key: str) -> list[tuple[str, dict]]:
+    labels = {"app": "elastic-otel-canary"}
+    collector_config = f"""receivers:
+  k8s_cluster:
+    collection_interval: 60s
+processors:
+  batch: {{}}
+exporters:
+  otlp/elastic:
+    endpoint: {endpoint.removeprefix("https://")}:443
+    headers:
+      Authorization: "ApiKey ${{env:ELASTIC_API_KEY}}"
+    tls: {{}}
+service:
+  pipelines:
+    metrics:
+      receivers: [k8s_cluster]
+      processors: [batch]
+      exporters: [otlp/elastic]
+"""
+    return [
+        (
+            "/api/v1/namespaces",
+            {
+                "apiVersion": "v1",
+                "kind": "Namespace",
+                "metadata": {"name": namespace},
+            },
+        ),
+        (
+            f"/api/v1/namespaces/{namespace}/serviceaccounts",
+            {
+                "apiVersion": "v1",
+                "kind": "ServiceAccount",
+                "metadata": {
+                    "name": "elastic-otel-canary",
+                    "namespace": namespace,
+                },
+            },
+        ),
+        (
+            "/apis/rbac.authorization.k8s.io/v1/clusterroles",
+            {
+                "apiVersion": "rbac.authorization.k8s.io/v1",
+                "kind": "ClusterRole",
+                "metadata": {"name": "elastic-otel-canary"},
+                "rules": [
+                    {
+                        "apiGroups": [""],
+                        "resources": ["nodes", "nodes/stats", "pods"],
+                        "verbs": ["get", "list", "watch"],
+                    }
+                ],
+            },
+        ),
+        (
+            "/apis/rbac.authorization.k8s.io/v1/clusterrolebindings",
+            {
+                "apiVersion": "rbac.authorization.k8s.io/v1",
+                "kind": "ClusterRoleBinding",
+                "metadata": {"name": "elastic-otel-canary"},
+                "roleRef": {
+                    "apiGroup": "rbac.authorization.k8s.io",
+                    "kind": "ClusterRole",
+                    "name": "elastic-otel-canary",
+                },
+                "subjects": [
+                    {
+                        "kind": "ServiceAccount",
+                        "name": "elastic-otel-canary",
+                        "namespace": namespace,
+                    }
+                ],
+            },
+        ),
+        (
+            f"/api/v1/namespaces/{namespace}/secrets",
+            {
+                "apiVersion": "v1",
+                "kind": "Secret",
+                "metadata": {
+                    "name": "elastic-otel-canary",
+                    "namespace": namespace,
+                },
+                "type": "Opaque",
+                "data": {
+                    "api-key": base64.b64encode(key.encode()).decode(),
+                },
+            },
+        ),
+        (
+            f"/api/v1/namespaces/{namespace}/configmaps",
+            {
+                "apiVersion": "v1",
+                "kind": "ConfigMap",
+                "metadata": {
+                    "name": "elastic-otel-canary",
+                    "namespace": namespace,
+                },
+                "data": {"collector.yaml": collector_config},
+            },
+        ),
+        (
+            f"/apis/apps/v1/namespaces/{namespace}/deployments",
+            {
+                "apiVersion": "apps/v1",
+                "kind": "Deployment",
+                "metadata": {
+                    "name": "elastic-otel-canary",
+                    "namespace": namespace,
+                },
+                "spec": {
+                    "replicas": 1,
+                    "selector": {"matchLabels": labels},
+                    "template": {
+                        "metadata": {"labels": labels},
+                        "spec": {
+                            "serviceAccountName": "elastic-otel-canary",
+                            "containers": [
+                                {
+                                    "name": "collector",
+                                    "image": (
+                                        "otel/opentelemetry-collector-contrib:"
+                                        "0.136.0"
+                                    ),
+                                    "args": [
+                                        "--config=/etc/otel/collector.yaml"
+                                    ],
+                                    "env": [
+                                        {
+                                            "name": "ELASTIC_API_KEY",
+                                            "valueFrom": {
+                                                "secretKeyRef": {
+                                                    "name": (
+                                                        "elastic-otel-canary"
+                                                    ),
+                                                    "key": "api-key",
+                                                }
+                                            },
+                                        }
+                                    ],
+                                    "volumeMounts": [
+                                        {
+                                            "name": "config",
+                                            "mountPath": "/etc/otel",
+                                        }
+                                    ],
+                                }
+                            ],
+                            "volumes": [
+                                {
+                                    "name": "config",
+                                    "configMap": {
+                                        "name": "elastic-otel-canary"
+                                    },
+                                }
+                            ],
+                        },
+                    },
+                },
+            },
+        ),
+    ]
+
+
+def cleanup_eks(api: KubernetesApi, namespace: str) -> None:
+    api.delete(f"/api/v1/namespaces/{namespace}")
+    api.delete(
+        "/apis/rbac.authorization.k8s.io/v1/clusterroles/"
+        "elastic-otel-canary"
+    )
+    api.delete(
+        "/apis/rbac.authorization.k8s.io/v1/clusterrolebindings/"
+        "elastic-otel-canary"
+    )
+
+
 def deploy_eks(proposal: dict) -> dict:
     region, resource = parse_arn(proposal["resource_arn"])
     cluster_name = resource.removeprefix("cluster/")
-    run(["aws", "eks", "update-kubeconfig", "--name", cluster_name,
-         "--region", region])
     namespace = "elastic-poc-canary"
-    key_id, encoded_key = api_key()
-    manifest = eks_manifest(namespace, apm_endpoint(), encoded_key)
+    api = kubernetes_api(region, cluster_name)
     try:
-        run(["kubectl", "apply", "-f", "-"], input_text=manifest)
-        run(["kubectl", "-n", namespace, "rollout", "status",
-             "deployment/elastic-otel-canary", "--timeout=180s"])
+        key_id, encoded_key = api_key(proposal["id"])
     except Exception:
-        run(["kubectl", "delete", "namespace", namespace,
-             "--ignore-not-found=true"])
-        run(["kubectl", "delete", "clusterrole", "elastic-otel-canary",
-             "--ignore-not-found=true"])
-        run(["kubectl", "delete", "clusterrolebinding", "elastic-otel-canary",
-             "--ignore-not-found=true"])
-        invalidate_api_key(key_id)
+        api.close()
         raise
+    try:
+        for collection, resource_body in eks_resources(
+            namespace, apm_endpoint(), encoded_key
+        ):
+            print(f"Applying Kubernetes {resource_body['kind']}", flush=True)
+            api.apply(collection, resource_body)
+        deployment_path = (
+            f"/apis/apps/v1/namespaces/{namespace}/deployments/"
+            "elastic-otel-canary"
+        )
+        for _ in range(60):
+            deployment = api.request("GET", deployment_path) or {}
+            if deployment.get("status", {}).get("availableReplicas", 0) >= 1:
+                break
+            time.sleep(3)
+        else:
+            raise RuntimeError(
+                "Kubernetes metrics collector did not become ready within "
+                "3 minutes"
+            )
+    except Exception:
+        try:
+            cleanup_eks(api, namespace)
+        except Exception as cleanup_error:
+            print(
+                f"Automatic Kubernetes cleanup failed: {cleanup_error}",
+                flush=True,
+            )
+        try:
+            invalidate_api_key(key_id)
+        except Exception as key_error:
+            print(f"API key cleanup failed: {key_error}", flush=True)
+        raise
+    finally:
+        api.close()
     return {"kind": "eks", "region": region, "cluster_name": cluster_name,
             "namespace": namespace, "api_key_id": key_id}
 
 
 def rollback_eks(state: dict) -> None:
-    run(["aws", "eks", "update-kubeconfig", "--name", state["cluster_name"],
-         "--region", state["region"]])
-    run(["kubectl", "delete", "namespace", state["namespace"],
-         "--ignore-not-found=true"])
-    run(["kubectl", "delete", "clusterrole", "elastic-otel-canary",
-         "--ignore-not-found=true"])
-    run(["kubectl", "delete", "clusterrolebinding", "elastic-otel-canary",
-         "--ignore-not-found=true"])
-    invalidate_api_key(state["api_key_id"])
+    api = kubernetes_api(state["region"], state["cluster_name"])
+    try:
+        cleanup_eks(api, state["namespace"])
+        invalidate_api_key(state["api_key_id"])
+    finally:
+        api.close()
 
 
 def deploy_ecs(proposal: dict) -> dict:
@@ -436,6 +736,7 @@ def main() -> int:
     proposal_id = proposal["id"]
     state = read_state(arguments.state)
     if arguments.action == "deploy":
+        cleanup_orphaned_api_keys(state)
         if proposal_id in state["adapters"]:
             print("Visibility adapter is already deployed", flush=True)
             return 0

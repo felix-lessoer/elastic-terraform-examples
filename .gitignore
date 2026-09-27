@@ -26,5 +26,6 @@ __pycache__/
 # Local AWS PoC guide
 node_modules/
 tools/aws-poc-ui/dist/
+tools/aws-poc-ui/*.tsbuildinfo
 examples/aws/aws-poc-ui.auto.tfvars.json
 examples/aws/.aws-poc-ui.tfplan

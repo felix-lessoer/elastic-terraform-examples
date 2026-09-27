@@ -113,7 +113,7 @@ class ManifestAssetFallbackTests(unittest.TestCase):
                     "configuration": {},
                 },
                 {
-                    "type": "aws.lambda.function",
+                    "type": "aws.sns.topic",
                     "name": "ignored",
                 },
             ],

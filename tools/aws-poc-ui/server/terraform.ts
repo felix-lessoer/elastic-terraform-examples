@@ -369,6 +369,7 @@ export async function readTerraformOutputs(): Promise<TerraformOutputs> {
 export async function readPrivateTerraformOutput(
   name:
     | 'agent_policy_id'
+    | 'aws_managed_collector_role_arn'
     | 'elasticsearch_url'
     | 'kibana_url'
     | 'password'

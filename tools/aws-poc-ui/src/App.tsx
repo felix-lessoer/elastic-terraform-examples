@@ -1062,7 +1062,11 @@ function VisibilityExpansionOptions({
                   }
                 >
                   {deployed
-                    ? 'Deployed'
+                    ? proposal.resource_type === 'aws.lambda.function'
+                      ? 'Installed — waiting for normal Lambda traffic'
+                      : proposal.resource_type === 'aws.rds.instance'
+                        ? 'Deployed — metrics can take several minutes'
+                        : 'Deployed'
                     : option.adapter.available
                       ? option.adapter.label
                       : option.adapter.label}

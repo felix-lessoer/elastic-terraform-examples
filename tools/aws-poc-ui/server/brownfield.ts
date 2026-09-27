@@ -385,6 +385,12 @@ async function runWorkloadAdapter(
   proposal: VisibilityProposal,
   write: LogWriter,
 ): Promise<void> {
+  const isDocumentDb =
+    proposal.resource_type === 'aws.rds.instance' &&
+    proposal.signal === 'database';
+  if (isDocumentDb && action === 'rollback') {
+    await runDocumentDbMetricAdapter('cleanup-selected', proposal, write);
+  }
   const [kibanaUrl, username, password] = await Promise.all([
     readPrivateTerraformOutput('kibana_url'),
     readPrivateTerraformOutput('username'),
@@ -427,6 +433,98 @@ async function runWorkloadAdapter(
       new Error(`${optionTitle(proposal.resource_type, proposal.signal)} failed`),
       { exitCode: result.exitCode },
     );
+  }
+  if (isDocumentDb && action === 'deploy') {
+    await runDocumentDbMetricAdapter('sync', proposal, write);
+  }
+}
+
+function documentDbMetricSpec(proposal: VisibilityProposal) {
+  const region = proposal.resource_arn.split(':')[3];
+  return {
+    name: 'aws-managed-docdb-canary',
+    description: `Elastic PoC metrics for DocumentDB ${proposal.resource_name}`,
+    policy_template: 'cloudwatch',
+    default_region: region,
+    connector_name: 'elastic-observability-docdb-canary',
+    inputs: {
+      'cloudwatch-aws-cloudwatch': {
+        enabled: true,
+        streams: {
+          'aws.cloudwatch_metrics': {
+            enabled: true,
+            vars: JSON.stringify({
+              period: '5m',
+              latency: '5m',
+              regions: [region],
+              include_linked_accounts: false,
+              metrics: [
+                '- namespace: AWS/DocDB',
+                '  resource_type: rds:db',
+                '  name:',
+                '    - CPUUtilization',
+                '    - DatabaseConnections',
+                '    - FreeableMemory',
+                '    - FreeLocalStorage',
+                '    - ReadLatency',
+                '    - WriteLatency',
+                '    - ReadThroughput',
+                '    - WriteThroughput',
+                '  statistic:',
+                '    - Average',
+                '    - Maximum',
+              ].join('\n'),
+            }),
+          },
+        },
+      },
+    },
+  };
+}
+
+async function runDocumentDbMetricAdapter(
+  action: 'sync' | 'cleanup-selected',
+  proposal: VisibilityProposal,
+  write: LogWriter,
+): Promise<void> {
+  write(
+    action === 'sync'
+      ? 'Configuring Elastic collection for the AWS/DocDB CloudWatch namespace'
+      : 'Removing the canary AWS/DocDB metric collector',
+  );
+  const [kibanaUrl, username, password, roleArn] = await Promise.all([
+    readPrivateTerraformOutput('kibana_url'),
+    readPrivateTerraformOutput('username'),
+    readPrivateTerraformOutput('password'),
+    readPrivateTerraformOutput('aws_managed_collector_role_arn'),
+  ]);
+  const result = await executeCommand(
+    'python3',
+    [
+      path.join(
+        repoRoot,
+        'examples/aws/scripts/sync_managed_metric_integrations.py',
+      ),
+      action,
+    ],
+    {
+      cwd: repoRoot,
+      write,
+      env: {
+        ...process.env,
+        AWS_ROLE_ARN: roleArn,
+        KIBANA_PASSWORD: password,
+        KIBANA_URL: kibanaUrl,
+        KIBANA_USERNAME: username,
+        SPECS_JSON: JSON.stringify([documentDbMetricSpec(proposal)]),
+        UPDATE_EXISTING: 'true',
+      },
+    },
+  );
+  if (result.exitCode !== 0) {
+    throw Object.assign(new Error('DocumentDB metric collector setup failed'), {
+      exitCode: result.exitCode,
+    });
   }
 }
 
@@ -540,6 +638,32 @@ export async function rollbackVisibilityExpansions(
     write(`${proposal.resource_name}: rollback complete`);
   }
   return visibilityExpansionStatus();
+}
+
+export async function reconcileDeployedVisibilityExpansions(
+  write: LogWriter,
+): Promise<void> {
+  const selection = await readVisibilitySelection();
+  const proposals = await readProposals();
+  const byId = new Map(proposals.map((proposal) => [proposal.id, proposal]));
+  for (const id of selection.deployedProposalIds) {
+    const proposal = byId.get(id);
+    if (!proposal) continue;
+    if (
+      proposal.resource_type === 'aws.rds.instance' &&
+      proposal.signal === 'database'
+    ) {
+      await runDocumentDbMetricAdapter('sync', proposal, write);
+    }
+    if (
+      proposal.resource_type === 'aws.lambda.function' &&
+      proposal.signal === 'traces'
+    ) {
+      write(
+        `${proposal.resource_name}: Lambda tracing is installed; telemetry appears after the function receives normal traffic`,
+      );
+    }
+  }
 }
 
 export async function runBrownfieldDiscovery(write: LogWriter): Promise<unknown> {

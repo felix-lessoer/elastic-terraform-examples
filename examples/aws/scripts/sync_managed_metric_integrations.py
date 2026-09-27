@@ -77,9 +77,6 @@ def sync() -> None:
 
     for spec in sorted(specs, key=lambda item: item["name"]):
         name = spec["name"]
-        if name in existing:
-            continue
-
         connector_name = spec["connector_name"]
         connector = connectors.get(connector_name)
         cloud_connector = {"enabled": True, "target_csp": "aws"}
@@ -88,10 +85,7 @@ def sync() -> None:
         else:
             cloud_connector["name"] = connector_name
 
-        request(
-            "POST",
-            "/api/fleet/managed_integrations",
-            {
+        body = {
                 "name": name,
                 "namespace": "default",
                 "description": spec["description"],
@@ -107,11 +101,41 @@ def sync() -> None:
                 },
                 "cloud_connector": cloud_connector,
                 "inputs": decode_vars(spec["inputs"]),
-            },
-        )
+            }
+        if name in existing:
+            if os.environ.get("UPDATE_EXISTING") == "true":
+                request(
+                    "PUT",
+                    f"/api/fleet/managed_integrations/{existing[name]['id']}",
+                    body,
+                )
+        else:
+            request("POST", "/api/fleet/managed_integrations", body)
 
 
-if len(sys.argv) != 2 or sys.argv[1] not in {"sync", "cleanup"}:
-    raise SystemExit("usage: sync_managed_metric_integrations.py sync|cleanup")
+def cleanup_selected() -> None:
+    names = {item["name"] for item in json.loads(os.environ["SPECS_JSON"])}
+    for item in integrations():
+        if item.get("name") in names:
+            request(
+                "DELETE",
+                f"/api/fleet/managed_integrations/{item['id']}?force=true",
+            )
 
-sync() if sys.argv[1] == "sync" else cleanup()
+
+if len(sys.argv) != 2 or sys.argv[1] not in {
+    "sync",
+    "cleanup",
+    "cleanup-selected",
+}:
+    raise SystemExit(
+        "usage: sync_managed_metric_integrations.py "
+        "sync|cleanup|cleanup-selected"
+    )
+
+if sys.argv[1] == "sync":
+    sync()
+elif sys.argv[1] == "cleanup-selected":
+    cleanup_selected()
+else:
+    cleanup()

@@ -452,6 +452,9 @@ def manifest_asset_docs(manifest_path: str, timestamp: str) -> list[tuple[str, d
     supported = {
         "aws.ec2.instance": "ec2_instance",
         "aws.s3.bucket": "s3_bucket",
+        "aws.lambda.function": "lambda_function",
+        "aws.rds.instance": "rds_instance",
+        "aws.eks.cluster": "eks_cluster",
     }
     for resource in manifest.get("resources", []):
         resource_type = supported.get(resource.get("type"))

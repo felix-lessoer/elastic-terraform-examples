@@ -7,6 +7,7 @@ import {
   brownfieldStatus,
   deployVisibilityExpansions,
   readBrownfieldArtifact,
+  reconcileDeployedVisibilityExpansions,
   rollbackVisibilityExpansions,
   runBrownfieldAnalysis,
   runBrownfieldDiscovery,
@@ -320,7 +321,10 @@ export function createApp(options?: {
       const run = runs.start(
         'workflows:all',
         'Refresh Elastic insights',
-        refreshElasticInsights,
+        async (write) => {
+          await reconcileDeployedVisibilityExpansions(write);
+          return refreshElasticInsights(write);
+        },
       );
       response.status(202).json(run);
     } catch (error) {

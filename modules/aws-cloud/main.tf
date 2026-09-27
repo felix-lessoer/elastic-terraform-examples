@@ -44,8 +44,9 @@ check "required_company_tags" {
 # -----------------------------------------------------------------------------
 
 resource "aws_s3_bucket" "logs" {
-  bucket = local.bucket
-  tags   = merge(local.common_tags, { Name = local.bucket })
+  bucket        = local.bucket
+  force_destroy = true
+  tags          = merge(local.common_tags, { Name = local.bucket })
 }
 
 resource "aws_s3_bucket_public_access_block" "logs" {

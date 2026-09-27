@@ -742,6 +742,21 @@ export default function App() {
           : ('disabled' as const),
       children: (
         <>
+          {!status.initialized && (
+            <>
+              <EuiCallOut
+                color="primary"
+                title="Complete Terraform initialization first"
+              >
+                <p>
+                  This step unlocks automatically after Initialize Terraform
+                  succeeds. If it stays disabled, review the inline output in
+                  the previous step.
+                </p>
+              </EuiCallOut>
+              <EuiSpacer size="m" />
+            </>
+          )}
           <EuiText>
             <p>
               Terraform performs existing-source discovery while planning. Review

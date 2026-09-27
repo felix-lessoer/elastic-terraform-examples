@@ -45,6 +45,20 @@ describe('local API security', () => {
     expect(response.body.message).toContain('prerequisite');
   });
 
+  it('rejects Terraform planning before cloud preflight passes', async () => {
+    const { app } = createApp({
+      csrfToken: 'test-token',
+      serveStatic: false,
+    });
+    const response = await request(app)
+      .post('/api/runs/plan')
+      .set('Origin', 'http://127.0.0.1:5602')
+      .set('x-aws-poc-csrf', 'test-token')
+      .send({})
+      .expect(409);
+    expect(response.body.message).toContain('cloud prerequisite');
+  });
+
   it('rejects non-local browser origins', async () => {
     const { app } = createApp({
       csrfToken: 'test-token',

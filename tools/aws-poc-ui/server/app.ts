@@ -211,6 +211,16 @@ export function createApp(options?: {
         return;
       }
     }
+    if (step === 'plan') {
+      const preflight = runs.list().find((run) => run.step === 'preflight');
+      const result = preflight?.result as { passed?: boolean } | undefined;
+      if (preflight?.status !== 'succeeded' || result?.passed !== true) {
+        response.status(409).json({
+          message: 'Pass all cloud prerequisite checks before creating a plan',
+        });
+        return;
+      }
+    }
 
     try {
       const run = runs.start(step, definition.title, definition.task);

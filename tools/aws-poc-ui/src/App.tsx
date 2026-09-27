@@ -794,11 +794,25 @@ export default function App() {
       title: 'Review deployment plan',
       status: status.planned
         ? ('complete' as const)
-        : status.initialized
+        : status.initialized && latestPreflightPassed
           ? ('current' as const)
           : ('disabled' as const),
       children: (
         <>
+          {status.initialized && !latestPreflightPassed && (
+            <>
+              <EuiCallOut
+                color="warning"
+                title="Resolve cloud prerequisite checks before planning"
+              >
+                <p>
+                  Terraform is initialized. Run preflight again after correcting
+                  the failed AWS or Elastic credential check to unlock planning.
+                </p>
+              </EuiCallOut>
+              <EuiSpacer size="m" />
+            </>
+          )}
           {!status.initialized && (
             <>
               <EuiCallOut
@@ -823,7 +837,11 @@ export default function App() {
           <EuiButton
             onClick={() => void start('plan', () => api.startStep('plan'))}
             isLoading={operationRunning('plan')}
-            isDisabled={!status.initialized || anyOperationRunning}
+            isDisabled={
+              !status.initialized ||
+              !latestPreflightPassed ||
+              anyOperationRunning
+            }
           >
             {operationRunning('plan') ? 'Creating plan…' : 'Create plan'}
           </EuiButton>

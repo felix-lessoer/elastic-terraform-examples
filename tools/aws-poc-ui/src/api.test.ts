@@ -33,5 +33,7 @@ describe('visibility API compatibility', () => {
     expect(status.deployedProposalIds).toEqual([]);
     expect(status.options[0].adapter.available).toBe(false);
     expect(status.options[0].adapter.label).toContain('Restart');
+    expect(status.options[0].candidates).toHaveLength(1);
+    expect(status.options[0].candidates[0].id).toBe('proposal');
   });
 });

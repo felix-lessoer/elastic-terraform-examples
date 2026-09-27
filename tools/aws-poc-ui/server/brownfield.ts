@@ -44,6 +44,14 @@ export interface VisibilityOption {
   resourceType: string;
   affectedResources: number;
   recommendedCanary: VisibilityProposal;
+  candidates: Array<
+    VisibilityProposal & {
+      adapter: {
+        available: boolean;
+        label: string;
+      };
+    }
+  >;
   adapter: {
     available: boolean;
     label: string;
@@ -184,6 +192,17 @@ function adapterFor(
       label: 'Inactive ECS service — choose a canary with running tasks',
     };
   }
+  if (
+    id === 'aws.lambda.function:traces' &&
+    !String(resourceConfiguration.runtime ?? '').startsWith('python')
+  ) {
+    return {
+      available: false,
+      label: `Unsupported Lambda runtime: ${
+        resourceConfiguration.runtime ?? 'unknown'
+      }`,
+    };
+  }
   return {
     available: true,
     label:
@@ -229,6 +248,13 @@ export async function visibilityExpansionStatus(): Promise<{
         resourceType: items[0].resource_type,
         affectedResources: items.length,
         recommendedCanary: items[0],
+        candidates: items.map((proposal) => ({
+          ...proposal,
+          adapter: adapterFor(
+            proposal,
+            resourceConfigurations.get(proposal.resource_arn),
+          ),
+        })),
         adapter: adapterFor(
           items[0],
           resourceConfigurations.get(items[0].resource_arn),
@@ -274,7 +300,7 @@ export async function saveVisibilitySelection(input: unknown): Promise<{
       : null;
   if (
     !selectedProposalIds ||
-    selectedProposalIds.length > 100 ||
+    selectedProposalIds.length > 1_000 ||
     !selectedProposalIds.every(
       (id) => typeof id === 'string' && /^[a-f0-9]{32}$/.test(id),
     )
@@ -385,9 +411,13 @@ async function runWorkloadAdapter(
   proposal: VisibilityProposal,
   write: LogWriter,
 ): Promise<void> {
+  const resourceConfigurations = await readResourceConfigurations();
+  const resourceConfiguration =
+    resourceConfigurations.get(proposal.resource_arn) ?? {};
   const isDocumentDb =
     proposal.resource_type === 'aws.rds.instance' &&
-    proposal.signal === 'database';
+    proposal.signal === 'database' &&
+    resourceConfiguration.engine === 'docdb';
   if (isDocumentDb && action === 'rollback') {
     await runDocumentDbMetricAdapter('cleanup-selected', proposal, write);
   }
@@ -620,6 +650,7 @@ export async function rollbackVisibilityExpansions(
 ): Promise<unknown> {
   const selection = await readVisibilitySelection();
   const proposals = await readProposals();
+  const resourceConfigurations = await readResourceConfigurations();
   const byId = new Map(proposals.map((proposal) => [proposal.id, proposal]));
   const deployed = selection.deployedProposalIds
     .map((id) => byId.get(id))
@@ -651,7 +682,8 @@ export async function reconcileDeployedVisibilityExpansions(
     if (!proposal) continue;
     if (
       proposal.resource_type === 'aws.rds.instance' &&
-      proposal.signal === 'database'
+      proposal.signal === 'database' &&
+      resourceConfigurations.get(proposal.resource_arn)?.engine === 'docdb'
     ) {
       try {
         await runDocumentDbMetricAdapter('sync', proposal, write);

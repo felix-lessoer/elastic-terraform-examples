@@ -143,6 +143,14 @@ export interface VisibilityOption {
   resourceType: string;
   affectedResources: number;
   recommendedCanary: VisibilityProposal;
+  candidates: Array<
+    VisibilityProposal & {
+      adapter: {
+        available: boolean;
+        label: string;
+      };
+    }
+  >;
   adapter: {
     available: boolean;
     label: string;
@@ -174,6 +182,15 @@ export function normalizeVisibilityExpansionStatus(
         available: false,
         label: 'Restart the local UI server to load this adapter',
       },
+      candidates: option.candidates ?? [
+        {
+          ...option.recommendedCanary,
+          adapter: option.adapter ?? {
+            available: false,
+            label: 'Restart the local UI server to load this adapter',
+          },
+        },
+      ],
     })),
     selectedProposalIds: status.selectedProposalIds ?? [],
     approvals: status.approvals ?? {},

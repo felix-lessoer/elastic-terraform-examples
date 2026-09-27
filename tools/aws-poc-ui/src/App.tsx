@@ -907,14 +907,16 @@ function VisibilityExpansionOptions({
       approval.rollbackReviewed
     );
   }).length;
-  const optionByProposalId = new Map(
-    status.options.map((option) => [option.recommendedCanary.id, option]),
+  const candidateById = new Map(
+    status.options.flatMap((option) =>
+      option.candidates.map((candidate) => [candidate.id, candidate] as const),
+    ),
   );
   const readyToDeploy = status.selectedProposalIds.filter((id) => {
-    const option = optionByProposalId.get(id);
+    const candidate = candidateById.get(id);
     const approval = status.approvals[id];
     return (
-      option?.adapter.available &&
+      candidate?.adapter.available &&
       approval?.ownerApproved &&
       approval.costReviewed &&
       approval.rollbackReviewed &&
@@ -922,14 +924,11 @@ function VisibilityExpansionOptions({
     );
   });
   const blockedCount = status.selectedProposalIds.filter(
-    (id) => !optionByProposalId.get(id)?.adapter.available,
+    (id) => !candidateById.get(id)?.adapter.available,
   ).length;
-  const toggle = async (proposalId: string) => {
-    setSaving(proposalId);
+  const saveSelection = async (selected: string[], key: string) => {
+    setSaving(key);
     setError(undefined);
-    const selected = status.selectedProposalIds.includes(proposalId)
-      ? status.selectedProposalIds.filter((id) => id !== proposalId)
-      : [...status.selectedProposalIds, proposalId];
     try {
       onUpdated(
         await api.saveVisibilityExpansions(selected, status.approvals),
@@ -940,26 +939,33 @@ function VisibilityExpansionOptions({
       setSaving(undefined);
     }
   };
-  const updateApproval = async (
-    proposalId: string,
+  const toggle = (proposalId: string) => {
+    const selected = status.selectedProposalIds.includes(proposalId)
+      ? status.selectedProposalIds.filter((id) => id !== proposalId)
+      : [...status.selectedProposalIds, proposalId];
+    return saveSelection(selected, proposalId);
+  };
+  const updateApprovals = async (
+    proposalIds: string[],
     key: 'ownerApproved' | 'costReviewed' | 'rollbackReviewed',
     checked: boolean,
   ) => {
-    setSaving(`${proposalId}:${key}`);
+    setSaving(`${proposalIds.join(',')}:${key}`);
     setError(undefined);
-    const current = status.approvals[proposalId] ?? {
-      ownerApproved: false,
-      costReviewed: false,
-      rollbackReviewed: false,
-    };
+    const approvals = { ...status.approvals };
+    for (const proposalId of proposalIds) {
+      const current = approvals[proposalId] ?? {
+        ownerApproved: false,
+        costReviewed: false,
+        rollbackReviewed: false,
+      };
+      approvals[proposalId] = { ...current, [key]: checked };
+    }
     try {
       onUpdated(
         await api.saveVisibilityExpansions(
           status.selectedProposalIds,
-          {
-            ...status.approvals,
-            [proposalId]: { ...current, [key]: checked },
-          },
+          approvals,
         ),
       );
     } catch (caught) {
@@ -976,10 +982,9 @@ function VisibilityExpansionOptions({
       </EuiTitle>
       <EuiText size="s" color="subdued">
         <p>
-          Analysis found the following customer-workload canaries. Add only the
-          highest-priority target in each category to the PoC scope, then review
-          its prerequisites, cost dimensions, validation, and rollback before
-          deployment.
+          Choose one or more customer-workload canaries in each category, use
+          the recommended target as a shortcut, or select every candidate.
+          Review safeguards before deployment.
         </p>
       </EuiText>
       {error && (
@@ -991,20 +996,28 @@ function VisibilityExpansionOptions({
       <EuiFlexGroup wrap>
         {status.options.map((option) => {
           const proposal = option.recommendedCanary;
-          const selected = status.selectedProposalIds.includes(proposal.id);
-          const approval = status.approvals[proposal.id] ?? {
-            ownerApproved: false,
-            costReviewed: false,
-            rollbackReviewed: false,
-          };
+          const candidateIds = option.candidates.map((candidate) => candidate.id);
+          const selectedIds = candidateIds.filter((id) =>
+            status.selectedProposalIds.includes(id),
+          );
+          const approvalChecked = (
+            key: 'ownerApproved' | 'costReviewed' | 'rollbackReviewed',
+          ) =>
+            selectedIds.length > 0 &&
+            selectedIds.every((id) => status.approvals[id]?.[key] === true);
           const approvalComplete =
-            approval.ownerApproved &&
-            approval.costReviewed &&
-            approval.rollbackReviewed;
-          const deployed = status.deployedProposalIds.includes(proposal.id);
+            approvalChecked('ownerApproved') &&
+            approvalChecked('costReviewed') &&
+            approvalChecked('rollbackReviewed');
+          const deployedCount = candidateIds.filter((id) =>
+            status.deployedProposalIds.includes(id),
+          ).length;
           return (
             <EuiFlexItem key={option.id} css={{ minWidth: 300 }}>
-              <EuiPanel hasBorder color={selected ? 'primary' : 'plain'}>
+              <EuiPanel
+                hasBorder
+                color={selectedIds.length ? 'primary' : 'plain'}
+              >
                 <EuiFlexGroup
                   alignItems="center"
                   justifyContent="spaceBetween"
@@ -1017,7 +1030,7 @@ function VisibilityExpansionOptions({
                   </EuiFlexItem>
                   <EuiFlexItem grow={false}>
                     <EuiBadge color="hollow">
-                      {option.affectedResources} candidates
+                      {selectedIds.length}/{option.affectedResources} selected
                     </EuiBadge>
                   </EuiFlexItem>
                 </EuiFlexGroup>
@@ -1054,53 +1067,134 @@ function VisibilityExpansionOptions({
                 <EuiSpacer size="m" />
                 <EuiHealth
                   color={
-                    deployed
+                    deployedCount
                       ? 'success'
                       : option.adapter.available
                         ? 'primary'
                         : 'subdued'
                   }
                 >
-                  {deployed
-                    ? proposal.resource_type === 'aws.lambda.function'
-                      ? 'Installed — waiting for normal Lambda traffic'
-                      : proposal.resource_type === 'aws.rds.instance'
-                        ? 'Deployed — metrics can take several minutes'
-                        : 'Deployed'
-                    : option.adapter.available
-                      ? option.adapter.label
-                      : option.adapter.label}
+                  {deployedCount
+                    ? `${deployedCount} deployed`
+                    : option.adapter.label}
                 </EuiHealth>
-                <EuiSpacer size="s" />
-                <EuiButton
-                  size="s"
-                  fill={!selected}
-                  color={selected ? 'text' : 'primary'}
-                  isLoading={saving === proposal.id}
-                  isDisabled={deployed || saving !== undefined}
-                  onClick={() => void toggle(proposal.id)}
-                >
-                  {deployed
-                    ? 'Roll back before removing'
-                    : selected
-                      ? 'Remove from PoC scope'
-                      : 'Add canary to PoC scope'}
-                </EuiButton>
-                {selected && (
+                <EuiSpacer size="m" />
+                <details>
+                  <summary style={{ cursor: 'pointer', fontWeight: 600 }}>
+                    Choose from {option.affectedResources} candidates
+                  </summary>
+                  <EuiSpacer size="s" />
+                  <EuiFlexGroup gutterSize="s" wrap>
+                    <EuiFlexItem grow={false}>
+                      <EuiButton
+                        size="s"
+                        fill
+                        isDisabled={
+                          saving !== undefined ||
+                          status.deployedProposalIds.includes(proposal.id)
+                        }
+                        onClick={() => void toggle(proposal.id)}
+                      >
+                        {status.selectedProposalIds.includes(proposal.id)
+                          ? 'Remove recommended'
+                          : 'Choose recommended'}
+                      </EuiButton>
+                    </EuiFlexItem>
+                    <EuiFlexItem grow={false}>
+                      <EuiButton
+                        size="s"
+                        isDisabled={saving !== undefined}
+                        onClick={() =>
+                          void saveSelection(
+                            [
+                              ...new Set([
+                                ...status.selectedProposalIds,
+                                ...candidateIds,
+                              ]),
+                            ],
+                            `${option.id}:all`,
+                          )
+                        }
+                      >
+                        Choose all candidates
+                      </EuiButton>
+                    </EuiFlexItem>
+                    <EuiFlexItem grow={false}>
+                      <EuiButton
+                        size="s"
+                        color="text"
+                        isDisabled={
+                          saving !== undefined ||
+                          candidateIds.some((id) =>
+                            status.deployedProposalIds.includes(id),
+                          )
+                        }
+                        onClick={() =>
+                          void saveSelection(
+                            status.selectedProposalIds.filter(
+                              (id) => !candidateIds.includes(id),
+                            ),
+                            `${option.id}:clear`,
+                          )
+                        }
+                      >
+                        Clear package
+                      </EuiButton>
+                    </EuiFlexItem>
+                  </EuiFlexGroup>
+                  <EuiSpacer size="s" />
+                  <div
+                    css={{
+                      maxHeight: 260,
+                      overflowY: 'auto',
+                      paddingInlineEnd: 8,
+                    }}
+                  >
+                    {option.candidates.map((candidate) => {
+                      const deployed = status.deployedProposalIds.includes(
+                        candidate.id,
+                      );
+                      return (
+                        <div key={candidate.id}>
+                          <EuiCheckbox
+                            id={`${option.id}-${candidate.id}`}
+                            label={
+                              <span>
+                                {candidate.resource_name}
+                                {!candidate.adapter.available
+                                  ? ` — ${candidate.adapter.label}`
+                                  : ''}
+                              </span>
+                            }
+                            checked={status.selectedProposalIds.includes(
+                              candidate.id,
+                            )}
+                            disabled={saving !== undefined || deployed}
+                            onChange={() => void toggle(candidate.id)}
+                          />
+                          <EuiSpacer size="xs" />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </details>
+                {selectedIds.length > 0 && (
                   <>
                     <EuiHorizontalRule margin="m" />
                     <EuiTitle size="xxs">
-                      <h4>Deployment approval</h4>
+                      <h4>
+                        Deployment approval for {selectedIds.length} selected
+                      </h4>
                     </EuiTitle>
                     <EuiSpacer size="s" />
                     <EuiCheckbox
-                      id={`${proposal.id}-owner`}
-                      label="Workload owner approved this canary"
-                      checked={approval.ownerApproved}
+                      id={`${option.id}-owner`}
+                      label="Workload owners approved all selected canaries"
+                      checked={approvalChecked('ownerApproved')}
                       disabled={saving !== undefined}
                       onChange={(event) =>
-                        void updateApproval(
-                          proposal.id,
+                        void updateApprovals(
+                          selectedIds,
                           'ownerApproved',
                           event.target.checked,
                         )
@@ -1108,13 +1202,13 @@ function VisibilityExpansionOptions({
                     />
                     <EuiSpacer size="s" />
                     <EuiCheckbox
-                      id={`${proposal.id}-cost`}
-                      label="Cost dimensions reviewed"
-                      checked={approval.costReviewed}
+                      id={`${option.id}-cost`}
+                      label="Cost dimensions reviewed for all selected canaries"
+                      checked={approvalChecked('costReviewed')}
                       disabled={saving !== undefined}
                       onChange={(event) =>
-                        void updateApproval(
-                          proposal.id,
+                        void updateApprovals(
+                          selectedIds,
                           'costReviewed',
                           event.target.checked,
                         )
@@ -1122,13 +1216,13 @@ function VisibilityExpansionOptions({
                     />
                     <EuiSpacer size="s" />
                     <EuiCheckbox
-                      id={`${proposal.id}-rollback`}
-                      label="Rollback procedure reviewed"
-                      checked={approval.rollbackReviewed}
+                      id={`${option.id}-rollback`}
+                      label="Rollback reviewed for all selected canaries"
+                      checked={approvalChecked('rollbackReviewed')}
                       disabled={saving !== undefined}
                       onChange={(event) =>
-                        void updateApproval(
-                          proposal.id,
+                        void updateApprovals(
+                          selectedIds,
                           'rollbackReviewed',
                           event.target.checked,
                         )

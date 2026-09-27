@@ -4,6 +4,7 @@
 import base64
 from concurrent.futures import ThreadPoolExecutor
 import copy
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import os
@@ -85,6 +86,12 @@ def configure_stream(stream: dict, source: dict) -> None:
         set_value(variables, "bucket_arn", f"arn:aws:s3:::{source['bucket']}")
         set_value(variables, "bucket_list_prefix", source.get("prefix", ""))
         set_value(variables, "interval", "1m")
+        set_value(
+            variables,
+            "start_timestamp",
+            (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat(),
+        )
+        set_value(variables, "ignore_older", "24h")
         set_value(variables, "preserve_original_event", False)
 
 

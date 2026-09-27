@@ -332,7 +332,7 @@ resource "terraform_data" "insight_indices" {
           curl -fsS -u "$ES_USER:$ES_PASS" -X PUT \
             -H 'Content-Type: application/json' \
             "$ES_URL/$index" \
-            --data '{"settings":{"index":{"number_of_shards":1,"number_of_replicas":0}}}'
+            --data '{}'
         fi
       done
     EOT

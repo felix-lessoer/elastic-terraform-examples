@@ -43,7 +43,16 @@ def req(method: str, url: str, user: str, password: str, body: dict | None = Non
 
 
 def esql(es: str, user: str, password: str, query: str) -> list[dict]:
-    result = req("POST", f"{es}/_query", user, password, {"query": query})
+    try:
+        result = req("POST", f"{es}/_query", user, password, {"query": query})
+    except RuntimeError as exc:
+        # A newly deployed integration often has no metric data streams yet.
+        # Missing indices/columns mean "no recommendations yet", not a failed
+        # infrastructure deployment. Keep the warning for later diagnostics.
+        if "Unknown index" not in str(exc) and "Unknown column" not in str(exc):
+            raise
+        print(f"  esql warn: {exc}", file=sys.stderr)
+        return []
     cols = [c["name"] for c in result.get("columns", [])]
     rows = []
     for values in result.get("values", []):

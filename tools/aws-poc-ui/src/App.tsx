@@ -38,6 +38,7 @@ import {
   type CredentialsStatus,
   type DeploymentConfig,
   type DeploymentStatus,
+  type PreflightCheck,
   type RunRecord,
 } from './api';
 
@@ -375,8 +376,11 @@ function RunPanel({
   nextAction?: string;
 }) {
   if (!run) return null;
+  const blocked = run.result?.passed === false;
   const color =
-    run.status === 'succeeded'
+    blocked
+      ? 'danger'
+      : run.status === 'succeeded'
       ? 'success'
       : run.status === 'failed'
         ? 'danger'
@@ -394,7 +398,8 @@ function RunPanel({
         </EuiFlexItem>
         <EuiFlexItem grow={false}>
           <EuiHealth color={color}>
-            {run.status === 'running' && <EuiLoadingSpinner size="s" />} {run.status}
+            {run.status === 'running' && <EuiLoadingSpinner size="s" />}{' '}
+            {blocked ? 'blocked' : run.status}
           </EuiHealth>
         </EuiFlexItem>
       </EuiFlexGroup>
@@ -403,7 +408,7 @@ function RunPanel({
         <p>
           {run.status === 'running'
             ? 'Keep this page open. Live command output appears below and the next step unlocks automatically after this operation succeeds.'
-            : run.status === 'failed'
+            : run.status === 'failed' || blocked
               ? 'This operation did not complete. Review the output below, correct the reported issue, and retry this step.'
               : nextAction
                 ? `${nextAction} is now available.`
@@ -421,6 +426,31 @@ function RunPanel({
         {run.logs.length ? run.logs.join('\n') : 'Waiting for output…'}
       </EuiCodeBlock>
     </EuiPanel>
+  );
+}
+
+function PreflightResults({ checks }: { checks?: PreflightCheck[] }) {
+  if (!checks?.length) return null;
+  return (
+    <>
+      <EuiSpacer size="m" />
+      <EuiPanel hasBorder paddingSize="s">
+        {checks.map((check) => (
+          <EuiHealth
+            key={check.id}
+            color={
+              check.status === 'passed'
+                ? 'success'
+                : check.status === 'warning'
+                  ? 'warning'
+                  : 'danger'
+            }
+          >
+            <strong>{check.label}:</strong> {check.detail}
+          </EuiHealth>
+        ))}
+      </EuiPanel>
+    </>
   );
 }
 
@@ -561,6 +591,9 @@ export default function App() {
     () => runs.find((run) => run.step === 'preflight'),
     [runs],
   );
+  const latestPreflightPassed =
+    latestPreflight?.status === 'succeeded' &&
+    latestPreflight.result?.passed === true;
 
   const start = async (
     step: string,
@@ -659,7 +692,7 @@ export default function App() {
     {
       title: 'Check prerequisites',
       status:
-        latestPreflight?.status === 'succeeded'
+        latestPreflightPassed
           ? ('complete' as const)
           : status.configured && credentialsReady
             ? ('current' as const)
@@ -692,6 +725,7 @@ export default function App() {
             run={runFor('preflight')}
             nextAction="Initialize Terraform"
           />
+          <PreflightResults checks={latestPreflight?.result?.checks} />
         </>
       ),
     },
@@ -699,11 +733,26 @@ export default function App() {
       title: 'Initialize Terraform',
       status: status.initialized
         ? ('complete' as const)
-        : status.configured && credentialsReady
+        : latestPreflightPassed
           ? ('current' as const)
           : ('disabled' as const),
       children: (
         <>
+          {!latestPreflightPassed && (
+            <>
+              <EuiCallOut
+                color="warning"
+                title="Pass all prerequisite checks first"
+              >
+                <p>
+                  Terraform initialization remains disabled until Terraform,
+                  Python, AWS credentials, and the saved configuration pass the
+                  prerequisite check above.
+                </p>
+              </EuiCallOut>
+              <EuiSpacer size="m" />
+            </>
+          )}
           <EuiText>
             <p>
               Downloads and prepares the required Terraform providers and
@@ -716,6 +765,7 @@ export default function App() {
             isDisabled={
               !status.configured ||
               !credentialsReady ||
+              !latestPreflightPassed ||
               anyOperationRunning
             }
           >

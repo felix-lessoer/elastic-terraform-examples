@@ -47,6 +47,10 @@ It does not:
 - an Elastic Cloud API key
 - an AWS shared profile or access/session credentials
 
+`terraform` must be available on the `PATH` of the process that starts the UI.
+Verify this with `terraform version`; the prerequisite step blocks initialization
+and reports the missing executable when it is unavailable.
+
 Credentials can be entered in the first UI step. They are saved to the ignored
 `tools/aws-poc-ui/.env` file with mode `0600`, loaded immediately into the
 local server process, and reused on later runs. Saved values are never returned

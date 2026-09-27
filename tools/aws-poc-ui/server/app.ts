@@ -190,6 +190,16 @@ export function createApp(options?: {
       });
       return;
     }
+    if (step === 'init') {
+      const preflight = runs.list().find((run) => run.step === 'preflight');
+      const result = preflight?.result as { passed?: boolean } | undefined;
+      if (preflight?.status !== 'succeeded' || result?.passed !== true) {
+        response.status(409).json({
+          message: 'Run and pass the prerequisite checks before initializing Terraform',
+        });
+        return;
+      }
+    }
 
     try {
       const run = runs.start(step, definition.title, definition.task);

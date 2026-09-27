@@ -133,6 +133,25 @@ ID, hub ID, or Fleet credential.
 
 ## Apply
 
+### Guided local UI
+
+The [Elastic AWS PoC Guide](../../tools/aws-poc-ui/README.md) provides an
+EUI-based local interface for the workstation that runs Terraform. It guides
+configuration, preflight checks, plan review, apply, Workflow execution, and
+opening the resulting Elastic cockpit. AWS and Elastic credentials stay in the
+local server process and are never entered into browser fields.
+
+```bash
+cd ../../tools/aws-poc-ui
+npm ci
+npm run build
+npm start
+```
+
+Then open <http://127.0.0.1:5602>.
+
+### Direct Terraform
+
 ```bash
 cd examples/aws
 cp terraform.tfvars.example terraform.tfvars

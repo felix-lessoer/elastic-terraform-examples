@@ -22,3 +22,9 @@ examples/aws/.env.aws
 *.tfvars
 !*.tfvars.example
 __pycache__/
+
+# Local AWS PoC guide
+node_modules/
+tools/aws-poc-ui/dist/
+examples/aws/aws-poc-ui.auto.tfvars.json
+examples/aws/.aws-poc-ui.tfplan

@@ -47,6 +47,21 @@ docs/
 
 ## Quick start (AWS)
 
+For a guided local EUI experience on the Terraform workstation:
+
+```bash
+export EC_API_KEY="your-elastic-cloud-api-key"
+cd tools/aws-poc-ui
+npm ci
+npm run build
+npm start
+```
+
+Open <http://127.0.0.1:5602>. See
+[`tools/aws-poc-ui/README.md`](tools/aws-poc-ui/README.md).
+
+For direct Terraform:
+
 ```bash
 export EC_API_KEY="your-elastic-cloud-api-key"
 cd examples/aws

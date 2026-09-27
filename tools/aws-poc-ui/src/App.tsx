@@ -458,6 +458,149 @@ function PreflightResults({ checks }: { checks?: PreflightCheck[] }) {
   );
 }
 
+function PlanProgress({ run }: { run?: RunRecord }) {
+  if (!run) return null;
+  const output = run.logs.join('\n');
+  const inspecting =
+    /\bReading\.\.\.|\bRefreshing state\.\.\.|Read complete|existing-source/i.test(
+      output,
+    );
+  const planBuilt = /(?:^|\n)(?:Plan:|No changes\.)/m.test(output);
+  const activeStage = planBuilt ? 2 : inspecting ? 1 : 0;
+  const stages = [
+    {
+      title: 'Prepare',
+      description: 'Load configuration and providers',
+    },
+    {
+      title: 'Inspect environment',
+      description: 'Read existing AWS and Elastic state',
+    },
+    {
+      title: 'Build reviewable plan',
+      description: 'Calculate and save proposed changes',
+    },
+  ];
+  const completedStages =
+    run.status === 'succeeded'
+      ? stages.length
+      : run.status === 'running'
+        ? activeStage
+        : activeStage;
+
+  return (
+    <EuiPanel hasBorder>
+      <EuiFlexGroup alignItems="center" justifyContent="spaceBetween">
+        <EuiFlexItem>
+          <EuiTitle size="xs">
+            <h3>Deployment plan progress</h3>
+          </EuiTitle>
+        </EuiFlexItem>
+        <EuiFlexItem grow={false}>
+          <EuiHealth
+            color={
+              run.status === 'succeeded'
+                ? 'success'
+                : run.status === 'failed'
+                  ? 'danger'
+                  : 'primary'
+            }
+          >
+            {run.status === 'running' ? 'Working' : run.status}
+          </EuiHealth>
+        </EuiFlexItem>
+      </EuiFlexGroup>
+      <EuiSpacer size="s" />
+      <EuiProgress
+        value={
+          run.status === 'succeeded'
+            ? stages.length
+            : Math.min(activeStage + 0.5, stages.length)
+        }
+        max={stages.length}
+        color={
+          run.status === 'succeeded'
+            ? 'success'
+            : run.status === 'failed'
+              ? 'danger'
+              : 'primary'
+        }
+        size="m"
+      />
+      <EuiSpacer size="m" />
+      <EuiFlexGroup gutterSize="s" responsive={false}>
+        {stages.map((stage, index) => {
+          const complete = index < completedStages;
+          const active = run.status === 'running' && index === activeStage;
+          const failed = run.status === 'failed' && index === activeStage;
+          return (
+            <EuiFlexItem key={stage.title}>
+              <EuiPanel
+                paddingSize="s"
+                color={active ? 'primary' : 'plain'}
+                hasBorder
+              >
+                <EuiHealth
+                  color={
+                    complete
+                      ? 'success'
+                      : failed
+                        ? 'danger'
+                        : active
+                          ? 'primary'
+                          : 'subdued'
+                  }
+                >
+                  <strong>{stage.title}</strong>
+                </EuiHealth>
+                <EuiText size="xs" color="subdued">
+                  <p>
+                    {complete
+                      ? 'Done'
+                      : failed
+                        ? 'Needs attention'
+                        : active
+                          ? 'Working…'
+                          : 'Waiting'}
+                    {' · '}
+                    {stage.description}
+                  </p>
+                </EuiText>
+              </EuiPanel>
+            </EuiFlexItem>
+          );
+        })}
+      </EuiFlexGroup>
+      {run.status === 'failed' && (
+        <>
+          <EuiSpacer size="m" />
+          <EuiCallOut
+            size="s"
+            color="danger"
+            title="Terraform could not finish the plan"
+          >
+            <p>Open technical output below, correct the error, and retry.</p>
+          </EuiCallOut>
+        </>
+      )}
+      <EuiSpacer size="m" />
+      <details>
+        <summary css={{ cursor: 'pointer' }}>Show technical output</summary>
+        <EuiSpacer size="s" />
+        <EuiCodeBlock
+          language="shell"
+          fontSize="s"
+          paddingSize="s"
+          overflowHeight={240}
+          isCopyable
+        >
+          {run.logs.length ? run.logs.join('\n') : 'Waiting for output…'}
+        </EuiCodeBlock>
+      </details>
+    </EuiPanel>
+  );
+}
+
 function BrownfieldResults({ status }: { status: BrownfieldStatus }) {
   if (!status.manifest && !status.analysis) {
     return (
@@ -850,10 +993,7 @@ export default function App() {
             {operationRunning('plan') ? 'Creating plan…' : 'Create plan'}
           </EuiButton>
           <EuiSpacer size="m" />
-          <RunPanel
-            run={runFor('plan')}
-            nextAction="Deploy collectors and Elastic content"
-          />
+          <PlanProgress run={runFor('plan')} />
         </>
       ),
     },

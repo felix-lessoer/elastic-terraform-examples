@@ -163,6 +163,24 @@ export interface VisibilityExpansionStatus {
   deployedProposalIds: string[];
 }
 
+export function normalizeVisibilityExpansionStatus(
+  status: VisibilityExpansionStatus,
+): VisibilityExpansionStatus {
+  return {
+    ...status,
+    options: (status.options ?? []).map((option) => ({
+      ...option,
+      adapter: option.adapter ?? {
+        available: false,
+        label: 'Restart the local UI server to load this adapter',
+      },
+    })),
+    selectedProposalIds: status.selectedProposalIds ?? [],
+    approvals: status.approvals ?? {},
+    deployedProposalIds: status.deployedProposalIds ?? [],
+  };
+}
+
 let bootstrapPromise: Promise<Bootstrap> | undefined;
 
 async function parse<T>(response: Response): Promise<T> {
@@ -220,7 +238,9 @@ export const api = {
     return query<BrownfieldStatus>('/api/brownfield');
   },
   async visibilityExpansions(): Promise<VisibilityExpansionStatus> {
-    return query<VisibilityExpansionStatus>('/api/visibility-expansions');
+    return query<VisibilityExpansionStatus>('/api/visibility-expansions').then(
+      normalizeVisibilityExpansionStatus,
+    );
   },
   async runs(): Promise<RunRecord[]> {
     return query<RunRecord[]>('/api/runs');
@@ -247,7 +267,7 @@ export const api = {
       '/api/visibility-expansions',
       'PUT',
       { selectedProposalIds, approvals },
-    );
+    ).then(normalizeVisibilityExpansionStatus);
   },
   deployVisibilityExpansions() {
     return mutate<RunRecord>(

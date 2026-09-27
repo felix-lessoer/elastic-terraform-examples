@@ -435,19 +435,23 @@ function PreflightResults({ checks }: { checks?: PreflightCheck[] }) {
     <>
       <EuiSpacer size="m" />
       <EuiPanel hasBorder paddingSize="s">
-        {checks.map((check) => (
-          <EuiHealth
-            key={check.id}
-            color={
-              check.status === 'passed'
-                ? 'success'
-                : check.status === 'warning'
-                  ? 'warning'
-                  : 'danger'
-            }
-          >
-            <strong>{check.label}:</strong> {check.detail}
-          </EuiHealth>
+        {checks.map((check, index) => (
+          <div key={check.id}>
+            {check.status === 'passed' ? (
+              <EuiHealth color="success">
+                <strong>{check.label}:</strong> {check.detail}
+              </EuiHealth>
+            ) : (
+              <EuiCallOut
+                size="s"
+                color={check.status === 'warning' ? 'warning' : 'danger'}
+                title={`${check.label} needs attention`}
+              >
+                <p>{check.detail}</p>
+              </EuiCallOut>
+            )}
+            {index < checks.length - 1 && <EuiSpacer size="s" />}
+          </div>
         ))}
       </EuiPanel>
     </>

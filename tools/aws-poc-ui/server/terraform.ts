@@ -51,6 +51,78 @@ export interface PreflightCheck {
   detail: string;
 }
 
+export function explainPreflightFailure(
+  id: string,
+  label: string,
+  output: string,
+  exitCode: number,
+): string {
+  if (/\bENOENT\b|not found|not recognized/i.test(output)) {
+    const executable = id === 'aws' ? 'AWS CLI' : label;
+    return `${executable} is not installed or is not visible to the UI. Install it, ensure its executable is on PATH, then restart the Deployment Creator.`;
+  }
+  if (id === 'aws') {
+    if (/Unable to locate credentials|could not be found/i.test(output)) {
+      return 'No AWS credentials were found. Save an AWS profile or access keys in step 1, then run preflight again.';
+    }
+    if (/ExpiredToken|token has expired/i.test(output)) {
+      return 'The AWS session token has expired. Save fresh temporary credentials in step 1, then run preflight again.';
+    }
+    if (
+      /InvalidClientTokenId|SignatureDoesNotMatch|UnrecognizedClientException/i.test(
+        output,
+      )
+    ) {
+      return 'AWS rejected the saved credentials. Check the access key, secret key, session token, or selected profile in step 1.';
+    }
+    if (/AccessDenied|not authorized/i.test(output)) {
+      return 'AWS credentials were found, but the caller identity request was denied. Verify the selected account and IAM permissions.';
+    }
+    if (
+      /Could not connect to the endpoint|ENETUNREACH|ETIMEDOUT|EAI_AGAIN/i.test(
+        output,
+      )
+    ) {
+      return 'The AWS API could not be reached. Check network access, proxy settings, and the selected AWS region.';
+    }
+  }
+  const summary = output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean);
+  return summary
+    ? `${label} check failed: ${summary}`
+    : `${label} check exited with code ${exitCode}. Review the command output for details.`;
+}
+
+function explainPreflightSuccess(
+  id: string,
+  label: string,
+  output: string,
+): string {
+  if (id === 'terraform') {
+    try {
+      const version = (JSON.parse(output) as { terraform_version?: string })
+        .terraform_version;
+      if (version) return `Terraform ${version} is available`;
+    } catch {
+      // Fall through to the first output line.
+    }
+  }
+  if (id === 'aws') {
+    try {
+      const identity = JSON.parse(output) as { Arn?: string; Account?: string };
+      if (identity.Arn) return `AWS caller identity verified: ${identity.Arn}`;
+      if (identity.Account) {
+        return `AWS caller identity verified for account ${identity.Account}`;
+      }
+    } catch {
+      // Fall through to the first output line.
+    }
+  }
+  return output.split(/\r?\n/).find(Boolean) || `${label} is available`;
+}
+
 export async function runPreflight(write: LogWriter): Promise<{
   checks: PreflightCheck[];
   passed: boolean;
@@ -74,8 +146,15 @@ export async function runPreflight(write: LogWriter): Promise<{
         status: result.exitCode === 0 ? 'passed' : 'failed',
         detail:
           result.exitCode === 0
-            ? result.stdout.split(/\r?\n/)[0] || 'Available'
-            : result.stderr || `Exited with ${result.exitCode}`,
+            ? explainPreflightSuccess(id, label, result.stdout)
+            : explainPreflightFailure(
+                id,
+                label,
+                [result.stderr, result.failureMessage]
+                  .filter(Boolean)
+                  .join('\n'),
+                result.exitCode,
+              ),
       });
     } catch (error) {
       checks.push({
@@ -102,7 +181,7 @@ export async function runPreflight(write: LogWriter): Promise<{
     status: process.env.EC_API_KEY ? 'passed' : 'failed',
     detail: process.env.EC_API_KEY
       ? 'EC_API_KEY is present in the local server environment'
-      : 'Export EC_API_KEY before starting the UI',
+      : 'Enter and save an Elastic Cloud API key in step 1, then run preflight again',
   });
 
   await commandCheck('terraform', 'Terraform', 'terraform', ['version', '-json']);

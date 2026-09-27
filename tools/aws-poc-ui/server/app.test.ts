@@ -10,7 +10,10 @@ import {
 } from './config.js';
 import { saveCredentialsAt } from './credentials.js';
 import { executeCommand } from './run-manager.js';
-import { sanitizeTerraformOutputs } from './terraform.js';
+import {
+  explainPreflightFailure,
+  sanitizeTerraformOutputs,
+} from './terraform.js';
 
 describe('local API security', () => {
   it('does not expose a framework header and returns a CSRF token', async () => {
@@ -202,6 +205,28 @@ describe('command progress output', () => {
     );
     expect(result.exitCode).not.toBe(0);
     expect(logs.join('\n')).toContain('ENOENT');
+  });
+
+  it('turns missing AWS CLI output into actionable guidance', () => {
+    expect(
+      explainPreflightFailure(
+        'aws',
+        'AWS identity',
+        'spawn aws ENOENT',
+        1,
+      ),
+    ).toContain('not installed');
+  });
+
+  it('turns expired AWS credentials into actionable guidance', () => {
+    expect(
+      explainPreflightFailure(
+        'aws',
+        'AWS identity',
+        'ExpiredToken: The security token included in the request is expired',
+        255,
+      ),
+    ).toContain('fresh temporary credentials');
   });
 });
 

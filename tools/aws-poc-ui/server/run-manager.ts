@@ -49,7 +49,12 @@ export async function executeCommand(
     write: LogWriter;
     env?: NodeJS.ProcessEnv;
   },
-): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+): Promise<{
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+  failureMessage?: string;
+}> {
   options.write(`$ ${command} ${args.join(' ')}`);
   const child = execa(command, args, {
     cwd: options.cwd,
@@ -77,6 +82,7 @@ export async function executeCommand(
     exitCode: result.exitCode ?? 1,
     stdout: result.stdout,
     stderr: result.stderr,
+    failureMessage: result.failed ? result.shortMessage : undefined,
   };
 }
 

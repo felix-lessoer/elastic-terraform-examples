@@ -63,9 +63,11 @@ export interface CredentialsStatus {
   };
 }
 
-async function readCredentialFile(): Promise<CredentialValues> {
+async function readCredentialFile(
+  filePath = credentialsPath,
+): Promise<CredentialValues> {
   try {
-    const contents = await fs.readFile(credentialsPath, 'utf8');
+    const contents = await fs.readFile(filePath, 'utf8');
     const parsed = parse(contents);
     return Object.fromEntries(
       managedKeys
@@ -84,30 +86,34 @@ async function readCredentialFile(): Promise<CredentialValues> {
   }
 }
 
-function statusFrom(fileValues: CredentialValues): CredentialsStatus {
+function statusFrom(
+  fileValues: CredentialValues,
+  environment: NodeJS.ProcessEnv = process.env,
+  filePath = credentialsPath,
+): CredentialsStatus {
   const savedAccessKeys = Boolean(
     fileValues.AWS_ACCESS_KEY_ID && fileValues.AWS_SECRET_ACCESS_KEY,
   );
   const configuredAccessKeys = Boolean(
-    process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY,
+    environment.AWS_ACCESS_KEY_ID && environment.AWS_SECRET_ACCESS_KEY,
   );
   const savedProfile = Boolean(fileValues.AWS_PROFILE);
-  const configuredProfile = Boolean(process.env.AWS_PROFILE);
+  const configuredProfile = Boolean(environment.AWS_PROFILE);
 
   let mode: CredentialsStatus['aws']['mode'] = 'none';
   if (savedAccessKeys || configuredAccessKeys) mode = 'accessKeys';
   else if (savedProfile || configuredProfile) mode = 'profile';
   else if (
-    process.env.AWS_WEB_IDENTITY_TOKEN_FILE ||
-    process.env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI
+    environment.AWS_WEB_IDENTITY_TOKEN_FILE ||
+    environment.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI
   ) {
     mode = 'environment';
   }
 
   return {
-    path: credentialsPath,
+    path: filePath,
     elasticCloudApiKey: {
-      configured: Boolean(process.env.EC_API_KEY),
+      configured: Boolean(environment.EC_API_KEY),
       saved: Boolean(fileValues.EC_API_KEY),
     },
     aws: {
@@ -117,7 +123,7 @@ function statusFrom(fileValues: CredentialValues): CredentialsStatus {
         mode === 'environment',
       saved: savedAccessKeys || savedProfile,
       mode,
-      hasSessionToken: Boolean(process.env.AWS_SESSION_TOKEN),
+      hasSessionToken: Boolean(environment.AWS_SESSION_TOKEN),
     },
   };
 }
@@ -141,8 +147,16 @@ function serialize(values: CredentialValues): string {
 export async function saveCredentials(
   unknownInput: unknown,
 ): Promise<CredentialsStatus> {
+  return saveCredentialsAt(credentialsPath, unknownInput, process.env);
+}
+
+export async function saveCredentialsAt(
+  filePath: string,
+  unknownInput: unknown,
+  environment: NodeJS.ProcessEnv,
+): Promise<CredentialsStatus> {
   const input = credentialsInputSchema.parse(unknownInput);
-  const previous = await readCredentialFile();
+  const previous = await readCredentialFile(filePath);
   const next: CredentialValues = { ...previous };
 
   if (input.elasticCloudApiKey) {
@@ -154,7 +168,7 @@ export async function saveCredentials(
     delete next.AWS_SECRET_ACCESS_KEY;
     delete next.AWS_SESSION_TOKEN;
     if (input.awsProfile) next.AWS_PROFILE = input.awsProfile;
-    if (!next.AWS_PROFILE && !process.env.AWS_PROFILE) {
+    if (!next.AWS_PROFILE && !environment.AWS_PROFILE) {
       throw new Error('Enter an AWS profile name');
     }
   } else {
@@ -173,30 +187,30 @@ export async function saveCredentials(
     }
     if (
       !(next.AWS_ACCESS_KEY_ID && next.AWS_SECRET_ACCESS_KEY) &&
-      !(process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY)
+      !(environment.AWS_ACCESS_KEY_ID && environment.AWS_SECRET_ACCESS_KEY)
     ) {
       throw new Error('Enter both the AWS access key ID and secret access key');
     }
   }
 
-  if (!next.EC_API_KEY && !process.env.EC_API_KEY) {
+  if (!next.EC_API_KEY && !environment.EC_API_KEY) {
     throw new Error('Enter an Elastic Cloud API key');
   }
 
-  const temporaryPath = `${credentialsPath}.${process.pid}.tmp`;
+  const temporaryPath = `${filePath}.${process.pid}.tmp`;
   await fs.writeFile(temporaryPath, serialize(next), { mode: 0o600 });
-  await fs.rename(temporaryPath, credentialsPath);
-  await fs.chmod(credentialsPath, 0o600);
+  await fs.rename(temporaryPath, filePath);
+  await fs.chmod(filePath, 0o600);
 
   for (const key of managedKeys) {
     const oldValue = previous[key];
     const newValue = next[key];
     if (newValue) {
-      process.env[key] = newValue;
-    } else if (oldValue && process.env[key] === oldValue) {
-      delete process.env[key];
+      environment[key] = newValue;
+    } else if (oldValue && environment[key] === oldValue) {
+      delete environment[key];
     }
   }
 
-  return statusFrom(next);
+  return statusFrom(next, environment, filePath);
 }

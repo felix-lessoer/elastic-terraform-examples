@@ -1,3 +1,6 @@
+import { promises as fs } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import { createApp } from './app.js';
@@ -5,6 +8,7 @@ import {
   defaultDeploymentConfig,
   deploymentConfigSchema,
 } from './config.js';
+import { saveCredentialsAt } from './credentials.js';
 import { sanitizeTerraformOutputs } from './terraform.js';
 
 describe('local API security', () => {
@@ -94,6 +98,40 @@ describe('deployment configuration', () => {
         },
       }),
     ).toThrow();
+  });
+});
+
+describe('credential persistence', () => {
+  it('writes a reusable owner-only dotenv file and updates the process environment', async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'aws-poc-ui-'));
+    const filePath = path.join(directory, '.env');
+    const environment: NodeJS.ProcessEnv = {};
+    try {
+      const status = await saveCredentialsAt(
+        filePath,
+        {
+          elasticCloudApiKey: 'elastic-test-key',
+          awsMode: 'accessKeys',
+          awsAccessKeyId: 'AKIATESTVALUE',
+          awsSecretAccessKey: 'aws-test-secret',
+          awsSessionToken: 'aws-test-session',
+          awsProfile: '',
+        },
+        environment,
+      );
+
+      const file = await fs.readFile(filePath, 'utf8');
+      const fileMode = (await fs.stat(filePath)).mode & 0o777;
+      expect(fileMode).toBe(0o600);
+      expect(file).toContain('EC_API_KEY="elastic-test-key"');
+      expect(file).toContain('AWS_ACCESS_KEY_ID="AKIATESTVALUE"');
+      expect(environment.AWS_SECRET_ACCESS_KEY).toBe('aws-test-secret');
+      expect(status.elasticCloudApiKey.saved).toBe(true);
+      expect(status.aws.saved).toBe(true);
+      expect(JSON.stringify(status)).not.toContain('aws-test-secret');
+    } finally {
+      await fs.rm(directory, { recursive: true, force: true });
+    }
   });
 });
 

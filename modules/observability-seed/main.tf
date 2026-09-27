@@ -308,6 +308,37 @@ resource "elasticstack_elasticsearch_ml_datafeed_state" "gcp_cspm_findings_rate"
 # (seeded by modules/cockpit-dashboard/scripts/seed_*_insight_indices.py)
 # -----------------------------------------------------------------------------
 
+resource "terraform_data" "insight_indices" {
+  count = local.insight_tools_enabled ? 1 : 0
+
+  triggers_replace = [
+    local.insight_prefix,
+    local.es_url,
+  ]
+
+  provisioner "local-exec" {
+    interpreter = ["/bin/bash", "-c"]
+    environment = {
+      ES_URL  = local.es_url
+      ES_USER = var.elasticsearch_username
+      ES_PASS = var.elasticsearch_password
+      PREFIX  = local.insight_prefix
+    }
+    command = <<-EOT
+      set -euo pipefail
+      for suffix in security-kpi coverage assets events recommendations; do
+        index="$PREFIX-$suffix"
+        if ! curl -fsS -u "$ES_USER:$ES_PASS" -I "$ES_URL/$index" >/dev/null; then
+          curl -fsS -u "$ES_USER:$ES_PASS" -X PUT \
+            -H 'Content-Type: application/json' \
+            "$ES_URL/$index" \
+            --data '{"settings":{"index":{"number_of_shards":1,"number_of_replicas":0}}}'
+        fi
+      done
+    EOT
+  }
+}
+
 resource "elasticstack_kibana_agentbuilder_tool" "insight_security_kpi" {
   count = local.insight_tools_enabled ? 1 : 0
 
@@ -325,6 +356,8 @@ resource "elasticstack_kibana_agentbuilder_tool" "insight_security_kpi" {
     username  = local.kb_user
     password  = local.kb_pass
   }
+
+  depends_on = [terraform_data.insight_indices]
 }
 
 resource "elasticstack_kibana_agentbuilder_tool" "insight_coverage" {
@@ -344,6 +377,8 @@ resource "elasticstack_kibana_agentbuilder_tool" "insight_coverage" {
     username  = local.kb_user
     password  = local.kb_pass
   }
+
+  depends_on = [terraform_data.insight_indices]
 }
 
 resource "elasticstack_kibana_agentbuilder_tool" "insight_assets" {
@@ -363,6 +398,8 @@ resource "elasticstack_kibana_agentbuilder_tool" "insight_assets" {
     username  = local.kb_user
     password  = local.kb_pass
   }
+
+  depends_on = [terraform_data.insight_indices]
 }
 
 resource "elasticstack_kibana_agentbuilder_tool" "insight_events" {
@@ -382,6 +419,8 @@ resource "elasticstack_kibana_agentbuilder_tool" "insight_events" {
     username  = local.kb_user
     password  = local.kb_pass
   }
+
+  depends_on = [terraform_data.insight_indices]
 }
 
 resource "elasticstack_kibana_agentbuilder_tool" "insight_recommendations" {
@@ -401,6 +440,8 @@ resource "elasticstack_kibana_agentbuilder_tool" "insight_recommendations" {
     username  = local.kb_user
     password  = local.kb_pass
   }
+
+  depends_on = [terraform_data.insight_indices]
 }
 
 resource "elasticstack_kibana_agentbuilder_tool" "insight_recs_esql" {

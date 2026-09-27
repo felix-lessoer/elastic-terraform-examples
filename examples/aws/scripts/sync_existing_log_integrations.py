@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 import sys
+import time
 import urllib.error
 import urllib.request
 
@@ -32,13 +33,20 @@ def request(method: str, path: str, body: dict | None = None) -> dict:
             "kbn-xsrf": "true",
         },
     )
-    try:
-        with urllib.request.urlopen(req, timeout=120) as response:
-            payload = response.read()
-            return json.loads(payload) if payload else {}
-    except urllib.error.HTTPError as error:
-        detail = error.read().decode()
-        raise RuntimeError(f"{method} {path} failed ({error.code}): {detail}") from error
+    for attempt in range(1, 8):
+        try:
+            with urllib.request.urlopen(req, timeout=120) as response:
+                payload = response.read()
+                return json.loads(payload) if payload else {}
+        except urllib.error.HTTPError as error:
+            detail = error.read().decode()
+            if error.code == 409 and attempt < 7:
+                time.sleep(attempt * 2)
+                continue
+            raise RuntimeError(
+                f"{method} {path} failed ({error.code}): {detail}"
+            ) from error
+    raise RuntimeError(f"{method} {path} exhausted conflict retries")
 
 
 def package_policies() -> list[dict]:

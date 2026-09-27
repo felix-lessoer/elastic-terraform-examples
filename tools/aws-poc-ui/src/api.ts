@@ -78,6 +78,32 @@ export interface RunRecord {
   };
 }
 
+export interface BrownfieldArtifactStatus {
+  modifiedAt: string;
+  summary: {
+    resources?: number;
+    edges?: number;
+    service_resources?: number;
+    service_candidates?: number;
+    dependencies?: number;
+    findings?: number;
+    proposals?: number;
+    errors?: number;
+    required_coverage?: {
+      numerator: number;
+      denominator: number;
+      percentage: number | null;
+    };
+    findings_by_severity?: Record<string, number>;
+  };
+  limitations: string[];
+}
+
+export interface BrownfieldStatus {
+  manifest: BrownfieldArtifactStatus | null;
+  analysis: BrownfieldArtifactStatus | null;
+}
+
 let bootstrapPromise: Promise<Bootstrap> | undefined;
 
 async function parse<T>(response: Response): Promise<T> {
@@ -124,6 +150,9 @@ export const api = {
   async status(): Promise<DeploymentStatus> {
     return fetch('/api/status').then(parse<DeploymentStatus>);
   },
+  async brownfield(): Promise<BrownfieldStatus> {
+    return fetch('/api/brownfield').then(parse<BrownfieldStatus>);
+  },
   async runs(): Promise<RunRecord[]> {
     return fetch('/api/runs').then(parse<RunRecord[]>);
   },
@@ -141,7 +170,9 @@ export const api = {
       credentials,
     );
   },
-  startStep(step: 'preflight' | 'init' | 'plan' | 'apply') {
+  startStep(
+    step: 'preflight' | 'init' | 'plan' | 'apply' | 'discovery' | 'analysis',
+  ) {
     return mutate<RunRecord>(
       `/api/runs/${step}`,
       'POST',

@@ -23,6 +23,7 @@ import {
   EuiPanel,
   EuiSelect,
   EuiSpacer,
+  EuiStat,
   EuiSteps,
   EuiText,
   EuiTitle,
@@ -30,6 +31,7 @@ import {
 import {
   api,
   type Bootstrap,
+  type BrownfieldStatus,
   type CredentialsInput,
   type CredentialsStatus,
   type DeploymentConfig,
@@ -378,10 +380,100 @@ function RunPanel({ run }: { run?: RunRecord }) {
   );
 }
 
+function BrownfieldResults({ status }: { status: BrownfieldStatus }) {
+  if (!status.manifest && !status.analysis) {
+    return (
+      <EuiCallOut
+        color="primary"
+        title="No local brownfield results yet"
+      >
+        <p>
+          Discovery reads AWS control-plane APIs only. Analysis works from the
+          resulting local manifest and performs no cloud changes.
+        </p>
+      </EuiCallOut>
+    );
+  }
+  const manifest = status.manifest?.summary;
+  const analysis = status.analysis?.summary;
+  const stats = [
+    ['Resources', manifest?.resources ?? 0],
+    ['Control-plane edges', manifest?.edges ?? 0],
+    ['Service candidates', analysis?.service_candidates ?? manifest?.service_resources ?? 0],
+    ['Dependencies', analysis?.dependencies ?? 0],
+    ['Findings', analysis?.findings ?? 0],
+    ['Proposals', analysis?.proposals ?? 0],
+    [
+      'Observed required coverage',
+      analysis?.required_coverage?.percentage == null
+        ? 'unknown'
+        : `${analysis.required_coverage.percentage}%`,
+    ],
+  ] as const;
+  return (
+    <>
+      <EuiFlexGroup wrap>
+        {stats.map(([title, value]) => (
+          <EuiFlexItem key={title} grow={false} css={{ minWidth: 150 }}>
+            <EuiPanel hasBorder paddingSize="m">
+              <EuiStat title={String(value)} description={title} titleSize="s" />
+            </EuiPanel>
+          </EuiFlexItem>
+        ))}
+      </EuiFlexGroup>
+      <EuiSpacer size="m" />
+      {manifest?.errors ? (
+        <>
+          <EuiCallOut
+            color="warning"
+            title={`Discovery completed with ${manifest.errors} partial scope error(s)`}
+          >
+            <p>Download the manifest to review denied or unavailable APIs.</p>
+          </EuiCallOut>
+          <EuiSpacer size="m" />
+        </>
+      ) : null}
+      <EuiFlexGroup gutterSize="s" wrap>
+        {status.manifest && (
+          <EuiFlexItem grow={false}>
+            <EuiButtonEmpty
+              href="/api/brownfield/manifest"
+              target="_blank"
+              iconType="download"
+            >
+              Download manifest
+            </EuiButtonEmpty>
+          </EuiFlexItem>
+        )}
+        {status.analysis && (
+          <EuiFlexItem grow={false}>
+            <EuiButtonEmpty
+              href="/api/brownfield/analysis"
+              target="_blank"
+              iconType="download"
+            >
+              Download analysis
+            </EuiButtonEmpty>
+          </EuiFlexItem>
+        )}
+      </EuiFlexGroup>
+      {status.analysis?.limitations.length ? (
+        <>
+          <EuiSpacer size="m" />
+          <EuiText size="xs" color="subdued">
+            <p>{status.analysis.limitations[0]}</p>
+          </EuiText>
+        </>
+      ) : null}
+    </>
+  );
+}
+
 export default function App() {
   const [loadState, setLoadState] = useState<AsyncState>('loading');
   const [bootstrap, setBootstrap] = useState<Bootstrap>();
   const [credentials, setCredentials] = useState<CredentialsStatus>();
+  const [brownfield, setBrownfield] = useState<BrownfieldStatus>();
   const [status, setStatus] = useState<DeploymentStatus>();
   const [config, setConfig] = useState<DeploymentConfig>();
   const [runs, setRuns] = useState<RunRecord[]>([]);
@@ -390,24 +482,27 @@ export default function App() {
   const [confirmApply, setConfirmApply] = useState(false);
 
   const refresh = async () => {
-    const [nextStatus, nextRuns, nextCredentials] = await Promise.all([
+    const [nextStatus, nextRuns, nextCredentials, nextBrownfield] = await Promise.all([
       api.status(),
       api.runs(),
       api.credentials(),
+      api.brownfield(),
     ]);
     setStatus(nextStatus);
     setRuns(nextRuns);
     setCredentials(nextCredentials);
+    setBrownfield(nextBrownfield);
   };
 
   useEffect(() => {
-    void Promise.all([api.bootstrap(), api.config(), api.runs()])
-      .then(([loadedBootstrap, loadedConfig, loadedRuns]) => {
+    void Promise.all([api.bootstrap(), api.config(), api.runs(), api.brownfield()])
+      .then(([loadedBootstrap, loadedConfig, loadedRuns, loadedBrownfield]) => {
         setBootstrap(loadedBootstrap);
         setCredentials(loadedBootstrap.credentials);
         setStatus(loadedBootstrap.status);
         setConfig(loadedConfig.config);
         setRuns(loadedRuns);
+        setBrownfield(loadedBrownfield);
         setActiveRun(loadedRuns.find((run) => run.status === 'running'));
         setLoadState('ready');
       })
@@ -460,6 +555,7 @@ export default function App() {
     loadState === 'error' ||
     !bootstrap ||
     !credentials ||
+    !brownfield ||
     !status ||
     !config
   ) {
@@ -607,6 +703,58 @@ export default function App() {
           >
             Apply reviewed plan
           </EuiButton>
+        </>
+      ),
+    },
+    {
+      title: 'Discover the existing AWS environment',
+      status: brownfield.manifest
+        ? ('complete' as const)
+        : credentialsReady
+          ? ('current' as const)
+          : ('disabled' as const),
+      children: (
+        <>
+          <EuiText>
+            <p>
+              Runs bounded, read-only AWS CLI discovery across enabled Regions.
+              It inventories existing compute, serverless, load-balancing,
+              database, messaging, alarm, log, and X-Ray resources.
+            </p>
+          </EuiText>
+          <EuiButton
+            onClick={() => void start(() => api.startStep('discovery'))}
+            isDisabled={!credentialsReady || activeRun?.status === 'running'}
+          >
+            Discover customer environment
+          </EuiButton>
+        </>
+      ),
+    },
+    {
+      title: 'Analyze services, dependencies and gaps',
+      status: brownfield.analysis
+        ? ('complete' as const)
+        : brownfield.manifest
+          ? ('current' as const)
+          : ('disabled' as const),
+      children: (
+        <>
+          <EuiText>
+            <p>
+              Deterministically derives service candidates, evidence-scored
+              dependencies, telemetry coverage, health and ownership findings,
+              and non-executing instrumentation proposals.
+            </p>
+          </EuiText>
+          <EuiButton
+            onClick={() => void start(() => api.startStep('analysis'))}
+            isDisabled={!brownfield.manifest || activeRun?.status === 'running'}
+          >
+            Analyze local manifest
+          </EuiButton>
+          <EuiSpacer size="m" />
+          <BrownfieldResults status={brownfield} />
         </>
       ),
     },

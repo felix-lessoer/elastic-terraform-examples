@@ -4,6 +4,12 @@ import type { NextFunction, Request, Response } from 'express';
 import express from 'express';
 import { ZodError } from 'zod';
 import {
+  brownfieldStatus,
+  readBrownfieldArtifact,
+  runBrownfieldAnalysis,
+  runBrownfieldDiscovery,
+} from './brownfield.js';
+import {
   readDeploymentConfig,
   repoRoot,
   terraformDirectory,
@@ -68,6 +74,25 @@ export function createApp(options?: {
 
   app.get('/api/status', async (_request, response) => {
     response.json(await deploymentStatus());
+  });
+
+  app.get('/api/brownfield', async (_request, response) => {
+    response.json(await brownfieldStatus());
+  });
+
+  app.get('/api/brownfield/:artifact', async (request, response) => {
+    if (request.params.artifact !== 'manifest' && request.params.artifact !== 'analysis') {
+      response.status(404).json({ message: 'Unknown brownfield artifact' });
+      return;
+    }
+    try {
+      const contents = await readBrownfieldArtifact(request.params.artifact);
+      response.type('application/json').send(contents);
+    } catch (error) {
+      response.status(404).json({
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
   });
 
   app.get('/api/runs', (_request, response) => {
@@ -142,6 +167,14 @@ export function createApp(options?: {
       apply: {
         title: 'Apply reviewed Terraform plan',
         task: terraformApply,
+      },
+      discovery: {
+        title: 'Discover existing AWS environment',
+        task: runBrownfieldDiscovery,
+      },
+      analysis: {
+        title: 'Analyze brownfield services and gaps',
+        task: runBrownfieldAnalysis,
       },
     } as const;
 

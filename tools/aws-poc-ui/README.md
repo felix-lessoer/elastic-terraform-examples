@@ -19,6 +19,9 @@ The UI can:
 - create and display a saved Terraform plan;
 - apply only that saved plan after an explicit confirmation;
 - trigger only the Kibana Workflows reported by Terraform outputs;
+- run bounded, read-only discovery of the existing AWS environment;
+- derive local service candidates, dependencies, coverage, findings, and
+  instrumentation proposals;
 - stream local execution logs; and
 - link to the deployed AWS cockpit and Elastic project.
 
@@ -86,6 +89,8 @@ The guide creates these ignored files:
 | File | Purpose |
 | --- | --- |
 | `tools/aws-poc-ui/.env` | Local Elastic and AWS credentials (`0600`) |
+| `tools/aws-poc-ui/.elastic-poc/manifest.json` | Read-only AWS discovery result |
+| `tools/aws-poc-ui/.elastic-poc/analysis.json` | Deterministic local analysis |
 | `examples/aws/aws-poc-ui.auto.tfvars.json` | Non-secret deployment configuration |
 | `examples/aws/.aws-poc-ui.tfplan` | Saved plan reviewed before apply |
 
@@ -117,21 +122,27 @@ npm test
 npm run typecheck
 npm run build
 npm audit
+python3 -m unittest discover -s python -p 'test_*.py'
 ```
 
-## Future brownfield stages
+## Local brownfield stages
 
-The current UI exposes the steps that PR 12 implements today. As the brownfield
-discovery work lands, add its deterministic Workflows to Terraform's
-`workflow_ids` output. They will become triggerable without adding arbitrary
-commands to the UI:
+The Deployment Creator can run these stages without Terraform changes:
 
-- inventory refresh;
-- expected-versus-observed coverage;
-- dependency rebuild;
-- findings generation;
-- instrumentation proposal; and
-- approved canary validation.
+- AWS inventory and configured-telemetry discovery;
+- deterministic service candidate grouping;
+- control-plane and existing X-Ray dependency inference;
+- expected-versus-known telemetry coverage;
+- health, ownership, and coverage findings; and
+- descriptive instrumentation proposals.
+
+The scripts use an explicit read-only AWS CLI operation allow-list, bounded API
+calls, bounded resources per type, and partial-result reporting. They do not
+enable telemetry, alter workloads, or write to Elastic.
+
+Persisting the manifest and analysis into Elastic, scheduling recurring
+refresh, expanding IAM roles, and implementing approved canary execution still
+require Terraform changes.
 
 Instrumentation approval must remain a separate human decision with a named
 customer workload, exact change, expected cost, validation, and rollback.

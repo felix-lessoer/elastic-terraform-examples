@@ -39,7 +39,9 @@ def aws(region: str, *arguments: str) -> dict:
     return json.loads(output) if output.strip() else {}
 
 
-def elastic_request(method: str, path: str, body: dict) -> dict:
+def elastic_request(
+    method: str, path: str, body: dict | None = None
+) -> dict:
     endpoint = os.environ["ELASTICSEARCH_URL"].rstrip("/")
     credentials = base64.b64encode(
         (
@@ -49,15 +51,22 @@ def elastic_request(method: str, path: str, body: dict) -> dict:
     ).decode()
     request = urllib.request.Request(
         f"{endpoint}{path}",
-        data=json.dumps(body).encode(),
+        data=json.dumps(body).encode() if body is not None else None,
         method=method,
         headers={
             "Authorization": f"Basic {credentials}",
             "Content-Type": "application/json",
         },
     )
-    with urllib.request.urlopen(request, timeout=120) as response:
-        return json.load(response)
+    try:
+        with urllib.request.urlopen(request, timeout=120) as response:
+            return json.load(response)
+    except urllib.error.HTTPError as error:
+        detail = error.read().decode()[:1000]
+        raise RuntimeError(
+            f"Elasticsearch {method} {path} failed "
+            f"({error.code}): {detail}"
+        ) from error
 
 
 def api_key(suffix: str) -> tuple[str, str]:
@@ -88,7 +97,6 @@ def cleanup_orphaned_api_keys(state: dict) -> None:
     result = elastic_request(
         "GET",
         "/_security/api_key?name=aws-poc-visibility-canary*",
-        {},
     )
     orphaned = [
         item["id"]
@@ -736,7 +744,13 @@ def main() -> int:
     proposal_id = proposal["id"]
     state = read_state(arguments.state)
     if arguments.action == "deploy":
-        cleanup_orphaned_api_keys(state)
+        try:
+            cleanup_orphaned_api_keys(state)
+        except Exception as cleanup_error:
+            print(
+                f"Orphaned API key cleanup deferred: {cleanup_error}",
+                flush=True,
+            )
         if proposal_id in state["adapters"]:
             print("Visibility adapter is already deployed", flush=True)
             return 0

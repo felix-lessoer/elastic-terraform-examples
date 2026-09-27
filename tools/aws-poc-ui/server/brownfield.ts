@@ -266,9 +266,14 @@ export async function saveVisibilitySelection(input: unknown): Promise<{
     };
   }
   const currentSelection = await readVisibilitySelection();
-  const deployedProposalIds = currentSelection.deployedProposalIds.filter(
-    (id) => uniqueIds.includes(id),
-  );
+  if (
+    currentSelection.deployedProposalIds.some((id) => !uniqueIds.includes(id))
+  ) {
+    throw new Error(
+      'Roll back a deployed visibility canary before removing it from scope',
+    );
+  }
+  const deployedProposalIds = currentSelection.deployedProposalIds;
   await persistVisibilitySelection({
     selectedProposalIds: uniqueIds,
     approvals,
@@ -322,6 +327,7 @@ async function runLambdaLogAdapter(
         KIBANA_PASSWORD: password,
         KIBANA_URL: kibanaUrl,
         KIBANA_USERNAME: username,
+        POLICY_PREFIX: 'aws-poc-canary-',
         SOURCES_JSON: JSON.stringify([lambdaLogSource(proposal)]),
       },
     },
@@ -456,6 +462,11 @@ export async function rollbackVisibilityExpansions(
 
 export async function runBrownfieldDiscovery(write: LogWriter): Promise<unknown> {
   const { config } = await readDeploymentConfig();
+  if ((await readVisibilitySelection()).deployedProposalIds.length) {
+    throw new Error(
+      'Roll back deployed visibility canaries before running discovery again',
+    );
+  }
   if (await exists(analysisPath)) await unlink(analysisPath);
   if (await exists(visibilitySelectionPath)) await unlink(visibilitySelectionPath);
   write('Starting read-only AWS control-plane discovery');
@@ -488,6 +499,11 @@ export async function runBrownfieldDiscovery(write: LogWriter): Promise<unknown>
 export async function runBrownfieldAnalysis(write: LogWriter): Promise<unknown> {
   if (!(await exists(manifestPath))) {
     throw new Error('Run AWS environment discovery before analysis');
+  }
+  if ((await readVisibilitySelection()).deployedProposalIds.length) {
+    throw new Error(
+      'Roll back deployed visibility canaries before running analysis again',
+    );
   }
   if (await exists(visibilitySelectionPath)) await unlink(visibilitySelectionPath);
   write('Analyzing the local manifest without changing AWS or Elastic');

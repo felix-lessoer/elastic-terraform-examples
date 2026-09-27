@@ -18,7 +18,7 @@ KIBANA_URL = os.environ["KIBANA_URL"].rstrip("/")
 AUTH = base64.b64encode(
     f"{os.environ['KIBANA_USERNAME']}:{os.environ['KIBANA_PASSWORD']}".encode()
 ).decode()
-POLICY_PREFIX = "aws-existing-log-"
+POLICY_PREFIX = os.environ.get("POLICY_PREFIX", "aws-existing-log-")
 
 
 def request(method: str, path: str, body: dict | None = None) -> dict:

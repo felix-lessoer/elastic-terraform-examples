@@ -1070,9 +1070,14 @@ function VisibilityExpansionOptions({
                   fill={!selected}
                   color={selected ? 'text' : 'primary'}
                   isLoading={saving === proposal.id}
+                  isDisabled={deployed || saving !== undefined}
                   onClick={() => void toggle(proposal.id)}
                 >
-                  {selected ? 'Remove from PoC scope' : 'Add canary to PoC scope'}
+                  {deployed
+                    ? 'Roll back before removing'
+                    : selected
+                      ? 'Remove from PoC scope'
+                      : 'Add canary to PoC scope'}
                 </EuiButton>
                 {selected && (
                   <>

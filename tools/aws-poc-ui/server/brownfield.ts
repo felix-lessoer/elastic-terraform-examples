@@ -194,7 +194,7 @@ function adapterFor(
           'Elastic Python Lambda tracing adapter',
         'aws.ecs.service:traces': 'Runtime-aware ECS tracing adapter',
         'aws.eks.cluster:metrics':
-          'OpenTelemetry Kubernetes metrics adapter',
+          'OpenTelemetry metrics adapter with temporary EKS setup access',
         'aws.rds.instance:database': 'RDS Performance Insights adapter',
       }[id] ?? 'Dedicated visibility adapter',
   };
@@ -489,14 +489,30 @@ export async function deployVisibilityExpansions(
     );
   }
   write(`Deploying ${deployable.length} approved visibility canary adapters`);
+  const failures: string[] = [];
   for (const proposal of deployable) {
     write(`Deploying ${optionTitle(proposal.resource_type, proposal.signal)}`);
-    await runVisibilityAdapter('deploy', proposal, write);
-    selection.deployedProposalIds = [
-      ...new Set([...selection.deployedProposalIds, proposal.id]),
-    ];
-    await persistVisibilitySelection(selection);
-    write(`${proposal.resource_name}: adapter deployed`);
+    try {
+      await runVisibilityAdapter('deploy', proposal, write);
+      selection.deployedProposalIds = [
+        ...new Set([...selection.deployedProposalIds, proposal.id]),
+      ];
+      await persistVisibilitySelection(selection);
+      write(`${proposal.resource_name}: adapter deployed`);
+    } catch (error) {
+      failures.push(proposal.resource_name);
+      write(
+        `${proposal.resource_name}: deployment needs attention; continuing with the remaining canaries`,
+      );
+      write(error instanceof Error ? error.message : String(error));
+    }
+  }
+  if (failures.length) {
+    throw new Error(
+      `${failures.length} visibility ${
+        failures.length === 1 ? 'adapter needs' : 'adapters need'
+      } attention: ${failures.join(', ')}`,
+    );
   }
   return visibilityExpansionStatus();
 }

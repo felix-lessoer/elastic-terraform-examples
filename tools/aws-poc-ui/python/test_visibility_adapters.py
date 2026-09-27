@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 
 from visibility_adapters import (
     eks_manifest,
+    eks_principal_arn,
     eks_resources,
     elastic_request,
     parse_arn,
@@ -10,6 +11,19 @@ from visibility_adapters import (
 
 
 class VisibilityAdapterTest(unittest.TestCase):
+    @patch("visibility_adapters.aws")
+    def test_normalizes_assumed_role_for_eks_access_entry(self, aws):
+        aws.return_value = {
+            "Arn": (
+                "arn:aws:sts::123456789012:"
+                "assumed-role/platform-admin/session-name"
+            )
+        }
+        self.assertEqual(
+            eks_principal_arn("eu-west-1"),
+            "arn:aws:iam::123456789012:role/platform-admin",
+        )
+
     @patch("visibility_adapters.urllib.request.urlopen")
     def test_elasticsearch_get_request_has_no_body(self, urlopen):
         response = MagicMock()

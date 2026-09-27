@@ -17,6 +17,9 @@ import urllib.request
 
 
 STATE_VERSION = "1.0"
+EKS_ADMIN_POLICY = (
+    "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+)
 
 
 def run(command: list[str], *, input_text: str | None = None) -> str:
@@ -449,6 +452,143 @@ def kubernetes_api(region: str, cluster_name: str) -> KubernetesApi:
     return KubernetesApi(cluster, token)
 
 
+def eks_principal_arn(region: str) -> str:
+    arn = aws(region, "sts", "get-caller-identity")["Arn"]
+    marker = ":assumed-role/"
+    if ":sts:" in arn and marker in arn:
+        prefix, role_and_session = arn.split(marker, 1)
+        role_name = role_and_session.rsplit("/", 1)[0]
+        account = prefix.split(":")[4]
+        return f"arn:aws:iam::{account}:role/{role_name}"
+    return arn
+
+
+def ensure_eks_access(region: str, cluster_name: str) -> dict:
+    cluster = aws(
+        region, "eks", "describe-cluster", "--name", cluster_name
+    )["cluster"]
+    authentication_mode = cluster.get("accessConfig", {}).get(
+        "authenticationMode", "CONFIG_MAP"
+    )
+    if authentication_mode == "CONFIG_MAP":
+        raise RuntimeError(
+            f"EKS cluster {cluster_name} uses CONFIG_MAP-only authentication. "
+            "Enable API_AND_CONFIG_MAP through the cluster-owner change "
+            "process before deploying this adapter."
+        )
+    principal = eks_principal_arn(region)
+    entries = aws(
+        region,
+        "eks",
+        "list-access-entries",
+        "--cluster-name",
+        cluster_name,
+    ).get("accessEntries", [])
+    created_entry = principal not in entries
+    associated_admin = False
+    try:
+        if created_entry:
+            print("Creating temporary EKS access entry", flush=True)
+            aws(
+                region,
+                "eks",
+                "create-access-entry",
+                "--cluster-name",
+                cluster_name,
+                "--principal-arn",
+                principal,
+                "--type",
+                "STANDARD",
+            )
+        policies = aws(
+            region,
+            "eks",
+            "list-associated-access-policies",
+            "--cluster-name",
+            cluster_name,
+            "--principal-arn",
+            principal,
+        ).get("associatedAccessPolicies", [])
+        associated_admin = not any(
+            item.get("policyArn") == EKS_ADMIN_POLICY for item in policies
+        )
+        if associated_admin:
+            print("Associating temporary EKS cluster access", flush=True)
+            aws(
+                region,
+                "eks",
+                "associate-access-policy",
+                "--cluster-name",
+                cluster_name,
+                "--principal-arn",
+                principal,
+                "--policy-arn",
+                EKS_ADMIN_POLICY,
+                "--access-scope",
+                "type=cluster",
+            )
+        if created_entry or associated_admin:
+            time.sleep(10)
+        return {
+            "principal": principal,
+            "created_entry": created_entry,
+            "associated_admin": associated_admin,
+        }
+    except Exception:
+        release_eks_access(
+            region,
+            cluster_name,
+            {
+                "principal": principal,
+                "created_entry": created_entry,
+                "associated_admin": associated_admin,
+            },
+        )
+        raise
+
+
+def release_eks_access(
+    region: str, cluster_name: str, access_state: dict
+) -> None:
+    principal = access_state["principal"]
+    errors = []
+    if access_state["associated_admin"]:
+        print("Removing temporary EKS cluster access", flush=True)
+        try:
+            aws(
+                region,
+                "eks",
+                "disassociate-access-policy",
+                "--cluster-name",
+                cluster_name,
+                "--principal-arn",
+                principal,
+                "--policy-arn",
+                EKS_ADMIN_POLICY,
+            )
+        except Exception as error:
+            errors.append(str(error))
+    if access_state["created_entry"]:
+        print("Deleting temporary EKS access entry", flush=True)
+        try:
+            aws(
+                region,
+                "eks",
+                "delete-access-entry",
+                "--cluster-name",
+                cluster_name,
+                "--principal-arn",
+                principal,
+            )
+        except Exception as error:
+            errors.append(str(error))
+    if errors:
+        raise RuntimeError(
+            "Unable to fully remove temporary EKS access: "
+            + "; ".join(errors)
+        )
+
+
 def eks_resources(namespace: str, endpoint: str, key: str) -> list[tuple[str, dict]]:
     labels = {"app": "elastic-otel-canary"}
     collector_config = f"""receivers:
@@ -630,11 +770,17 @@ def deploy_eks(proposal: dict) -> dict:
     region, resource = parse_arn(proposal["resource_arn"])
     cluster_name = resource.removeprefix("cluster/")
     namespace = "elastic-poc-canary"
-    api = kubernetes_api(region, cluster_name)
+    access_state = ensure_eks_access(region, cluster_name)
+    try:
+        api = kubernetes_api(region, cluster_name)
+    except Exception:
+        release_eks_access(region, cluster_name, access_state)
+        raise
     try:
         key_id, encoded_key = api_key(proposal["id"])
     except Exception:
         api.close()
+        release_eks_access(region, cluster_name, access_state)
         raise
     try:
         for collection, resource_body in eks_resources(
@@ -671,17 +817,28 @@ def deploy_eks(proposal: dict) -> dict:
         raise
     finally:
         api.close()
+        release_eks_access(region, cluster_name, access_state)
     return {"kind": "eks", "region": region, "cluster_name": cluster_name,
             "namespace": namespace, "api_key_id": key_id}
 
 
 def rollback_eks(state: dict) -> None:
-    api = kubernetes_api(state["region"], state["cluster_name"])
+    access_state = ensure_eks_access(state["region"], state["cluster_name"])
+    try:
+        api = kubernetes_api(state["region"], state["cluster_name"])
+    except Exception:
+        release_eks_access(
+            state["region"], state["cluster_name"], access_state
+        )
+        raise
     try:
         cleanup_eks(api, state["namespace"])
         invalidate_api_key(state["api_key_id"])
     finally:
         api.close()
+        release_eks_access(
+            state["region"], state["cluster_name"], access_state
+        )
 
 
 def deploy_ecs(proposal: dict) -> dict:

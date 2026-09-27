@@ -400,7 +400,12 @@ def analyze(manifest: dict[str, Any], analyzed_at: str) -> dict[str, Any]:
                     resource,
                     "metrics",
                     "Request scoped Kubernetes API access and assess existing collectors before deployment.",
-                    ["Cluster owner approval", "RBAC review", "Fargate/node-group assessment"],
+                    [
+                        "Cluster owner approval",
+                        "Temporary EKS cluster-admin access for adapter setup",
+                        "RBAC review",
+                        "Fargate/node-group assessment",
+                    ],
                     ["Collector compute", "Metrics/log ingestion"],
                     ["Cluster and node health become visible", "No workload restart for infrastructure collection"],
                     ["Remove the approved collector release and RBAC objects"],

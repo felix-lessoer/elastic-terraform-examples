@@ -19,6 +19,10 @@ locals {
       workflow_id = "aws-cockpit-assets"
       description = "Run the AWS cockpit asset inventory workflow."
     }
+    "aws-wf-ml-datafeed-keeper" = {
+      workflow_id = "aws-ml-datafeed-keeper"
+      description = "Open AWS ML jobs and start their datafeeds once source indices exist."
+    }
   } : {}
 }
 

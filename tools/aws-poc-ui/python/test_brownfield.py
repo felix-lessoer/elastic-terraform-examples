@@ -2,6 +2,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from analyze_brownfield import analyze, validate_manifest
 from aws_brownfield_discovery import AwsCli, owner_candidates, stable_id, tags_to_dict
@@ -32,6 +33,35 @@ class DiscoveryHelpersTest(unittest.TestCase):
         client.error_lock = __import__("threading").Lock()
         with self.assertRaises(ValueError):
             client.call("lambda", "update-function-configuration")
+
+    def test_aws_cli_call_works_with_v1_and_disables_paging_via_environment(self):
+        client = object.__new__(AwsCli)
+        client.executable = "aws"
+        client.budget = type("Budget", (), {"consume": lambda self: True})()
+        client.errors = []
+        client.error_lock = __import__("threading").Lock()
+        completed = type(
+            "Completed",
+            (),
+            {
+                "returncode": 0,
+                "stdout": '{"Account":"123456789012"}',
+                "stderr": "",
+            },
+        )()
+        with patch(
+            "aws_brownfield_discovery.subprocess.run",
+            return_value=completed,
+        ) as run:
+            result = client.call(
+                "sts",
+                "get-caller-identity",
+                region="eu-west-1",
+            )
+        command = run.call_args.args[0]
+        self.assertNotIn("--no-cli-pager", command)
+        self.assertEqual(run.call_args.kwargs["env"]["AWS_PAGER"], "")
+        self.assertEqual(result["Account"], "123456789012")
 
 
 class AnalysisTest(unittest.TestCase):

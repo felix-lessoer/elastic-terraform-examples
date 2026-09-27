@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -122,12 +123,13 @@ class AwsCli:
         command = [self.executable, service, operation, *args]
         if region:
             command.extend(["--region", region])
-        command.extend(["--output", "json", "--no-cli-pager"])
+        command.extend(["--output", "json"])
         try:
             result = subprocess.run(
                 command,
                 check=False,
                 capture_output=True,
+                env={**os.environ, "AWS_PAGER": ""},
                 text=True,
                 timeout=timeout,
             )
@@ -918,7 +920,8 @@ def main() -> int:
     account_id = str(identity.get("Account", ""))
     caller_arn = str(identity.get("Arn", ""))
     if not account_id:
-        raise SystemExit("Unable to resolve AWS caller identity")
+        detail = aws.errors[-1]["message"] if aws.errors else "AWS returned no account ID"
+        raise SystemExit(f"Unable to resolve AWS caller identity: {detail}")
     partition = caller_arn.split(":", 2)[1] if caller_arn.startswith("arn:") else "aws"
     observed_at = utc_now()
 

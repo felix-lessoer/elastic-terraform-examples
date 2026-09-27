@@ -111,7 +111,7 @@ output "enabled_datasets" {
 }
 
 output "applied_tags" {
-  value = var.company_tags
+  value = local.effective_company_tags
 }
 
 output "next_steps" {

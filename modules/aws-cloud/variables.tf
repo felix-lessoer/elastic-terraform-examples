@@ -36,12 +36,8 @@ variable "additional_read_bucket_arns" {
 
 variable "company_tags" {
   type        = map(string)
-  description = "Mandatory company-policy tags applied to every taggable AWS resource."
-
-  validation {
-    condition     = length(var.company_tags) > 0
-    error_message = "company_tags must contain at least one tag required by company policy."
-  }
+  description = "Optional organization-specific tags applied to taggable AWS resources."
+  default     = {}
 }
 
 variable "required_tag_keys" {

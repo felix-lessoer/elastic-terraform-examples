@@ -155,7 +155,7 @@ Then open <http://127.0.0.1:5602>.
 ```bash
 cd examples/aws
 cp terraform.tfvars.example terraform.tfvars
-# Edit company_tags for your organization.
+# Enable and edit company_tags only when required by your organization.
 terraform init
 terraform plan
 terraform apply

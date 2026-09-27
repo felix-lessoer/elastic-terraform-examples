@@ -82,6 +82,24 @@ describe('deployment configuration', () => {
     );
   });
 
+  it('allows tags to be omitted unless Elastic tags are required', () => {
+    expect(
+      deploymentConfigSchema.parse({
+        ...defaultDeploymentConfig,
+        elastic_tags_required: false,
+        company_tags: {},
+        required_tag_keys: [],
+      }).company_tags,
+    ).toEqual({});
+    expect(() =>
+      deploymentConfigSchema.parse({
+        ...defaultDeploymentConfig,
+        elastic_tags_required: true,
+        company_tags: {},
+      }),
+    ).toThrow();
+  });
+
   it('rejects invalid AWS regions and empty required tags', () => {
     expect(() =>
       deploymentConfigSchema.parse({

@@ -27,7 +27,7 @@ provider "aws" {
   region = var.aws_region
 
   default_tags {
-    tags = var.company_tags
+    tags = local.effective_company_tags
   }
 }
 
@@ -62,15 +62,17 @@ data "external" "existing_log_sources" {
 }
 
 locals {
+  effective_company_tags = var.elastic_tags_required ? var.company_tags : {}
+
   elastic_tags = {
-    for k, v in var.company_tags :
+    for k, v in local.effective_company_tags :
     substr(lower(replace(replace(replace(replace(k, " ", "-"), "/", "-"), ".", "-"), ":", "-")), 0, 32) =>
     substr(lower(replace(replace(replace(replace(tostring(v), " ", "-"), "/", "-"), ".", "-"), ":", "-")), 0, 32)
   }
 
   required_aws_tag_keys_missing = [
-    for key in var.required_tag_keys : key
-    if !contains(keys(var.company_tags), key)
+    for key in (var.elastic_tags_required ? var.required_tag_keys : []) : key
+    if !contains(keys(local.effective_company_tags), key)
   ]
 
   # An empty regions list is the AWS integration's documented "all regions"
@@ -597,7 +599,7 @@ module "aws_cloud" {
   enable_cloudtrail    = var.existing_cloudtrail_bucket_name == ""
   enable_vpc_flow_logs = true
   enable_sqs           = true
-  company_tags         = var.company_tags
+  company_tags         = local.effective_company_tags
   required_tag_keys    = var.required_tag_keys
   additional_read_bucket_arns = distinct(concat(
     var.existing_cloudtrail_bucket_name != "" ? [
@@ -627,7 +629,7 @@ data "aws_iam_policy_document" "elastic_managed_trust" {
 resource "aws_iam_role" "elastic_managed" {
   name               = "${var.name_prefix}-managed-observability"
   assume_role_policy = data.aws_iam_policy_document.elastic_managed_trust.json
-  tags               = merge(var.company_tags, { Name = "${var.name_prefix}-managed-observability" })
+  tags               = merge(local.effective_company_tags, { Name = "${var.name_prefix}-managed-observability" })
 }
 
 data "aws_iam_policy_document" "elastic_managed" {
@@ -894,7 +896,7 @@ module "elastic_agent" {
 
   name                 = "${var.name_prefix}-agent"
   instance_type        = var.elastic_agent_instance_type
-  company_tags         = merge(var.company_tags, { Role = "elastic-agent-observability" })
+  company_tags         = merge(local.effective_company_tags, { Role = "elastic-agent-observability" })
   fleet_url            = module.observability.fleet_endpoint
   enrollment_token     = module.stack.enrollment_token
   agent_version        = var.elastic_agent_version

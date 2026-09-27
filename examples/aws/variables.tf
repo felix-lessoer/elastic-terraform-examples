@@ -100,13 +100,20 @@ variable "execute_workflows_on_apply" {
   default     = true
 }
 
+variable "elastic_tags_required" {
+  type        = bool
+  description = "Whether organization-specific tags must be applied to the Elastic project and provisioned AWS resources."
+  default     = false
+}
+
 variable "company_tags" {
   type        = map(string)
-  description = "Company-policy tags applied to AWS resources and sanitized onto the Elastic project."
+  description = "Optional organization-specific tags applied when elastic_tags_required is true."
+  default     = {}
 
   validation {
-    condition     = length(var.company_tags) > 0
-    error_message = "Set company_tags according to your company tagging policy."
+    condition     = !var.elastic_tags_required || length(var.company_tags) > 0
+    error_message = "Set company_tags when elastic_tags_required is true."
   }
 }
 

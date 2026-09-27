@@ -1,4 +1,5 @@
 export interface DeploymentConfig {
+  elastic_tags_required: boolean;
   elastic_project_name: string;
   elastic_region: string;
   aws_region: string;

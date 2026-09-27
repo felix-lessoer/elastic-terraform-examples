@@ -25,6 +25,7 @@ import {
   EuiSpacer,
   EuiStat,
   EuiSteps,
+  EuiSwitch,
   EuiText,
   EuiTitle,
 } from '@elastic/eui';
@@ -314,22 +315,43 @@ function ConfigurationForm({
         </EuiFlexItem>
       </EuiFlexGroup>
       <EuiHorizontalRule margin="m" />
-      <EuiTitle size="xxs">
-        <h4>Required company tags</h4>
-      </EuiTitle>
-      <EuiSpacer size="s" />
-      <EuiFlexGroup wrap>
-        {config.required_tag_keys.map((key) => (
-          <EuiFlexItem key={key} grow={false} css={{ width: 230 }}>
-            <EuiFormRow label={key}>
-              <EuiFieldText
-                value={config.company_tags[key] ?? ''}
-                onChange={(event) => setTag(key, event.target.value)}
-              />
-            </EuiFormRow>
-          </EuiFlexItem>
-        ))}
-      </EuiFlexGroup>
+      <EuiSwitch
+        label="Elastic tags required"
+        checked={config.elastic_tags_required}
+        onChange={(event) =>
+          setConfig((current) => ({
+            ...current,
+            elastic_tags_required: event.target.checked,
+          }))
+        }
+      />
+      {config.elastic_tags_required && (
+        <>
+          <EuiSpacer size="m" />
+          <EuiTitle size="xxs">
+            <h4>Organization-specific tags</h4>
+          </EuiTitle>
+          <EuiText size="xs" color="subdued">
+            <p>
+              These tags are sanitized for the Elastic project and propagated to
+              taggable AWS resources created by this deployment.
+            </p>
+          </EuiText>
+          <EuiSpacer size="s" />
+          <EuiFlexGroup wrap>
+            {config.required_tag_keys.map((key) => (
+              <EuiFlexItem key={key} grow={false} css={{ width: 230 }}>
+                <EuiFormRow label={key}>
+                  <EuiFieldText
+                    value={config.company_tags[key] ?? ''}
+                    onChange={(event) => setTag(key, event.target.value)}
+                  />
+                </EuiFormRow>
+              </EuiFlexItem>
+            ))}
+          </EuiFlexGroup>
+        </>
+      )}
       <EuiSpacer size="m" />
       <EuiButton fill onClick={save} isLoading={saving}>
         Save local configuration

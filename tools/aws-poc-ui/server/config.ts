@@ -28,6 +28,7 @@ export const generatedVariablesPath = path.join(
 const tagValue = z.string().trim().min(1).max(256);
 
 export const deploymentConfigSchema = z.object({
+  elastic_tags_required: z.boolean().default(false),
   elastic_project_name: z.string().trim().min(1).max(100),
   elastic_region: z.string().trim().regex(/^[a-z]{2,}-[a-z]+-[a-z]+-\d+$/),
   aws_region: z.string().trim().regex(/^[a-z]{2}(?:-gov)?-[a-z]+-\d+$/),
@@ -47,11 +48,30 @@ export const deploymentConfigSchema = z.object({
     tagValue,
   ),
   required_tag_keys: z.array(z.string().trim().min(1).max(128)).max(50),
+}).superRefine((config, context) => {
+  if (!config.elastic_tags_required) return;
+  if (Object.keys(config.company_tags).length === 0) {
+    context.addIssue({
+      code: 'custom',
+      path: ['company_tags'],
+      message: 'Enter at least one Elastic tag',
+    });
+  }
+  for (const key of config.required_tag_keys) {
+    if (!config.company_tags[key]) {
+      context.addIssue({
+        code: 'custom',
+        path: ['company_tags', key],
+        message: `Enter the required tag ${key}`,
+      });
+    }
+  }
 });
 
 export type DeploymentConfig = z.infer<typeof deploymentConfigSchema>;
 
 export const defaultDeploymentConfig: DeploymentConfig = {
+  elastic_tags_required: false,
   elastic_project_name: 'AWS Observability',
   elastic_region: 'aws-eu-west-1',
   aws_region: 'eu-west-1',

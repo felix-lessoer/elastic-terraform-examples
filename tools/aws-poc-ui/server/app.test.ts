@@ -64,6 +64,20 @@ describe('local API security', () => {
     expect(response.body.message).toContain('cloud prerequisite');
   });
 
+  it('rejects malformed visibility expansion selections', async () => {
+    const { app } = createApp({
+      csrfToken: 'test-token',
+      serveStatic: false,
+    });
+    const response = await request(app)
+      .put('/api/visibility-expansions')
+      .set('Origin', 'http://127.0.0.1:5602')
+      .set('x-aws-poc-csrf', 'test-token')
+      .send({ selectedProposalIds: ['not-a-proposal-id'] })
+      .expect(400);
+    expect(response.body.message).toContain('Invalid visibility');
+  });
+
   it('rejects non-local browser origins', async () => {
     const { app } = createApp({
       csrfToken: 'test-token',

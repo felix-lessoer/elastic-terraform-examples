@@ -122,6 +122,34 @@ export interface BrownfieldStatus {
   analysis: BrownfieldArtifactStatus | null;
 }
 
+export interface VisibilityProposal {
+  id: string;
+  resource_arn: string;
+  resource_name: string;
+  resource_type: string;
+  signal: string;
+  priority: number;
+  change_summary: string;
+  prerequisites: string[];
+  cost_dimensions: string[];
+  validation: string[];
+  rollback: string[];
+}
+
+export interface VisibilityOption {
+  id: string;
+  title: string;
+  signal: string;
+  resourceType: string;
+  affectedResources: number;
+  recommendedCanary: VisibilityProposal;
+}
+
+export interface VisibilityExpansionStatus {
+  options: VisibilityOption[];
+  selectedProposalIds: string[];
+}
+
 let bootstrapPromise: Promise<Bootstrap> | undefined;
 
 async function parse<T>(response: Response): Promise<T> {
@@ -178,6 +206,9 @@ export const api = {
   async brownfield(): Promise<BrownfieldStatus> {
     return query<BrownfieldStatus>('/api/brownfield');
   },
+  async visibilityExpansions(): Promise<VisibilityExpansionStatus> {
+    return query<VisibilityExpansionStatus>('/api/visibility-expansions');
+  },
   async runs(): Promise<RunRecord[]> {
     return query<RunRecord[]>('/api/runs');
   },
@@ -193,6 +224,13 @@ export const api = {
       '/api/credentials',
       'PUT',
       credentials,
+    );
+  },
+  saveVisibilityExpansions(selectedProposalIds: string[]) {
+    return mutate<VisibilityExpansionStatus>(
+      '/api/visibility-expansions',
+      'PUT',
+      { selectedProposalIds },
     );
   },
   startStep(

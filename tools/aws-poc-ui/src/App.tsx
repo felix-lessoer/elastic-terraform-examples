@@ -45,6 +45,7 @@ import {
   type PlanSummary,
   type PreflightCheck,
   type RunRecord,
+  type VisibilityExpansionStatus,
 } from './api';
 
 type AsyncState = 'idle' | 'loading' | 'ready' | 'error';
@@ -877,12 +878,148 @@ function BrownfieldResults({ status }: { status: BrownfieldStatus }) {
   );
 }
 
+function VisibilityExpansionOptions({
+  status,
+  onUpdated,
+}: {
+  status: VisibilityExpansionStatus;
+  onUpdated: (status: VisibilityExpansionStatus) => void;
+}) {
+  const [saving, setSaving] = useState<string>();
+  const [error, setError] = useState<string>();
+  if (!status.options.length) return null;
+  const toggle = async (proposalId: string) => {
+    setSaving(proposalId);
+    setError(undefined);
+    const selected = status.selectedProposalIds.includes(proposalId)
+      ? status.selectedProposalIds.filter((id) => id !== proposalId)
+      : [...status.selectedProposalIds, proposalId];
+    try {
+      onUpdated(await api.saveVisibilityExpansions(selected));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setSaving(undefined);
+    }
+  };
+  return (
+    <>
+      <EuiHorizontalRule margin="m" />
+      <EuiTitle size="xs">
+        <h3>Expand visibility for this PoC</h3>
+      </EuiTitle>
+      <EuiText size="s" color="subdued">
+        <p>
+          Analysis found the following customer-workload canaries. Add only the
+          highest-priority target in each category to the PoC scope, then review
+          its prerequisites, cost dimensions, validation, and rollback before
+          deployment.
+        </p>
+      </EuiText>
+      {error && (
+        <>
+          <EuiCallOut color="danger" title={error} />
+          <EuiSpacer size="m" />
+        </>
+      )}
+      <EuiFlexGroup wrap>
+        {status.options.map((option) => {
+          const proposal = option.recommendedCanary;
+          const selected = status.selectedProposalIds.includes(proposal.id);
+          return (
+            <EuiFlexItem key={option.id} css={{ minWidth: 300 }}>
+              <EuiPanel hasBorder color={selected ? 'primary' : 'plain'}>
+                <EuiFlexGroup
+                  alignItems="center"
+                  justifyContent="spaceBetween"
+                  gutterSize="s"
+                >
+                  <EuiFlexItem>
+                    <EuiTitle size="xxs">
+                      <h4>{option.title}</h4>
+                    </EuiTitle>
+                  </EuiFlexItem>
+                  <EuiFlexItem grow={false}>
+                    <EuiBadge color="hollow">
+                      {option.affectedResources} candidates
+                    </EuiBadge>
+                  </EuiFlexItem>
+                </EuiFlexGroup>
+                <EuiSpacer size="s" />
+                <EuiText size="s">
+                  <p>{proposal.change_summary}</p>
+                  <p>
+                    <strong>Recommended canary:</strong>{' '}
+                    {proposal.resource_name}
+                  </p>
+                </EuiText>
+                <details>
+                  <summary style={{ cursor: 'pointer' }}>
+                    Review deployment safeguards
+                  </summary>
+                  <EuiText size="xs">
+                    <p>
+                      <strong>Prerequisites:</strong>{' '}
+                      {proposal.prerequisites.join('; ')}
+                    </p>
+                    <p>
+                      <strong>Cost:</strong>{' '}
+                      {proposal.cost_dimensions.join('; ')}
+                    </p>
+                    <p>
+                      <strong>Validation:</strong>{' '}
+                      {proposal.validation.join('; ')}
+                    </p>
+                    <p>
+                      <strong>Rollback:</strong> {proposal.rollback.join('; ')}
+                    </p>
+                  </EuiText>
+                </details>
+                <EuiSpacer size="m" />
+                <EuiButton
+                  size="s"
+                  fill={!selected}
+                  color={selected ? 'text' : 'primary'}
+                  isLoading={saving === proposal.id}
+                  onClick={() => void toggle(proposal.id)}
+                >
+                  {selected ? 'Remove from PoC scope' : 'Add canary to PoC scope'}
+                </EuiButton>
+              </EuiPanel>
+            </EuiFlexItem>
+          );
+        })}
+      </EuiFlexGroup>
+      <EuiSpacer size="m" />
+      <EuiCallOut
+        color={status.selectedProposalIds.length ? 'warning' : 'primary'}
+        title={
+          status.selectedProposalIds.length
+            ? `${status.selectedProposalIds.length} visibility expansion(s) selected`
+            : 'No workload changes selected'
+        }
+      >
+        <p>
+          Selection records the intended PoC expansion scope. Workload
+          instrumentation remains non-executing until its owner approval and
+          deployment adapter are available.
+        </p>
+      </EuiCallOut>
+    </>
+  );
+}
+
 export default function App() {
   const [loadState, setLoadState] = useState<AsyncState>('loading');
   const [bootstrap, setBootstrap] = useState<Bootstrap>();
   const [credentials, setCredentials] = useState<CredentialsStatus>();
   const [brownfield, setBrownfield] = useState<BrownfieldStatus>();
   const [planSummary, setPlanSummary] = useState<PlanSummary | null>(null);
+  const [visibilityExpansions, setVisibilityExpansions] =
+    useState<VisibilityExpansionStatus>({
+      options: [],
+      selectedProposalIds: [],
+    });
   const [status, setStatus] = useState<DeploymentStatus>();
   const [config, setConfig] = useState<DeploymentConfig>();
   const [runs, setRuns] = useState<RunRecord[]>([]);
@@ -898,18 +1035,21 @@ export default function App() {
       nextCredentials,
       nextBrownfield,
       nextPlanSummary,
+      nextVisibilityExpansions,
     ] = await Promise.all([
       api.status(),
       api.runs(),
       api.credentials(),
       api.brownfield(),
       api.plan(),
+      api.visibilityExpansions(),
     ]);
     setStatus(nextStatus);
     setRuns(nextRuns);
     setCredentials(nextCredentials);
     setBrownfield(nextBrownfield);
     setPlanSummary(nextPlanSummary);
+    setVisibilityExpansions(nextVisibilityExpansions);
   };
 
   useEffect(() => {
@@ -919,6 +1059,7 @@ export default function App() {
       api.runs(),
       api.brownfield(),
       api.plan(),
+      api.visibilityExpansions(),
     ])
       .then(([
         loadedBootstrap,
@@ -926,6 +1067,7 @@ export default function App() {
         loadedRuns,
         loadedBrownfield,
         loadedPlanSummary,
+        loadedVisibilityExpansions,
       ]) => {
         setBootstrap(loadedBootstrap);
         setCredentials(loadedBootstrap.credentials);
@@ -934,6 +1076,7 @@ export default function App() {
         setRuns(loadedRuns);
         setBrownfield(loadedBrownfield);
         setPlanSummary(loadedPlanSummary);
+        setVisibilityExpansions(loadedVisibilityExpansions);
         setActiveRun(loadedRuns.find((run) => run.status === 'running'));
         setLoadState('ready');
       })
@@ -1333,6 +1476,12 @@ export default function App() {
           />
           <EuiSpacer size="m" />
           <BrownfieldResults status={brownfield} />
+          {brownfield.analysis && (
+            <VisibilityExpansionOptions
+              status={visibilityExpansions}
+              onUpdated={setVisibilityExpansions}
+            />
+          )}
         </>
       ),
     },

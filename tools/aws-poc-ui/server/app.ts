@@ -8,6 +8,8 @@ import {
   readBrownfieldArtifact,
   runBrownfieldAnalysis,
   runBrownfieldDiscovery,
+  saveVisibilitySelection,
+  visibilityExpansionStatus,
 } from './brownfield.js';
 import {
   readDeploymentConfig,
@@ -89,6 +91,10 @@ export function createApp(options?: {
     response.json(await brownfieldStatus());
   });
 
+  app.get('/api/visibility-expansions', async (_request, response) => {
+    response.json(await visibilityExpansionStatus());
+  });
+
   app.get('/api/brownfield/:artifact', async (request, response) => {
     if (request.params.artifact !== 'manifest' && request.params.artifact !== 'analysis') {
       response.status(404).json({ message: 'Unknown brownfield artifact' });
@@ -157,6 +163,16 @@ export function createApp(options?: {
 
   app.put('/api/credentials', async (request, response) => {
     response.json(await saveCredentials(request.body));
+  });
+
+  app.put('/api/visibility-expansions', async (request, response) => {
+    try {
+      response.json(await saveVisibilitySelection(request.body));
+    } catch (error) {
+      response.status(400).json({
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
   });
 
   app.post('/api/runs/:step', (request, response) => {

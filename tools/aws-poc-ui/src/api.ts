@@ -90,13 +90,15 @@ async function mutate<T>(
 export const api = {
   bootstrap: getBootstrap,
   async config(): Promise<{ config: DeploymentConfig; saved: boolean }> {
-    return fetch('/api/config').then(parse);
+    return fetch('/api/config').then(
+      parse<{ config: DeploymentConfig; saved: boolean }>,
+    );
   },
   async status(): Promise<DeploymentStatus> {
-    return fetch('/api/status').then(parse);
+    return fetch('/api/status').then(parse<DeploymentStatus>);
   },
   async runs(): Promise<RunRecord[]> {
-    return fetch('/api/runs').then(parse);
+    return fetch('/api/runs').then(parse<RunRecord[]>);
   },
   saveConfig(config: DeploymentConfig) {
     return mutate<{ config: DeploymentConfig; saved: boolean }>(

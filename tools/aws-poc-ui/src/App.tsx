@@ -468,9 +468,16 @@ export default function App() {
 
   return (
     <>
-      <EuiHeader position="fixed">
-        <EuiHeaderSectionItem border="right">
-          <EuiHeaderLogo iconType="logoElastic">AWS PoC Guide</EuiHeaderLogo>
+      <EuiHeader>
+        <EuiHeaderSectionItem>
+          <EuiFlexGroup alignItems="center" gutterSize="s" responsive={false}>
+            <EuiFlexItem grow={false}>
+              <EuiHeaderLogo iconTitle="Elastic" logoType="horizontal" />
+            </EuiFlexItem>
+            <EuiFlexItem grow={false}>
+              <strong>AWS PoC Guide</strong>
+            </EuiFlexItem>
+          </EuiFlexGroup>
         </EuiHeaderSectionItem>
         <EuiHeaderSectionItem>
           <EuiBadge color="hollow">localhost only</EuiBadge>

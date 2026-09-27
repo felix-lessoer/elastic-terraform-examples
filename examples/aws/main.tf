@@ -552,6 +552,20 @@ locals {
     local.agent_inputs,
   )
 
+  managed_metric_specs = [
+    for input_key, input_config in local.managed_inputs : {
+      name            = "aws-managed-${split("-", input_key)[0]}-all-regions"
+      description     = "Elastic-managed ${split("-", input_key)[0]} collection across all regions"
+      policy_template = split("-", input_key)[0]
+      default_region  = var.aws_region
+      connector_name  = "${var.name_prefix}-${split("-", input_key)[0]}"
+      inputs = merge(
+        lookup(local.managed_disabled_inputs, split("-", input_key)[0], {}),
+        { (input_key) = input_config },
+      )
+    }
+  ]
+
 }
 
 check "required_company_tags" {
@@ -704,38 +718,8 @@ module "stack" {
   elasticsearch_password = module.observability.password
   enable_detection_rules = false
 
-  integrations = concat(
-    [
-      for input_key, input_config in local.managed_inputs : {
-        name            = "aws-managed-${split("-", input_key)[0]}-all-regions"
-        description     = "Elastic-managed ${split("-", input_key)[0]} collection across all regions"
-        package_name    = "aws"
-        managed         = true
-        agent_policy    = false
-        prerelease      = false
-        package_version = null
-        policy_template = split("-", input_key)[0]
-        vars_json = jsonencode({
-          default_region               = var.aws_region
-          role_arn                     = aws_iam_role.elastic_managed.arn
-          supports_identity_federation = true
-        })
-        var_group_selections = {
-          credential_type = "identity_federation"
-        }
-        cloud_connector = {
-          enabled            = true
-          cloud_connector_id = null
-          name               = "${var.name_prefix}-${split("-", input_key)[0]}"
-          target_csp         = "aws"
-        }
-        inputs = merge(
-          lookup(local.managed_disabled_inputs, split("-", input_key)[0], {}),
-          { (input_key) = input_config },
-        )
-      }
-    ],
-    [{
+  integrations = [
+    {
       name            = "aws-agent-only-integrations"
       description     = "AWS integrations and log inputs unavailable in Elastic-managed mode"
       package_name    = "aws"
@@ -752,10 +736,56 @@ module "stack" {
       }
       cloud_connector = null
       inputs          = local.agent_policy_inputs
-    }],
-  )
+    }
+  ]
 
   depends_on = [module.observability, module.aws_cloud, aws_iam_role_policy.elastic_managed]
+}
+
+# Reconcile managed metric policies serially. The provider's managed-resource
+# implementation cannot safely normalize multiple cloud connectors during a
+# greenfield parallel apply.
+resource "terraform_data" "managed_metric_integrations" {
+  input = {
+    kibana_url      = module.observability.kibana_endpoint
+    kibana_username = module.observability.username
+    kibana_password = module.observability.password
+    aws_role_arn    = aws_iam_role.elastic_managed.arn
+    specs_json      = jsonencode(local.managed_metric_specs)
+  }
+
+  triggers_replace = [
+    sha256(jsonencode(local.managed_metric_specs)),
+    filesha256("${path.module}/scripts/sync_managed_metric_integrations.py"),
+  ]
+
+  provisioner "local-exec" {
+    interpreter = ["/bin/bash", "-c"]
+    command     = "python3 '${path.module}/scripts/sync_managed_metric_integrations.py' sync"
+    environment = {
+      KIBANA_URL      = self.input.kibana_url
+      KIBANA_USERNAME = self.input.kibana_username
+      KIBANA_PASSWORD = self.input.kibana_password
+      AWS_ROLE_ARN    = self.input.aws_role_arn
+      SPECS_JSON      = self.input.specs_json
+    }
+  }
+
+  provisioner "local-exec" {
+    when        = destroy
+    on_failure  = continue
+    interpreter = ["/bin/bash", "-c"]
+    command     = "python3 '${path.module}/scripts/sync_managed_metric_integrations.py' cleanup"
+    environment = {
+      KIBANA_URL      = self.input.kibana_url
+      KIBANA_USERNAME = self.input.kibana_username
+      KIBANA_PASSWORD = self.input.kibana_password
+      AWS_ROLE_ARN    = self.input.aws_role_arn
+      SPECS_JSON      = self.input.specs_json
+    }
+  }
+
+  depends_on = [module.stack, aws_iam_role_policy.elastic_managed]
 }
 
 # GuardDuty, Security Hub, Inspector, and Config are regional API integrations.

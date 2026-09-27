@@ -30,9 +30,9 @@ output "aws_managed_collector_role_arn" {
   value       = aws_iam_role.elastic_managed.arn
 }
 
-output "managed_integration_ids" {
-  description = "Elastic-managed AWS integration policies."
-  value       = module.stack.managed_integration_ids
+output "managed_integration_names" {
+  description = "Serially reconciled Elastic-managed AWS integration policies."
+  value       = [for spec in local.managed_metric_specs : spec.name]
 }
 
 output "regional_security_agent_regions" {

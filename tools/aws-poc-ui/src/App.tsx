@@ -899,14 +899,6 @@ function VisibilityExpansionOptions({
   const [saving, setSaving] = useState<string>();
   const [error, setError] = useState<string>();
   if (!status.options.length) return null;
-  const approvedCount = status.selectedProposalIds.filter((id) => {
-    const approval = status.approvals[id];
-    return (
-      approval?.ownerApproved &&
-      approval.costReviewed &&
-      approval.rollbackReviewed
-    );
-  }).length;
   const candidateById = new Map(
     status.options.flatMap((option) =>
       option.candidates.map((candidate) => [candidate.id, candidate] as const),
@@ -914,12 +906,8 @@ function VisibilityExpansionOptions({
   );
   const readyToDeploy = status.selectedProposalIds.filter((id) => {
     const candidate = candidateById.get(id);
-    const approval = status.approvals[id];
     return (
       candidate?.adapter.available &&
-      approval?.ownerApproved &&
-      approval.costReviewed &&
-      approval.rollbackReviewed &&
       !status.deployedProposalIds.includes(id)
     );
   });
@@ -930,9 +918,7 @@ function VisibilityExpansionOptions({
     setSaving(key);
     setError(undefined);
     try {
-      onUpdated(
-        await api.saveVisibilityExpansions(selected, status.approvals),
-      );
+      onUpdated(await api.saveVisibilityExpansions(selected));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
     } finally {
@@ -945,35 +931,6 @@ function VisibilityExpansionOptions({
       : [...status.selectedProposalIds, proposalId];
     return saveSelection(selected, proposalId);
   };
-  const updateApprovals = async (
-    proposalIds: string[],
-    key: 'ownerApproved' | 'costReviewed' | 'rollbackReviewed',
-    checked: boolean,
-  ) => {
-    setSaving(`${proposalIds.join(',')}:${key}`);
-    setError(undefined);
-    const approvals = { ...status.approvals };
-    for (const proposalId of proposalIds) {
-      const current = approvals[proposalId] ?? {
-        ownerApproved: false,
-        costReviewed: false,
-        rollbackReviewed: false,
-      };
-      approvals[proposalId] = { ...current, [key]: checked };
-    }
-    try {
-      onUpdated(
-        await api.saveVisibilityExpansions(
-          status.selectedProposalIds,
-          approvals,
-        ),
-      );
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught));
-    } finally {
-      setSaving(undefined);
-    }
-  };
   return (
     <>
       <EuiHorizontalRule margin="m" />
@@ -984,7 +941,7 @@ function VisibilityExpansionOptions({
         <p>
           Choose one or more customer-workload canaries in each category, use
           the recommended target as a shortcut, or select every candidate.
-          Review safeguards before deployment.
+          Selecting a resource adds it to the PoC deployment.
         </p>
       </EuiText>
       {error && (
@@ -1000,15 +957,6 @@ function VisibilityExpansionOptions({
           const selectedIds = candidateIds.filter((id) =>
             status.selectedProposalIds.includes(id),
           );
-          const approvalChecked = (
-            key: 'ownerApproved' | 'costReviewed' | 'rollbackReviewed',
-          ) =>
-            selectedIds.length > 0 &&
-            selectedIds.every((id) => status.approvals[id]?.[key] === true);
-          const approvalComplete =
-            approvalChecked('ownerApproved') &&
-            approvalChecked('costReviewed') &&
-            approvalChecked('rollbackReviewed');
           const deployedCount = candidateIds.filter((id) =>
             status.deployedProposalIds.includes(id),
           ).length;
@@ -1144,7 +1092,7 @@ function VisibilityExpansionOptions({
                   </EuiFlexGroup>
                   <EuiSpacer size="s" />
                   <div
-                    css={{
+                    style={{
                       maxHeight: 260,
                       overflowY: 'auto',
                       paddingInlineEnd: 8,
@@ -1178,66 +1126,6 @@ function VisibilityExpansionOptions({
                     })}
                   </div>
                 </details>
-                {selectedIds.length > 0 && (
-                  <>
-                    <EuiHorizontalRule margin="m" />
-                    <EuiTitle size="xxs">
-                      <h4>
-                        Deployment approval for {selectedIds.length} selected
-                      </h4>
-                    </EuiTitle>
-                    <EuiSpacer size="s" />
-                    <EuiCheckbox
-                      id={`${option.id}-owner`}
-                      label="Workload owners approved all selected canaries"
-                      checked={approvalChecked('ownerApproved')}
-                      disabled={saving !== undefined}
-                      onChange={(event) =>
-                        void updateApprovals(
-                          selectedIds,
-                          'ownerApproved',
-                          event.target.checked,
-                        )
-                      }
-                    />
-                    <EuiSpacer size="s" />
-                    <EuiCheckbox
-                      id={`${option.id}-cost`}
-                      label="Cost dimensions reviewed for all selected canaries"
-                      checked={approvalChecked('costReviewed')}
-                      disabled={saving !== undefined}
-                      onChange={(event) =>
-                        void updateApprovals(
-                          selectedIds,
-                          'costReviewed',
-                          event.target.checked,
-                        )
-                      }
-                    />
-                    <EuiSpacer size="s" />
-                    <EuiCheckbox
-                      id={`${option.id}-rollback`}
-                      label="Rollback reviewed for all selected canaries"
-                      checked={approvalChecked('rollbackReviewed')}
-                      disabled={saving !== undefined}
-                      onChange={(event) =>
-                        void updateApprovals(
-                          selectedIds,
-                          'rollbackReviewed',
-                          event.target.checked,
-                        )
-                      }
-                    />
-                    <EuiSpacer size="s" />
-                    <EuiHealth
-                      color={approvalComplete ? 'success' : 'warning'}
-                    >
-                      {approvalComplete
-                        ? 'Approval controls complete'
-                        : 'Approval required before deployment'}
-                    </EuiHealth>
-                  </>
-                )}
               </EuiPanel>
             </EuiFlexItem>
           );
@@ -1248,17 +1136,21 @@ function VisibilityExpansionOptions({
         color={status.selectedProposalIds.length ? 'warning' : 'primary'}
         title={
           status.selectedProposalIds.length
-            ? `${approvedCount} of ${status.selectedProposalIds.length} selected canaries approved`
+            ? `${status.selectedProposalIds.length} resources added to the PoC`
             : 'No workload changes selected'
         }
       >
         <p>
-          {blockedCount
-            ? `${blockedCount} selected canary ${
-                blockedCount === 1 ? 'is' : 'are'
-              } not deployable from the current discovery data. Rerun analysis to select an active target.`
-            : 'Approval readiness and adapter readiness are separate controls. Workload instrumentation remains non-executing until all approvals are complete.'}
+          By adding resources to the PoC, the user acknowledges that additional
+          AWS costs may occur and that monitoring changes may influence the
+          behavior of the observed assets.
         </p>
+        {blockedCount > 0 && (
+          <p>
+            {blockedCount} selected candidate{blockedCount === 1 ? '' : 's'}{' '}
+            cannot currently be deployed and will be skipped.
+          </p>
+        )}
       </EuiCallOut>
       <EuiSpacer size="m" />
       <EuiFlexGroup gutterSize="s" wrap>
@@ -1271,8 +1163,8 @@ function VisibilityExpansionOptions({
             isDisabled={!readyToDeploy.length || operationRunning}
           >
             {readyToDeploy.length === 1
-              ? 'Deploy 1 approved canary'
-              : `Deploy ${readyToDeploy.length} approved canaries`}
+              ? 'Deploy 1 selected canary'
+              : `Deploy ${readyToDeploy.length} selected canaries`}
           </EuiButton>
         </EuiFlexItem>
         {status.deployedProposalIds.length > 0 && (

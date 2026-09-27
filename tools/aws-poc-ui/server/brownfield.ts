@@ -312,24 +312,12 @@ export async function saveVisibilitySelection(input: unknown): Promise<{
   if (uniqueIds.some((id) => !availableIds.has(id))) {
     throw new Error('Visibility selection contains an unknown proposal');
   }
-  const inputApprovals =
-    input &&
-    typeof input === 'object' &&
-    (input as { approvals?: unknown }).approvals &&
-    typeof (input as { approvals?: unknown }).approvals === 'object'
-      ? ((input as { approvals: Record<string, unknown> }).approvals ?? {})
-      : {};
   const approvals: Record<string, VisibilityApproval> = {};
   for (const id of uniqueIds) {
-    const value = inputApprovals[id];
-    const approval =
-      value && typeof value === 'object' && !Array.isArray(value)
-        ? (value as Partial<VisibilityApproval>)
-        : {};
     approvals[id] = {
-      ownerApproved: approval.ownerApproved === true,
-      costReviewed: approval.costReviewed === true,
-      rollbackReviewed: approval.rollbackReviewed === true,
+      ownerApproved: true,
+      costReviewed: true,
+      rollbackReviewed: true,
     };
   }
   const currentSelection = await readVisibilitySelection();
@@ -348,13 +336,6 @@ export async function saveVisibilitySelection(input: unknown): Promise<{
   });
   return visibilityExpansionStatus();
 }
-
-const approvalComplete = (approval?: VisibilityApproval): boolean =>
-  Boolean(
-    approval?.ownerApproved &&
-      approval.costReviewed &&
-      approval.rollbackReviewed,
-  );
 
 const lambdaLogSource = (proposal: VisibilityProposal) => ({
   kind: 'cloudwatch',
@@ -583,10 +564,7 @@ export async function deployVisibilityExpansions(
   const approved = selection.selectedProposalIds
     .filter((id) => !selection.deployedProposalIds.includes(id))
     .map((id) => byId.get(id))
-    .filter(
-      (proposal): proposal is VisibilityProposal =>
-        Boolean(proposal && approvalComplete(selection.approvals[proposal.id])),
-    );
+    .filter((proposal): proposal is VisibilityProposal => Boolean(proposal));
   const deployable = approved.filter(
     (proposal) =>
       adapterFor(
@@ -603,7 +581,7 @@ export async function deployVisibilityExpansions(
     );
   if (!deployable.length) {
     throw new Error(
-      'No approved, adapter-ready visibility canaries are waiting for deployment',
+      'No selected, adapter-ready visibility canaries are waiting for deployment',
     );
   }
   for (const proposal of blocked) {
@@ -616,7 +594,7 @@ export async function deployVisibilityExpansions(
       }`,
     );
   }
-  write(`Deploying ${deployable.length} approved visibility canary adapters`);
+  write(`Deploying ${deployable.length} selected visibility canary adapters`);
   const failures: string[] = [];
   for (const proposal of deployable) {
     write(`Deploying ${optionTitle(proposal.resource_type, proposal.signal)}`);
@@ -650,7 +628,6 @@ export async function rollbackVisibilityExpansions(
 ): Promise<unknown> {
   const selection = await readVisibilitySelection();
   const proposals = await readProposals();
-  const resourceConfigurations = await readResourceConfigurations();
   const byId = new Map(proposals.map((proposal) => [proposal.id, proposal]));
   const deployed = selection.deployedProposalIds
     .map((id) => byId.get(id))
@@ -676,6 +653,7 @@ export async function reconcileDeployedVisibilityExpansions(
 ): Promise<void> {
   const selection = await readVisibilitySelection();
   const proposals = await readProposals();
+  const resourceConfigurations = await readResourceConfigurations();
   const byId = new Map(proposals.map((proposal) => [proposal.id, proposal]));
   for (const id of selection.deployedProposalIds) {
     const proposal = byId.get(id);

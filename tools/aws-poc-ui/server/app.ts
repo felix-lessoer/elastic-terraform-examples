@@ -187,7 +187,7 @@ export function createApp(options?: {
       response.status(202).json(
         runs.start(
           'visibility:deploy',
-          'Deploy approved visibility canaries',
+          'Deploy selected visibility canaries',
           deployVisibilityExpansions,
         ),
       );

@@ -276,14 +276,11 @@ export const api = {
       credentials,
     );
   },
-  saveVisibilityExpansions(
-    selectedProposalIds: string[],
-    approvals: VisibilityExpansionStatus['approvals'],
-  ) {
+  saveVisibilityExpansions(selectedProposalIds: string[]) {
     return mutate<VisibilityExpansionStatus>(
       '/api/visibility-expansions',
       'PUT',
-      { selectedProposalIds, approvals },
+      { selectedProposalIds },
     ).then(normalizeVisibilityExpansionStatus);
   },
   deployVisibilityExpansions() {

@@ -549,7 +549,23 @@ function PlanProgress({
   run?: RunRecord;
   summary?: PlanSummary | null;
 }) {
-  if (!run) return null;
+  if (!run) {
+    if (!summary) return null;
+    return (
+      <EuiPanel hasBorder>
+        <EuiTitle size="xs">
+          <h3>Resources in the saved deployment plan</h3>
+        </EuiTitle>
+        <EuiText size="s" color="subdued">
+          <p>
+            Review every managed resource change before applying this plan.
+          </p>
+        </EuiText>
+        <EuiSpacer size="m" />
+        <PlanResourceTable summary={summary} />
+      </EuiPanel>
+    );
+  }
   const output = run.logs.join('\n');
   const inspecting =
     /\bReading\.\.\.|\bRefreshing state\.\.\.|Read complete|existing-source/i.test(

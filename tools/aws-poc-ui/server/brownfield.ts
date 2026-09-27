@@ -36,6 +36,12 @@ export interface VisibilityOption {
   recommendedCanary: VisibilityProposal;
 }
 
+export interface VisibilityApproval {
+  ownerApproved: boolean;
+  costReviewed: boolean;
+  rollbackReviewed: boolean;
+}
+
 async function exists(filePath: string): Promise<boolean> {
   try {
     await access(filePath, constants.F_OK);
@@ -81,16 +87,40 @@ async function readProposals(): Promise<VisibilityProposal[]> {
   return Array.isArray(parsed.proposals) ? parsed.proposals : [];
 }
 
-async function readSelectedProposalIds(): Promise<string[]> {
-  if (!(await exists(visibilitySelectionPath))) return [];
+async function readVisibilitySelection(): Promise<{
+  selectedProposalIds: string[];
+  approvals: Record<string, VisibilityApproval>;
+}> {
+  if (!(await exists(visibilitySelectionPath))) {
+    return { selectedProposalIds: [], approvals: {} };
+  }
   const parsed = JSON.parse(await readFile(visibilitySelectionPath, 'utf8')) as {
     selectedProposalIds?: unknown;
+    approvals?: unknown;
   };
-  return Array.isArray(parsed.selectedProposalIds)
+  const selectedProposalIds = Array.isArray(parsed.selectedProposalIds)
     ? parsed.selectedProposalIds.filter(
         (id): id is string => typeof id === 'string',
       )
     : [];
+  const approvals: Record<string, VisibilityApproval> = {};
+  if (
+    parsed.approvals &&
+    typeof parsed.approvals === 'object' &&
+    !Array.isArray(parsed.approvals)
+  ) {
+    for (const [id, value] of Object.entries(parsed.approvals)) {
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        const approval = value as Partial<VisibilityApproval>;
+        approvals[id] = {
+          ownerApproved: approval.ownerApproved === true,
+          costReviewed: approval.costReviewed === true,
+          rollbackReviewed: approval.rollbackReviewed === true,
+        };
+      }
+    }
+  }
+  return { selectedProposalIds, approvals };
 }
 
 const optionTitle = (resourceType: string, signal: string): string => {
@@ -107,6 +137,7 @@ const optionTitle = (resourceType: string, signal: string): string => {
 export async function visibilityExpansionStatus(): Promise<{
   options: VisibilityOption[];
   selectedProposalIds: string[];
+  approvals: Record<string, VisibilityApproval>;
 }> {
   const proposals = await readProposals();
   const grouped = new Map<string, VisibilityProposal[]>();
@@ -131,12 +162,14 @@ export async function visibilityExpansionStatus(): Promise<{
       };
     })
     .sort((left, right) => left.title.localeCompare(right.title));
-  return { options, selectedProposalIds: await readSelectedProposalIds() };
+  const selection = await readVisibilitySelection();
+  return { options, ...selection };
 }
 
 export async function saveVisibilitySelection(input: unknown): Promise<{
   options: VisibilityOption[];
   selectedProposalIds: string[];
+  approvals: Record<string, VisibilityApproval>;
 }> {
   const selectedProposalIds =
     input &&
@@ -158,6 +191,26 @@ export async function saveVisibilitySelection(input: unknown): Promise<{
   if (uniqueIds.some((id) => !availableIds.has(id))) {
     throw new Error('Visibility selection contains an unknown proposal');
   }
+  const inputApprovals =
+    input &&
+    typeof input === 'object' &&
+    (input as { approvals?: unknown }).approvals &&
+    typeof (input as { approvals?: unknown }).approvals === 'object'
+      ? ((input as { approvals: Record<string, unknown> }).approvals ?? {})
+      : {};
+  const approvals: Record<string, VisibilityApproval> = {};
+  for (const id of uniqueIds) {
+    const value = inputApprovals[id];
+    const approval =
+      value && typeof value === 'object' && !Array.isArray(value)
+        ? (value as Partial<VisibilityApproval>)
+        : {};
+    approvals[id] = {
+      ownerApproved: approval.ownerApproved === true,
+      costReviewed: approval.costReviewed === true,
+      rollbackReviewed: approval.rollbackReviewed === true,
+    };
+  }
   await writeFile(
     visibilitySelectionPath,
     `${JSON.stringify(
@@ -165,6 +218,7 @@ export async function saveVisibilitySelection(input: unknown): Promise<{
         schema_version: '1.0',
         selected_at: new Date().toISOString(),
         selectedProposalIds: uniqueIds,
+        approvals,
       },
       null,
       2,

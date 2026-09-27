@@ -5,6 +5,7 @@ import {
   EuiButton,
   EuiButtonEmpty,
   EuiCallOut,
+  EuiCheckbox,
   EuiCodeBlock,
   EuiConfirmModal,
   EuiFieldPassword,
@@ -888,6 +889,14 @@ function VisibilityExpansionOptions({
   const [saving, setSaving] = useState<string>();
   const [error, setError] = useState<string>();
   if (!status.options.length) return null;
+  const approvedCount = status.selectedProposalIds.filter((id) => {
+    const approval = status.approvals[id];
+    return (
+      approval?.ownerApproved &&
+      approval.costReviewed &&
+      approval.rollbackReviewed
+    );
+  }).length;
   const toggle = async (proposalId: string) => {
     setSaving(proposalId);
     setError(undefined);
@@ -895,7 +904,37 @@ function VisibilityExpansionOptions({
       ? status.selectedProposalIds.filter((id) => id !== proposalId)
       : [...status.selectedProposalIds, proposalId];
     try {
-      onUpdated(await api.saveVisibilityExpansions(selected));
+      onUpdated(
+        await api.saveVisibilityExpansions(selected, status.approvals),
+      );
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setSaving(undefined);
+    }
+  };
+  const updateApproval = async (
+    proposalId: string,
+    key: 'ownerApproved' | 'costReviewed' | 'rollbackReviewed',
+    checked: boolean,
+  ) => {
+    setSaving(`${proposalId}:${key}`);
+    setError(undefined);
+    const current = status.approvals[proposalId] ?? {
+      ownerApproved: false,
+      costReviewed: false,
+      rollbackReviewed: false,
+    };
+    try {
+      onUpdated(
+        await api.saveVisibilityExpansions(
+          status.selectedProposalIds,
+          {
+            ...status.approvals,
+            [proposalId]: { ...current, [key]: checked },
+          },
+        ),
+      );
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
     } finally {
@@ -926,6 +965,15 @@ function VisibilityExpansionOptions({
         {status.options.map((option) => {
           const proposal = option.recommendedCanary;
           const selected = status.selectedProposalIds.includes(proposal.id);
+          const approval = status.approvals[proposal.id] ?? {
+            ownerApproved: false,
+            costReviewed: false,
+            rollbackReviewed: false,
+          };
+          const approvalComplete =
+            approval.ownerApproved &&
+            approval.costReviewed &&
+            approval.rollbackReviewed;
           return (
             <EuiFlexItem key={option.id} css={{ minWidth: 300 }}>
               <EuiPanel hasBorder color={selected ? 'primary' : 'plain'}>
@@ -976,6 +1024,10 @@ function VisibilityExpansionOptions({
                   </EuiText>
                 </details>
                 <EuiSpacer size="m" />
+                <EuiHealth color="subdued">
+                  Deployment adapter required
+                </EuiHealth>
+                <EuiSpacer size="s" />
                 <EuiButton
                   size="s"
                   fill={!selected}
@@ -985,6 +1037,64 @@ function VisibilityExpansionOptions({
                 >
                   {selected ? 'Remove from PoC scope' : 'Add canary to PoC scope'}
                 </EuiButton>
+                {selected && (
+                  <>
+                    <EuiHorizontalRule margin="m" />
+                    <EuiTitle size="xxs">
+                      <h4>Deployment approval</h4>
+                    </EuiTitle>
+                    <EuiSpacer size="s" />
+                    <EuiCheckbox
+                      id={`${proposal.id}-owner`}
+                      label="Workload owner approved this canary"
+                      checked={approval.ownerApproved}
+                      disabled={saving !== undefined}
+                      onChange={(event) =>
+                        void updateApproval(
+                          proposal.id,
+                          'ownerApproved',
+                          event.target.checked,
+                        )
+                      }
+                    />
+                    <EuiSpacer size="s" />
+                    <EuiCheckbox
+                      id={`${proposal.id}-cost`}
+                      label="Cost dimensions reviewed"
+                      checked={approval.costReviewed}
+                      disabled={saving !== undefined}
+                      onChange={(event) =>
+                        void updateApproval(
+                          proposal.id,
+                          'costReviewed',
+                          event.target.checked,
+                        )
+                      }
+                    />
+                    <EuiSpacer size="s" />
+                    <EuiCheckbox
+                      id={`${proposal.id}-rollback`}
+                      label="Rollback procedure reviewed"
+                      checked={approval.rollbackReviewed}
+                      disabled={saving !== undefined}
+                      onChange={(event) =>
+                        void updateApproval(
+                          proposal.id,
+                          'rollbackReviewed',
+                          event.target.checked,
+                        )
+                      }
+                    />
+                    <EuiSpacer size="s" />
+                    <EuiHealth
+                      color={approvalComplete ? 'success' : 'warning'}
+                    >
+                      {approvalComplete
+                        ? 'Approval controls complete'
+                        : 'Approval required before deployment'}
+                    </EuiHealth>
+                  </>
+                )}
               </EuiPanel>
             </EuiFlexItem>
           );
@@ -995,14 +1105,14 @@ function VisibilityExpansionOptions({
         color={status.selectedProposalIds.length ? 'warning' : 'primary'}
         title={
           status.selectedProposalIds.length
-            ? `${status.selectedProposalIds.length} visibility expansion(s) selected`
+            ? `${approvedCount} of ${status.selectedProposalIds.length} selected canaries approved`
             : 'No workload changes selected'
         }
       >
         <p>
-          Selection records the intended PoC expansion scope. Workload
-          instrumentation remains non-executing until its owner approval and
-          deployment adapter are available.
+          Approval readiness and adapter readiness are separate controls.
+          Workload instrumentation remains non-executing until all approvals
+          are complete and a deployment adapter is available.
         </p>
       </EuiCallOut>
     </>
@@ -1019,6 +1129,7 @@ export default function App() {
     useState<VisibilityExpansionStatus>({
       options: [],
       selectedProposalIds: [],
+      approvals: {},
     });
   const [status, setStatus] = useState<DeploymentStatus>();
   const [config, setConfig] = useState<DeploymentConfig>();

@@ -148,6 +148,14 @@ export interface VisibilityOption {
 export interface VisibilityExpansionStatus {
   options: VisibilityOption[];
   selectedProposalIds: string[];
+  approvals: Record<
+    string,
+    {
+      ownerApproved: boolean;
+      costReviewed: boolean;
+      rollbackReviewed: boolean;
+    }
+  >;
 }
 
 let bootstrapPromise: Promise<Bootstrap> | undefined;
@@ -226,11 +234,14 @@ export const api = {
       credentials,
     );
   },
-  saveVisibilityExpansions(selectedProposalIds: string[]) {
+  saveVisibilityExpansions(
+    selectedProposalIds: string[],
+    approvals: VisibilityExpansionStatus['approvals'],
+  ) {
     return mutate<VisibilityExpansionStatus>(
       '/api/visibility-expansions',
       'PUT',
-      { selectedProposalIds },
+      { selectedProposalIds, approvals },
     );
   },
   startStep(

@@ -49,6 +49,31 @@ import {
 
 type AsyncState = 'idle' | 'loading' | 'ready' | 'error';
 
+function ElapsedTime({
+  startedAt,
+  finishedAt,
+}: {
+  startedAt: string;
+  finishedAt?: string;
+}) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (finishedAt) return undefined;
+    const timer = window.setInterval(() => setNow(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, [finishedAt]);
+  const elapsedSeconds = Math.max(
+    0,
+    Math.floor(
+      ((finishedAt ? Date.parse(finishedAt) : now) - Date.parse(startedAt)) /
+        1_000,
+    ),
+  );
+  const minutes = Math.floor(elapsedSeconds / 60);
+  const seconds = elapsedSeconds % 60;
+  return <>{minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`}</>;
+}
+
 function CredentialsForm({
   status,
   onSaved,
@@ -405,6 +430,11 @@ function RunPanel({
           <EuiHealth color={color}>
             {run.status === 'running' && <EuiLoadingSpinner size="s" />}{' '}
             {blocked ? 'blocked' : run.status}
+            {' · '}
+            <ElapsedTime
+              startedAt={run.startedAt}
+              finishedAt={run.finishedAt}
+            />
           </EuiHealth>
         </EuiFlexItem>
       </EuiFlexGroup>

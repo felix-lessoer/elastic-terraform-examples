@@ -15,7 +15,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 
 OWNER_TAGS = (
@@ -123,7 +123,16 @@ class AwsCli:
         command = [self.executable, service, operation, *args]
         if region:
             command.extend(["--region", region])
-        command.extend(["--output", "json"])
+        command.extend(
+            [
+                "--output",
+                "json",
+                "--cli-connect-timeout",
+                "5",
+                "--cli-read-timeout",
+                "20",
+            ]
+        )
         try:
             result = subprocess.run(
                 command,
@@ -189,12 +198,14 @@ class RegionDiscovery:
         partition: str,
         observed_at: str,
         max_per_type: int,
+        progress: Callable[[str], None] | None = None,
     ) -> None:
         self.aws = aws
         self.account_id = account_id
         self.partition = partition
         self.observed_at = observed_at
         self.max_per_type = max_per_type
+        self.progress = progress or (lambda _message: None)
         self.resources: dict[str, dict[str, Any]] = {}
         self.edges: dict[str, dict[str, Any]] = {}
         self.log_groups: set[str] = set()
@@ -269,18 +280,28 @@ class RegionDiscovery:
         }
 
     def discover(self, region: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-        self._logs(region)
-        self._ec2(region)
-        self._autoscaling(region)
-        self._ecs(region)
-        self._eks(region)
-        self._lambda(region)
-        self._elbv2(region)
-        self._rds(region)
-        self._api_gateway(region)
-        self._messaging(region)
-        self._alarms(region)
-        self._xray(region)
+        scans = [
+            ("CloudWatch logs", self._logs),
+            ("EC2 instances", self._ec2),
+            ("Auto Scaling groups", self._autoscaling),
+            ("ECS services", self._ecs),
+            ("EKS clusters", self._eks),
+            ("Lambda functions", self._lambda),
+            ("load balancers", self._elbv2),
+            ("RDS databases", self._rds),
+            ("API Gateway APIs", self._api_gateway),
+            ("messaging services", self._messaging),
+            ("CloudWatch alarms", self._alarms),
+            ("X-Ray dependencies", self._xray),
+        ]
+        self.progress(f"[{region}] Discovery started")
+        for label, scan in scans:
+            self.progress(f"[{region}] Scanning {label}…")
+            scan(region)
+        self.progress(
+            f"[{region}] Complete: {len(self.resources)} resources, "
+            f"{len(self.edges)} dependencies"
+        )
         return list(self.resources.values()), list(self.edges.values())
 
     def _logs(self, region: str) -> None:
@@ -907,6 +928,12 @@ def parse_arguments() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_arguments()
+    progress_lock = threading.Lock()
+
+    def progress(message: str) -> None:
+        with progress_lock:
+            print(message, flush=True)
+
     if args.max_api_calls < 10 or args.max_resources_per_type < 1:
         raise SystemExit("Discovery limits must be positive")
     aws = AwsCli(args.max_api_calls)
@@ -916,6 +943,7 @@ def main() -> int:
         or __import__("os").environ.get("AWS_DEFAULT_REGION")
         or "us-east-1"
     )
+    progress(f"Verifying AWS caller identity in {bootstrap_region}…")
     identity = aws.call("sts", "get-caller-identity", region=bootstrap_region)
     account_id = str(identity.get("Account", ""))
     caller_arn = str(identity.get("Arn", ""))
@@ -941,10 +969,15 @@ def main() -> int:
         )
     if not regions:
         regions = [bootstrap_region]
+    worker_count = max(1, min(args.parallel_regions, 16))
+    progress(
+        f"Scanning {len(regions)} enabled AWS regions with "
+        f"{worker_count} parallel workers"
+    )
 
     all_resources: dict[str, dict[str, Any]] = {}
     all_edges: dict[str, dict[str, Any]] = {}
-    with ThreadPoolExecutor(max_workers=max(1, min(args.parallel_regions, 16))) as executor:
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
         futures = {
             executor.submit(
                 RegionDiscovery(
@@ -953,6 +986,7 @@ def main() -> int:
                     partition,
                     observed_at,
                     args.max_resources_per_type,
+                    progress,
                 ).discover,
                 region,
             ): region

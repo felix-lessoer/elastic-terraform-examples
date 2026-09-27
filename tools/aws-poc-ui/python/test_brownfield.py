@@ -5,7 +5,13 @@ from pathlib import Path
 from unittest.mock import patch
 
 from analyze_brownfield import analyze, validate_manifest
-from aws_brownfield_discovery import AwsCli, owner_candidates, stable_id, tags_to_dict
+from aws_brownfield_discovery import (
+    AwsCli,
+    RegionDiscovery,
+    owner_candidates,
+    stable_id,
+    tags_to_dict,
+)
 
 
 class DiscoveryHelpersTest(unittest.TestCase):
@@ -62,6 +68,32 @@ class DiscoveryHelpersTest(unittest.TestCase):
         self.assertNotIn("--no-cli-pager", command)
         self.assertEqual(run.call_args.kwargs["env"]["AWS_PAGER"], "")
         self.assertEqual(result["Account"], "123456789012")
+
+    def test_region_discovery_reports_live_progress(self):
+        messages = []
+        discovery = object.__new__(RegionDiscovery)
+        discovery.progress = messages.append
+        discovery.resources = {}
+        discovery.edges = {}
+        for method in (
+            "_logs",
+            "_ec2",
+            "_autoscaling",
+            "_ecs",
+            "_eks",
+            "_lambda",
+            "_elbv2",
+            "_rds",
+            "_api_gateway",
+            "_messaging",
+            "_alarms",
+            "_xray",
+        ):
+            setattr(discovery, method, lambda _region: None)
+        discovery.discover("eu-west-1")
+        self.assertEqual(messages[0], "[eu-west-1] Discovery started")
+        self.assertIn("[eu-west-1] Scanning EC2 instances…", messages)
+        self.assertTrue(messages[-1].startswith("[eu-west-1] Complete:"))
 
 
 class AnalysisTest(unittest.TestCase):

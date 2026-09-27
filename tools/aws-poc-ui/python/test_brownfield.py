@@ -1,4 +1,5 @@
 import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -67,7 +68,29 @@ class DiscoveryHelpersTest(unittest.TestCase):
         command = run.call_args.args[0]
         self.assertNotIn("--no-cli-pager", command)
         self.assertEqual(run.call_args.kwargs["env"]["AWS_PAGER"], "")
+        self.assertEqual(run.call_args.kwargs["env"]["AWS_MAX_ATTEMPTS"], "2")
         self.assertEqual(result["Account"], "123456789012")
+
+    def test_timed_out_probe_reports_partial_scope_and_continues(self):
+        messages = []
+        client = object.__new__(AwsCli)
+        client.executable = "aws"
+        client.budget = type("Budget", (), {"consume": lambda self: True})()
+        client.progress = messages.append
+        client.errors = []
+        client.error_lock = __import__("threading").Lock()
+        with patch(
+            "aws_brownfield_discovery.subprocess.run",
+            side_effect=subprocess.TimeoutExpired("aws", 30),
+        ):
+            result = client.call(
+                "autoscaling",
+                "describe-auto-scaling-groups",
+                region="me-south-1",
+            )
+        self.assertEqual(result, {})
+        self.assertIn("timed out", messages[0])
+        self.assertEqual(client.errors[0]["code"], "Timeout")
 
     def test_region_discovery_reports_live_progress(self):
         messages = []

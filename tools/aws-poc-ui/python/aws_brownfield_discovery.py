@@ -95,11 +95,16 @@ class Budget:
 class AwsCli:
     """Bounded AWS CLI runner. All callers use explicit read-only operations."""
 
-    def __init__(self, maximum_calls: int) -> None:
+    def __init__(
+        self,
+        maximum_calls: int,
+        progress: Callable[[str], None] | None = None,
+    ) -> None:
         self.executable = shutil.which("aws")
         if not self.executable:
             raise RuntimeError("AWS CLI was not found in PATH")
         self.budget = Budget(maximum_calls)
+        self.progress = progress or (lambda _message: None)
         self.errors: list[dict[str, Any]] = []
         self.error_lock = threading.Lock()
 
@@ -128,22 +133,34 @@ class AwsCli:
                 "--output",
                 "json",
                 "--cli-connect-timeout",
-                "5",
+                "3",
                 "--cli-read-timeout",
-                "20",
+                "10",
             ]
         )
+        effective_timeout = min(timeout, 30)
         try:
             result = subprocess.run(
                 command,
                 check=False,
                 capture_output=True,
-                env={**os.environ, "AWS_PAGER": ""},
+                env={
+                    **os.environ,
+                    "AWS_MAX_ATTEMPTS": "2",
+                    "AWS_PAGER": "",
+                    "AWS_RETRY_MODE": "standard",
+                },
                 text=True,
-                timeout=timeout,
+                timeout=effective_timeout,
             )
         except subprocess.TimeoutExpired:
-            self._error(service, operation, region, "Timeout", f"Timed out after {timeout}s")
+            self._error(
+                service,
+                operation,
+                region,
+                "Timeout",
+                f"Timed out after {effective_timeout}s",
+            )
             return {}
         if result.returncode != 0:
             message = result.stderr.strip() or f"AWS CLI exited with {result.returncode}"
@@ -180,6 +197,11 @@ class AwsCli:
         code: str,
         message: str,
     ) -> None:
+        if code == "Timeout":
+            self.progress(
+                f"[{region or 'global'}] {service}:{operation} timed out; "
+                "recording partial scope and continuing"
+            )
         with self.error_lock:
             self.errors.append(
                 {
@@ -936,7 +958,7 @@ def main() -> int:
 
     if args.max_api_calls < 10 or args.max_resources_per_type < 1:
         raise SystemExit("Discovery limits must be positive")
-    aws = AwsCli(args.max_api_calls)
+    aws = AwsCli(args.max_api_calls, progress)
     bootstrap_region = (
         args.bootstrap_region
         or __import__("os").environ.get("AWS_REGION")

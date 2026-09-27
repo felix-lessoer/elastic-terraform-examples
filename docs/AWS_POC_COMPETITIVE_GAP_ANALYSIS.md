@@ -1,8 +1,11 @@
 # AWS PoC competitive gap analysis
 
-**Scope:** Elastic versus Dynatrace and Datadog for cloud observability, and Splunk for cloud security  
-**AWS first:** This document intentionally excludes detailed Azure and Google Cloud analysis.  
-**Research date:** 2026-09-27  
+**Scope:** Elastic versus Dynatrace and Datadog for cloud observability, and Splunk for cloud security
+
+**AWS first:** This document intentionally excludes detailed Azure and Google Cloud analysis.
+
+**Research date:** 2026-09-27
+
 **Implementation baseline:** [PR 12](https://github.com/felix-lessoer/elastic-terraform-examples/pull/12), head `1f8cc8de` when reviewed
 
 ## Executive recommendation

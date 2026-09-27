@@ -350,12 +350,12 @@ export async function terraformApply(write: LogWriter): Promise<void> {
     ['apply', '-input=false', '-no-color', path.basename(planFile)],
     { cwd: terraformDirectory, write },
   );
+  await unlink(planFile);
   if (result.exitCode !== 0) {
     throw Object.assign(new Error('Terraform apply failed'), {
       exitCode: result.exitCode,
     });
   }
-  await unlink(planFile);
 }
 
 export async function readTerraformOutputs(): Promise<TerraformOutputs> {

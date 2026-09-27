@@ -491,7 +491,9 @@ function RunPanel({
           {run.status === 'running'
             ? 'Keep this page open. Live command output appears below and the next step unlocks automatically after this operation succeeds.'
             : run.status === 'failed' || blocked
-              ? 'This operation did not complete. Review the output below, correct the reported issue, and retry this step.'
+              ? run.step === 'apply'
+                ? 'Apply stopped after partial changes. Review the output, correct the issue, then create and review a fresh plan before applying again.'
+                : 'This operation did not complete. Review the output below, correct the reported issue, and retry this step.'
               : nextAction
                 ? `${nextAction} is now available.`
                 : 'Operation completed successfully.'}

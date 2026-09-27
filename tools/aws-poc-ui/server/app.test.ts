@@ -52,6 +52,23 @@ describe('local API security', () => {
       .expect(400);
     expect(response.body.message).toContain('APPLY');
   });
+
+  it('reports credential presence without returning credential values', async () => {
+    const previous = process.env.EC_API_KEY;
+    process.env.EC_API_KEY = 'elastic-secret-that-must-not-leak';
+    try {
+      const { app } = createApp({
+        csrfToken: 'test-token',
+        serveStatic: false,
+      });
+      const response = await request(app).get('/api/credentials').expect(200);
+      expect(response.body.elasticCloudApiKey.configured).toBe(true);
+      expect(response.text).not.toContain('elastic-secret-that-must-not-leak');
+    } finally {
+      if (previous === undefined) delete process.env.EC_API_KEY;
+      else process.env.EC_API_KEY = previous;
+    }
+  });
 });
 
 describe('deployment configuration', () => {

@@ -9,6 +9,10 @@ import {
   terraformDirectory,
   writeDeploymentConfig,
 } from './config.js';
+import {
+  credentialsStatus,
+  saveCredentials,
+} from './credentials.js';
 import { runElasticWorkflow } from './elastic.js';
 import { RunManager } from './run-manager.js';
 import {
@@ -50,7 +54,12 @@ export function createApp(options?: {
       repoRoot,
       terraformDirectory,
       status: await deploymentStatus(),
+      credentials: await credentialsStatus(),
     });
+  });
+
+  app.get('/api/credentials', async (_request, response) => {
+    response.json(await credentialsStatus());
   });
 
   app.get('/api/config', async (_request, response) => {
@@ -110,6 +119,10 @@ export function createApp(options?: {
   app.put('/api/config', async (request, response) => {
     const config = await writeDeploymentConfig(request.body);
     response.json({ config, saved: true });
+  });
+
+  app.put('/api/credentials', async (request, response) => {
+    response.json(await saveCredentials(request.body));
   });
 
   app.post('/api/runs/:step', (request, response) => {

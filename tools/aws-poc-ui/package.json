@@ -20,6 +20,7 @@
     "@elastic/eui": "^122.1.0",
     "@emotion/css": "^11.13.5",
     "@emotion/react": "^11.14.0",
+    "dotenv": "^18.0.4",
     "execa": "^10.0.1",
     "express": "^5.2.1",
     "moment": "^2.31.0",

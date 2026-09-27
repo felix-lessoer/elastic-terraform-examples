@@ -24,11 +24,35 @@ export interface DeploymentStatus {
   };
 }
 
+export interface CredentialsStatus {
+  path: string;
+  elasticCloudApiKey: {
+    configured: boolean;
+    saved: boolean;
+  };
+  aws: {
+    configured: boolean;
+    saved: boolean;
+    mode: 'profile' | 'accessKeys' | 'environment' | 'none';
+    hasSessionToken: boolean;
+  };
+}
+
+export interface CredentialsInput {
+  elasticCloudApiKey: string;
+  awsMode: 'profile' | 'accessKeys';
+  awsProfile: string;
+  awsAccessKeyId: string;
+  awsSecretAccessKey: string;
+  awsSessionToken: string;
+}
+
 export interface Bootstrap {
   csrfToken: string;
   repoRoot: string;
   terraformDirectory: string;
   status: DeploymentStatus;
+  credentials: CredentialsStatus;
 }
 
 export interface PreflightCheck {
@@ -94,6 +118,9 @@ export const api = {
       parse<{ config: DeploymentConfig; saved: boolean }>,
     );
   },
+  async credentials(): Promise<CredentialsStatus> {
+    return fetch('/api/credentials').then(parse<CredentialsStatus>);
+  },
   async status(): Promise<DeploymentStatus> {
     return fetch('/api/status').then(parse<DeploymentStatus>);
   },
@@ -105,6 +132,13 @@ export const api = {
       '/api/config',
       'PUT',
       config,
+    );
+  },
+  saveCredentials(credentials: CredentialsInput) {
+    return mutate<CredentialsStatus>(
+      '/api/credentials',
+      'PUT',
+      credentials,
     );
   },
   startStep(step: 'preflight' | 'init' | 'plan' | 'apply') {

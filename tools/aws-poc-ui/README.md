@@ -5,9 +5,9 @@ through the AWS Terraform deployment in `examples/aws`.
 
 It is intentionally a local application rather than a Kibana plugin. Elastic
 Cloud Serverless does not support custom Kibana plugins, and keeping the server
-on the Terraform workstation allows it to reuse the operator's existing AWS,
-Terraform, Python, and Elastic credentials without sending them to a browser or
-hosted service.
+on the Terraform workstation allows it to reuse the operator's AWS, Terraform,
+Python, and Elastic credentials without sending them to a hosted service.
+Credentials entered in the browser travel only to the loopback server.
 
 ## Responsibilities
 
@@ -25,7 +25,7 @@ The UI can:
 It does not:
 
 - create an example application;
-- accept AWS or Elastic secrets through browser fields;
+- return saved AWS or Elastic secrets to the browser;
 - provide an arbitrary command shell;
 - expose Terraform's sensitive outputs to the browser;
 - bind to a non-loopback interface; or
@@ -37,10 +37,16 @@ It does not:
 - Terraform
 - Python 3
 - AWS CLI with the intended customer identity
-- `EC_API_KEY` exported in the shell that starts the local server
+- an Elastic Cloud API key
+- an AWS shared profile or access/session credentials
 
-Use the same credential provider chain that would be used when running
-Terraform directly:
+Credentials can be entered in the first UI step. They are saved to the ignored
+`tools/aws-poc-ui/.env` file with mode `0600`, loaded immediately into the
+local server process, and reused on later runs. Saved values are never returned
+to the browser.
+
+Alternatively, start the guide with the same environment that would be used
+when running Terraform directly:
 
 ```bash
 export EC_API_KEY="..."
@@ -48,7 +54,8 @@ export AWS_PROFILE="customer-poc"
 export AWS_REGION="eu-west-1"
 ```
 
-Do not put credentials in the generated Terraform variable file.
+Environment values take precedence when the server starts. Do not put
+credentials in the generated Terraform variable file.
 
 ## Run
 
@@ -78,6 +85,7 @@ The guide creates these ignored files:
 
 | File | Purpose |
 | --- | --- |
+| `tools/aws-poc-ui/.env` | Local Elastic and AWS credentials (`0600`) |
 | `examples/aws/aws-poc-ui.auto.tfvars.json` | Non-secret deployment configuration |
 | `examples/aws/.aws-poc-ui.tfplan` | Saved plan reviewed before apply |
 
@@ -90,6 +98,8 @@ but operators should still treat Terraform logs as sensitive customer data.
 - The server binds only to `127.0.0.1`.
 - Browser mutations require an in-memory CSRF token.
 - Browser origins are restricted to `localhost` and `127.0.0.1`.
+- Saved credentials are written atomically with owner-only permissions.
+- Credential status APIs return booleans and source metadata, never values.
 - Commands and arguments are fixed server-side and run without a shell.
 - Only an allow-list of non-sensitive Terraform outputs reaches the browser.
 - Kibana credentials are read from sensitive Terraform outputs only in the

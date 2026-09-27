@@ -6,6 +6,7 @@ import {
   EuiCallOut,
   EuiCodeBlock,
   EuiConfirmModal,
+  EuiFieldPassword,
   EuiFieldText,
   EuiFlexGroup,
   EuiFlexItem,
@@ -20,6 +21,7 @@ import {
   EuiLoadingSpinner,
   EuiPageTemplate,
   EuiPanel,
+  EuiSelect,
   EuiSpacer,
   EuiSteps,
   EuiText,
@@ -28,12 +30,188 @@ import {
 import {
   api,
   type Bootstrap,
+  type CredentialsInput,
+  type CredentialsStatus,
   type DeploymentConfig,
   type DeploymentStatus,
   type RunRecord,
 } from './api';
 
 type AsyncState = 'idle' | 'loading' | 'ready' | 'error';
+
+function CredentialsForm({
+  status,
+  onSaved,
+}: {
+  status: CredentialsStatus;
+  onSaved: (status: CredentialsStatus) => void;
+}) {
+  const [input, setInput] = useState<CredentialsInput>({
+    elasticCloudApiKey: '',
+    awsMode: status.aws.mode === 'accessKeys' ? 'accessKeys' : 'profile',
+    awsProfile: '',
+    awsAccessKeyId: '',
+    awsSecretAccessKey: '',
+    awsSessionToken: '',
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string>();
+
+  const update = <Key extends keyof CredentialsInput>(
+    key: Key,
+    value: CredentialsInput[Key],
+  ) => setInput((current) => ({ ...current, [key]: value }));
+
+  const save = async () => {
+    setSaving(true);
+    setError(undefined);
+    try {
+      const nextStatus = await api.saveCredentials(input);
+      setInput((current) => ({
+        ...current,
+        elasticCloudApiKey: '',
+        awsProfile: '',
+        awsAccessKeyId: '',
+        awsSecretAccessKey: '',
+        awsSessionToken: '',
+      }));
+      onSaved(nextStatus);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <EuiForm component="form">
+      <EuiCallOut
+        color="warning"
+        iconType="lock"
+        title="Stored locally on this workstation"
+      >
+        <p>
+          Saved values are written to <code>{status.path}</code> with owner-only
+          permissions. The API never returns saved credential values.
+        </p>
+      </EuiCallOut>
+      <EuiSpacer size="m" />
+      {error && (
+        <>
+          <EuiCallOut color="danger" title={error} />
+          <EuiSpacer size="m" />
+        </>
+      )}
+      <EuiFlexGroup>
+        <EuiFlexItem>
+          <EuiFormRow
+            label="Elastic Cloud API key"
+            helpText={
+              status.elasticCloudApiKey.configured
+                ? `Already configured${status.elasticCloudApiKey.saved ? ' and saved' : ' in the server environment'}. Leave empty to keep it.`
+                : 'Required to create the Elastic project.'
+            }
+          >
+            <EuiFieldPassword
+              type="dual"
+              value={input.elasticCloudApiKey}
+              autoComplete="new-password"
+              onChange={(event) =>
+                update('elasticCloudApiKey', event.target.value)
+              }
+            />
+          </EuiFormRow>
+        </EuiFlexItem>
+        <EuiFlexItem>
+          <EuiFormRow label="AWS credential method">
+            <EuiSelect
+              value={input.awsMode}
+              options={[
+                { value: 'profile', text: 'AWS shared profile' },
+                { value: 'accessKeys', text: 'Access keys / session credentials' },
+              ]}
+              onChange={(event) =>
+                update(
+                  'awsMode',
+                  event.target.value as CredentialsInput['awsMode'],
+                )
+              }
+            />
+          </EuiFormRow>
+        </EuiFlexItem>
+      </EuiFlexGroup>
+      {input.awsMode === 'profile' ? (
+        <EuiFormRow
+          label="AWS profile"
+          helpText={
+            status.aws.mode === 'profile'
+              ? `A profile is already configured${status.aws.saved ? ' and saved' : ''}. Leave empty to keep it.`
+              : 'The profile must exist in the workstation AWS configuration.'
+          }
+        >
+          <EuiFieldText
+            value={input.awsProfile}
+            placeholder="customer-poc"
+            onChange={(event) => update('awsProfile', event.target.value)}
+          />
+        </EuiFormRow>
+      ) : (
+        <EuiFlexGroup>
+          <EuiFlexItem>
+            <EuiFormRow
+              label="AWS access key ID"
+              helpText={
+                status.aws.mode === 'accessKeys'
+                  ? `Access keys are already configured${status.aws.saved ? ' and saved' : ''}. Leave both key fields empty to keep them.`
+                  : undefined
+              }
+            >
+              <EuiFieldPassword
+                type="dual"
+                value={input.awsAccessKeyId}
+                autoComplete="new-password"
+                onChange={(event) =>
+                  update('awsAccessKeyId', event.target.value)
+                }
+              />
+            </EuiFormRow>
+          </EuiFlexItem>
+          <EuiFlexItem>
+            <EuiFormRow label="AWS secret access key">
+              <EuiFieldPassword
+                type="dual"
+                value={input.awsSecretAccessKey}
+                autoComplete="new-password"
+                onChange={(event) =>
+                  update('awsSecretAccessKey', event.target.value)
+                }
+              />
+            </EuiFormRow>
+          </EuiFlexItem>
+          <EuiFlexItem>
+            <EuiFormRow
+              label="AWS session token"
+              helpText="Optional; required for temporary credentials."
+            >
+              <EuiFieldPassword
+                type="dual"
+                value={input.awsSessionToken}
+                autoComplete="new-password"
+                onChange={(event) =>
+                  update('awsSessionToken', event.target.value)
+                }
+              />
+            </EuiFormRow>
+          </EuiFlexItem>
+        </EuiFlexGroup>
+      )}
+      <EuiSpacer size="m" />
+      <EuiButton fill onClick={save} isLoading={saving} iconType="save">
+        Save credentials locally
+      </EuiButton>
+    </EuiForm>
+  );
+}
 
 function ConfigurationForm({
   initial,
@@ -203,6 +381,7 @@ function RunPanel({ run }: { run?: RunRecord }) {
 export default function App() {
   const [loadState, setLoadState] = useState<AsyncState>('loading');
   const [bootstrap, setBootstrap] = useState<Bootstrap>();
+  const [credentials, setCredentials] = useState<CredentialsStatus>();
   const [status, setStatus] = useState<DeploymentStatus>();
   const [config, setConfig] = useState<DeploymentConfig>();
   const [runs, setRuns] = useState<RunRecord[]>([]);
@@ -211,15 +390,21 @@ export default function App() {
   const [confirmApply, setConfirmApply] = useState(false);
 
   const refresh = async () => {
-    const [nextStatus, nextRuns] = await Promise.all([api.status(), api.runs()]);
+    const [nextStatus, nextRuns, nextCredentials] = await Promise.all([
+      api.status(),
+      api.runs(),
+      api.credentials(),
+    ]);
     setStatus(nextStatus);
     setRuns(nextRuns);
+    setCredentials(nextCredentials);
   };
 
   useEffect(() => {
     void Promise.all([api.bootstrap(), api.config(), api.runs()])
       .then(([loadedBootstrap, loadedConfig, loadedRuns]) => {
         setBootstrap(loadedBootstrap);
+        setCredentials(loadedBootstrap.credentials);
         setStatus(loadedBootstrap.status);
         setConfig(loadedConfig.config);
         setRuns(loadedRuns);
@@ -271,7 +456,13 @@ export default function App() {
     );
   }
 
-  if (loadState === 'error' || !bootstrap || !status || !config) {
+  if (
+    loadState === 'error' ||
+    !bootstrap ||
+    !credentials ||
+    !status ||
+    !config
+  ) {
     return (
       <EuiPageTemplate>
         <EuiPageTemplate.Section>
@@ -284,10 +475,26 @@ export default function App() {
   }
 
   const workflowIds = status.outputs.workflow_ids ?? [];
+  const credentialsReady =
+    credentials.elasticCloudApiKey.configured && credentials.aws.configured;
   const steps = [
     {
+      title: 'Store local credentials',
+      status: credentialsReady ? ('complete' as const) : ('current' as const),
+      children: (
+        <CredentialsForm
+          status={credentials}
+          onSaved={(saved) => setCredentials(saved)}
+        />
+      ),
+    },
+    {
       title: 'Configure deployment',
-      status: status.configured ? ('complete' as const) : ('current' as const),
+      status: status.configured
+        ? ('complete' as const)
+        : credentialsReady
+          ? ('current' as const)
+          : ('disabled' as const),
       children: (
         <ConfigurationForm
           initial={config}
@@ -303,7 +510,7 @@ export default function App() {
       status:
         latestPreflight?.status === 'succeeded'
           ? ('complete' as const)
-          : status.configured
+          : status.configured && credentialsReady
             ? ('current' as const)
             : ('disabled' as const),
       children: (
@@ -316,7 +523,11 @@ export default function App() {
           </EuiText>
           <EuiButton
             onClick={() => void start(() => api.startStep('preflight'))}
-            isDisabled={!status.configured || activeRun?.status === 'running'}
+            isDisabled={
+              !status.configured ||
+              !credentialsReady ||
+              activeRun?.status === 'running'
+            }
           >
             Run preflight
           </EuiButton>
@@ -327,13 +538,17 @@ export default function App() {
       title: 'Initialize Terraform',
       status: status.initialized
         ? ('complete' as const)
-        : status.configured
+        : status.configured && credentialsReady
           ? ('current' as const)
           : ('disabled' as const),
       children: (
         <EuiButton
           onClick={() => void start(() => api.startStep('init'))}
-          isDisabled={!status.configured || activeRun?.status === 'running'}
+          isDisabled={
+            !status.configured ||
+            !credentialsReady ||
+            activeRun?.status === 'running'
+          }
         >
           Initialize
         </EuiButton>

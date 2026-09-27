@@ -27,5 +27,7 @@ __pycache__/
 node_modules/
 tools/aws-poc-ui/dist/
 tools/aws-poc-ui/*.tsbuildinfo
+tools/aws-poc-ui/.env
+tools/aws-poc-ui/.env.*.tmp
 examples/aws/aws-poc-ui.auto.tfvars.json
 examples/aws/.aws-poc-ui.tfplan

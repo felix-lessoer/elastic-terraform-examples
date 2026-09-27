@@ -53,6 +53,12 @@ variable "security_elasticsearch_password" {
   default   = ""
 }
 
+variable "security_findings_indices" {
+  type        = list(string)
+  description = "Index patterns used by the security findings alert and ML rate job."
+  default     = ["logs-cloud_security_posture.findings-*"]
+}
+
 variable "cloud_slug" {
   type        = string
   description = "Short cloud id used in ML job / Agent Builder ids (e.g. gcp, aws, azure)."
@@ -63,4 +69,10 @@ variable "cloud_display_name" {
   type        = string
   description = "Human-readable cloud name used in alert/agent copy."
   default     = "GCP"
+}
+
+variable "additional_tool_ids" {
+  type        = list(string)
+  description = "Extra Agent Builder tool IDs to attach to cockpit agents (e.g. workflow tools created after this module)."
+  default     = []
 }

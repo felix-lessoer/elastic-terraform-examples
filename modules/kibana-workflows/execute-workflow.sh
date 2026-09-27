@@ -26,7 +26,7 @@ code=$(curl -sk -u "${KIBANA_USER}:${KIBANA_PASS}" \
   -H "Content-Type: application/json" \
   -H "x-elastic-internal-origin: Kibana" \
   -H "elastic-api-version: 2023-10-31" \
-  -d '{}')
+  -d '{"inputs":{}}')
 
 echo "execute ${WF_ID} http=${code}"
 cat "$out"

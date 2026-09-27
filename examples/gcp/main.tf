@@ -75,18 +75,18 @@ module "observability_seed" {
   count  = length(module.observability) > 0 ? 1 : 0
   source = "../../modules/observability-seed"
 
-  kibana_endpoint                   = module.observability[0].kibana_endpoint
-  elasticsearch_endpoint            = module.observability[0].elasticsearch_endpoint
-  elasticsearch_username            = module.observability[0].username
-  elasticsearch_password            = module.observability[0].password
-  security_elasticsearch_endpoint   = module.elastic.elasticsearch_endpoint
-  security_elasticsearch_username   = module.elastic.username
-  security_elasticsearch_password   = module.elastic.password
-  enable_ml_jobs                    = var.enable_ml_jobs
-  enable_ai_agents                  = var.enable_ai_agents
-  enable_observability_alerts       = var.enable_observability_alerts
-  cloud_slug                        = "gcp"
-  cloud_display_name                = "GCP"
+  kibana_endpoint                 = module.observability[0].kibana_endpoint
+  elasticsearch_endpoint          = module.observability[0].elasticsearch_endpoint
+  elasticsearch_username          = module.observability[0].username
+  elasticsearch_password          = module.observability[0].password
+  security_elasticsearch_endpoint = module.elastic.elasticsearch_endpoint
+  security_elasticsearch_username = module.elastic.username
+  security_elasticsearch_password = module.elastic.password
+  enable_ml_jobs                  = var.enable_ml_jobs
+  enable_ai_agents                = var.enable_ai_agents
+  enable_observability_alerts     = var.enable_observability_alerts
+  cloud_slug                      = "gcp"
+  cloud_display_name              = "GCP"
 
   depends_on = [module.observability, module.elastic]
 }
@@ -100,13 +100,15 @@ module "cockpit" {
   elasticsearch_password     = module.observability[0].password
   security_project_name      = module.elastic.name
   observability_project_name = module.observability[0].name
+  title                      = "GCP Observe & Protect Cockpit - updated"
+  dashboard_id               = "fcf1246c-6ee2-4c91-94f8-f034e8d345bc"
   ml_jobs                    = try(module.observability_seed[0].ml_jobs, [])
   ai_agents                  = try(module.observability_seed[0].ai_agents, [])
 
   depends_on = [module.observability, module.observability_seed]
 }
 
-# Kibana Workflows pinned from examples/gcp/workflows/*.yaml (export from live Kibana).
+# Kibana Workflows pinned from examples/gcp/workflows/*.yaml (recommendation generators).
 module "workflows_obs" {
   count  = var.enable_workflows && length(module.observability) > 0 ? 1 : 0
   source = "../../modules/kibana-workflows"
@@ -118,6 +120,48 @@ module "workflows_obs" {
   execute_on_apply       = var.execute_workflows_on_apply
 
   depends_on = [module.observability, module.observability_seed, module.cockpit]
+}
+
+# Cross-project insight fabric: mirror Security KPIs + coverage/assets/events into
+# Observability indices so the cockpit never depends on broken CPS qualifiers.
+resource "terraform_data" "seed_gcp_insight_indices" {
+  count = length(module.observability) > 0 ? 1 : 0
+
+  triggers_replace = [
+    filesha256("${path.module}/../../modules/cockpit-dashboard/scripts/seed_gcp_insight_indices.py"),
+    filesha256("${path.module}/../../modules/cockpit-dashboard/scripts/insight_fabric_common.py"),
+    filesha256("${path.module}/../../modules/cockpit-dashboard/cockpit.ndjson"),
+    module.observability[0].elasticsearch_endpoint,
+    module.elastic.elasticsearch_endpoint,
+  ]
+
+  provisioner "local-exec" {
+    interpreter = ["/bin/bash", "-c"]
+    environment = {
+      OBS_ES   = module.observability[0].elasticsearch_endpoint
+      SEC_ES   = module.elastic.elasticsearch_endpoint
+      OBS_USER = module.observability[0].username
+      SEC_USER = module.elastic.username
+      OBS_PASS = module.observability[0].password
+      SEC_PASS = module.elastic.password
+    }
+    command = <<-EOT
+      set -euo pipefail
+      python3 "${path.module}/../../modules/cockpit-dashboard/scripts/seed_gcp_insight_indices.py" \
+        --obs-es "$OBS_ES" \
+        --sec-es "$SEC_ES" \
+        --obs-user "$OBS_USER" \
+        --sec-user "$SEC_USER" \
+        --obs-password "$OBS_PASS" \
+        --sec-password "$SEC_PASS"
+    EOT
+  }
+
+  depends_on = [
+    module.cockpit,
+    module.workflows_obs,
+    module.observability_seed,
+  ]
 }
 
 module "workflows_security" {
@@ -258,8 +302,8 @@ locals {
               "cloud_security_posture.findings" = {
                 enabled = true
                 vars = jsonencode({
-                  "gcp.account_type"      = "single-account"
-                  "gcp.project_id"        = module.gcp_cloud.project_id
+                  "gcp.account_type"     = "single-account"
+                  "gcp.project_id"       = module.gcp_cloud.project_id
                   "gcp.credentials.type" = "credentials-json"
                   "gcp.credentials.json" = module.gcp_cloud.credentials_json
                 })
@@ -271,14 +315,14 @@ locals {
     ] : [],
     [
       {
-        name                 = "gcp-security"
-        description          = "GCP security logs (audit + firewall) via Pub/Sub"
-        package_name         = "gcp"
-        managed              = false
-        agent_policy         = true
-        prerelease           = false
-        package_version      = null
-        policy_template      = null
+        name            = "gcp-security"
+        description     = "GCP security logs (audit + firewall) via Pub/Sub"
+        package_name    = "gcp"
+        managed         = false
+        agent_policy    = true
+        prerelease      = false
+        package_version = null
+        policy_template = null
         vars_json = jsonencode({
           project_id       = module.gcp_cloud.project_id
           credentials_json = module.gcp_cloud.credentials_json
@@ -388,14 +432,14 @@ locals {
   # Observability Fleet: network/LB logs + platform metrics.
   observability_integrations = [
     {
-      name                 = "gcp-observe"
-      description          = "GCP observability (vpcflow/dns/lb logs + compute/storage/lb metrics)"
-      package_name         = "gcp"
-      managed              = false
-      agent_policy         = true
-      prerelease           = false
-      package_version      = null
-      policy_template      = null
+      name            = "gcp-observe"
+      description     = "GCP observability (vpcflow/dns/lb logs + compute/storage/lb metrics)"
+      package_name    = "gcp"
+      managed         = false
+      agent_policy    = true
+      prerelease      = false
+      package_version = null
+      policy_template = null
       vars_json = jsonencode({
         project_id       = module.gcp_cloud.project_id
         credentials_json = module.gcp_cloud.credentials_json

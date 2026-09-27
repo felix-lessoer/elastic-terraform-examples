@@ -871,6 +871,28 @@ module "elastic_agent" {
   iam_instance_profile = module.aws_cloud.agent_instance_profile_name
 }
 
+module "observability_seed" {
+  source = "../../modules/observability-seed"
+
+  kibana_endpoint             = module.observability.kibana_endpoint
+  elasticsearch_endpoint      = module.observability.elasticsearch_endpoint
+  elasticsearch_username      = module.observability.username
+  elasticsearch_password      = module.observability.password
+  enable_ml_jobs              = var.enable_ml_jobs
+  enable_ai_agents            = var.enable_ai_agents
+  enable_observability_alerts = var.enable_observability_alerts
+  security_findings_indices = [
+    "logs-aws.securityhub_findings-*",
+    "logs-aws.guardduty-*",
+    "logs-aws.inspector-*",
+    "logs-aws.config-*",
+  ]
+  cloud_slug         = "aws"
+  cloud_display_name = "AWS"
+
+  depends_on = [module.stack]
+}
+
 # Keep the curated AWS cockpit in the same Observability project as the data.
 module "cockpit" {
   count  = var.enable_cockpit_dashboard ? 1 : 0
@@ -881,10 +903,12 @@ module "cockpit" {
   elasticsearch_password = module.observability.password
   title                  = "AWS Observability Cockpit"
   description            = "AWS service health and metrics collected across all regions."
-  dashboard_id           = "a1b2c3d4-e5f6-4789-a012-3456789abcde"
+  dashboard_id           = "752a1ac0-26e4-49d8-a2b4-5483068809b9"
   ndjson_path            = "${path.module}/../../modules/cockpit-dashboard/cockpit-aws.ndjson"
+  ml_jobs                = module.observability_seed.ml_jobs
+  ai_agents              = module.observability_seed.ai_agents
 
-  depends_on = [module.stack]
+  depends_on = [module.stack, module.observability_seed]
 }
 
 # Deploy every pinned workflow definition in examples/aws/workflows into the
@@ -899,5 +923,51 @@ module "workflows" {
   workflows_dir          = "${path.module}/workflows"
   execute_on_apply       = var.execute_workflows_on_apply
 
-  depends_on = [module.stack, module.cockpit]
+  depends_on = [module.stack, module.observability_seed, module.cockpit]
+}
+
+# Seed the local insight fabric and initial recommendations after integrations,
+# agents, dashboard, and workflows are available.
+resource "terraform_data" "seed_aws_insight_indices" {
+  count = var.enable_cockpit_dashboard ? 1 : 0
+
+  triggers_replace = [
+    filesha256("${path.module}/../../modules/cockpit-dashboard/scripts/seed_aws_insight_indices.py"),
+    filesha256("${path.module}/../../modules/cockpit-dashboard/scripts/generate_aws_recommendations.py"),
+    filesha256("${path.module}/../../modules/cockpit-dashboard/cockpit-aws.ndjson"),
+    module.observability.elasticsearch_endpoint,
+  ]
+
+  provisioner "local-exec" {
+    interpreter = ["/bin/bash", "-c"]
+    environment = {
+      OBS_ES     = module.observability.elasticsearch_endpoint
+      OBS_KIBANA = module.observability.kibana_endpoint
+      OBS_USER   = module.observability.username
+      OBS_PASS   = module.observability.password
+    }
+    command = <<-EOT
+      set -euo pipefail
+      python3 "${path.module}/../../modules/cockpit-dashboard/scripts/seed_aws_insight_indices.py" \
+        --obs-es "$OBS_ES" \
+        --sec-es "$OBS_ES" \
+        --sec-kibana "$OBS_KIBANA" \
+        --obs-user "$OBS_USER" \
+        --sec-user "$OBS_USER" \
+        --obs-password "$OBS_PASS" \
+        --sec-password "$OBS_PASS"
+      python3 "${path.module}/../../modules/cockpit-dashboard/scripts/generate_aws_recommendations.py" \
+        --es-url "$OBS_ES" \
+        --user "$OBS_USER" \
+        --password "$OBS_PASS"
+    EOT
+  }
+
+  depends_on = [
+    module.cockpit,
+    module.workflows,
+    module.observability_seed,
+    terraform_data.regional_security_integrations,
+    terraform_data.existing_log_integrations,
+  ]
 }

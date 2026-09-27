@@ -1,0 +1,55 @@
+name: AWS S3 Recommendations
+id: aws-cockpit-s3-recommendations
+triggers:
+  - type: manual
+  - type: scheduled
+    with:
+      every: "1h"
+
+steps:
+  - name: find_empty_buckets
+    type: elasticsearch.esql.query
+    with:
+      format: json
+      query: |
+        FROM metrics-aws.s3_daily_storage-default
+        | WHERE @timestamp > NOW() - 7 days
+        | STATS max_size = MAX(aws.s3_daily_storage.bucket.size.bytes), max_objects = MAX(aws.s3_daily_storage.number_of_objects) BY aws.s3.bucket.name, cloud.region, cloud.account.id
+        | WHERE max_size == 0 OR max_objects == 0
+
+  - name: map_empty_buckets
+    type: data.map
+    items: "{{ steps.find_empty_buckets.output.values }}"
+    with:
+      fields:
+        max_size: "{{ item[0] }}"
+        max_objects: "{{ item[1] }}"
+        bucket: "{{ item[2] }}"
+        region: "{{ item[3] }}"
+        account_id: "{{ item[4] }}"
+
+  - name: process_empty_buckets
+    type: foreach
+    foreach: "{{ steps.map_empty_buckets.output }}"
+    steps:
+      - name: index_recommendation
+        type: elasticsearch.index
+        with:
+          index: aws-cockpit-recommendations
+          id: "{{ foreach.item.bucket }}-empty_bucket-{{ now | date: '%Y%m%dT%H%M' }}"
+          document:
+            category: cost_optimization
+            severity: low
+            metric_name: s3_bucket_size_bytes
+            metric_value: "{{ foreach.item.max_size }}"
+            threshold: 0
+            recommendation: >-
+              S3 bucket {{ foreach.item.bucket }} appears empty (size={{ foreach.item.max_size }} bytes,
+              objects={{ foreach.item.max_objects }}) — confirm it is still needed or remove it.
+            resource:
+              type: s3_bucket
+              name: "{{ foreach.item.bucket }}"
+            cloud:
+              region: "{{ foreach.item.region }}"
+              account:
+                id: "{{ foreach.item.account_id }}"

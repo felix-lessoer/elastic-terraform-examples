@@ -1,0 +1,126 @@
+name: AWS EC2 Recommendations
+id: aws-cockpit-ec2-recommendations
+description: >-
+  Analyzes EC2 CloudWatch metrics over a 24h window and writes cost
+  optimization / performance risk recommendations into
+  aws-cockpit-recommendations.
+
+triggers:
+  - type: manual
+  - type: scheduled
+    with:
+      every: "1h"
+
+steps:
+  - name: query_metrics
+    type: elasticsearch.esql.query
+    with:
+      query: |
+        FROM metrics-aws.ec2_metrics-default
+        | WHERE @timestamp > NOW() - 24 hours
+        | STATS avg_cpu = AVG(aws.ec2.metrics.CPUUtilization.avg), max_status_failed = MAX(aws.ec2.metrics.StatusCheckFailed.avg) BY cloud.instance.name, cloud.instance.id, cloud.availability_zone, cloud.account.id, cloud.region, cloud.machine.type
+
+  - name: normalize_metrics
+    type: data.map
+    items: "{{ steps.query_metrics.output.values }}"
+    with:
+      fields:
+        avg_cpu: "{{ item[0] }}"
+        status_failed: "{{ item[1] }}"
+        instance_name: "{{ item[2] }}"
+        instance_id: "{{ item[3] }}"
+        availability_zone: "{{ item[4] }}"
+        account_id: "{{ item[5] }}"
+        region: "{{ item[6] }}"
+        machine_type: "{{ item[7] }}"
+
+  - name: process_metrics
+    type: foreach
+    foreach: "{{ steps.normalize_metrics.output }}"
+    steps:
+      - name: check_status_failed
+        type: if
+        condition: "foreach.item.status_failed > 0"
+        steps:
+          - name: index_status_check_recommendation
+            type: elasticsearch.index
+            with:
+              index: aws-cockpit-recommendations
+              id: "{{ foreach.item.instance_name }}-status_check-{{ now | date: '%Y%m%dT%H%M' }}"
+              document:
+                "@timestamp": "{{ now | date_to_xmlschema }}"
+                category: performance_risk
+                severity: high
+                metric_name: status_check_failed
+                metric_value: "{{ foreach.item.status_failed }}"
+                threshold: 0
+                recommendation: >-
+                  Instance {{ foreach.item.instance_name }} has failing status
+                  checks (value {{ foreach.item.status_failed }}). Investigate
+                  immediately as the instance may be unreachable or degraded.
+                resource:
+                  type: ec2_instance
+                  name: "{{ foreach.item.instance_name }}"
+                cloud:
+                  availability_zone: "{{ foreach.item.availability_zone }}"
+                  account:
+                    id: "{{ foreach.item.account_id }}"
+                  region: "{{ foreach.item.region }}"
+
+      - name: check_underutilized_cpu
+        type: if
+        condition: "foreach.item.avg_cpu < 5"
+        steps:
+          - name: index_cost_optimization_recommendation
+            type: elasticsearch.index
+            with:
+              index: aws-cockpit-recommendations
+              id: "{{ foreach.item.instance_name }}-cost_optimization-{{ now | date: '%Y%m%dT%H%M' }}"
+              document:
+                "@timestamp": "{{ now | date_to_xmlschema }}"
+                category: cost_optimization
+                severity: medium
+                metric_name: avg_cpu_pct
+                metric_value: "{{ foreach.item.avg_cpu }}"
+                threshold: 5
+                recommendation: >-
+                  Instance {{ foreach.item.instance_name }} is underutilized
+                  (avg CPU {{ foreach.item.avg_cpu | round: 2 }}%). Consider
+                  downsizing or stopping this instance to reduce cost.
+                resource:
+                  type: ec2_instance
+                  name: "{{ foreach.item.instance_name }}"
+                cloud:
+                  availability_zone: "{{ foreach.item.availability_zone }}"
+                  account:
+                    id: "{{ foreach.item.account_id }}"
+                  region: "{{ foreach.item.region }}"
+
+      - name: check_near_capacity_cpu
+        type: if
+        condition: "foreach.item.avg_cpu > 85"
+        steps:
+          - name: index_performance_risk_recommendation
+            type: elasticsearch.index
+            with:
+              index: aws-cockpit-recommendations
+              id: "{{ foreach.item.instance_name }}-performance_risk-{{ now | date: '%Y%m%dT%H%M' }}"
+              document:
+                "@timestamp": "{{ now | date_to_xmlschema }}"
+                category: performance_risk
+                severity: high
+                metric_name: avg_cpu_pct
+                metric_value: "{{ foreach.item.avg_cpu }}"
+                threshold: 85
+                recommendation: >-
+                  Instance {{ foreach.item.instance_name }} is near CPU
+                  capacity (avg CPU {{ foreach.item.avg_cpu | round: 2 }}%).
+                  Consider scaling up or adding additional capacity.
+                resource:
+                  type: ec2_instance
+                  name: "{{ foreach.item.instance_name }}"
+                cloud:
+                  availability_zone: "{{ foreach.item.availability_zone }}"
+                  account:
+                    id: "{{ foreach.item.account_id }}"
+                  region: "{{ foreach.item.region }}"

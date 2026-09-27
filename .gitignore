@@ -13,9 +13,12 @@ examples/*/local_env/
 **/creds.json
 **/*credentials*.json
 
-# local AWS creds for PoC runs
+# local AWS / Elastic Cloud creds for PoC runs (written by
+# scripts/bootstrap-agent-env.sh from Cloud Agent environment secrets)
 examples/aws/.env.aws
 **/.env.aws
+!**/.env.aws.example
 
 *.tfvars
 !*.tfvars.example
+__pycache__/

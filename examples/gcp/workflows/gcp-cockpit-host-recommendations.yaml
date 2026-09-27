@@ -1,0 +1,181 @@
+name: GCP Host Recommendations
+id: gcp-cockpit-host-recommendations
+description: >
+  Finds underutilized (or overloaded) GCE/Compute Engine hosts based on average
+  CPU utilization over the last 24 hours and writes cost-optimization /
+  performance-risk recommendations to gcp-cockpit-recommendations.
+
+triggers:
+  - type: manual
+    inputs:
+      properties:
+        low_cpu_threshold:
+          type: number
+          description: Average CPU % below which a host is considered underutilized (cost optimization)
+          default: 20
+        high_cpu_threshold:
+          type: number
+          description: Average CPU % above which a host is considered at performance risk
+          default: 85
+  - type: scheduled
+    with:
+      every: "1h"
+
+steps:
+  # Primary data source: GCP Compute metrics
+  - name: query_gcp_cpu
+    type: elasticsearch.esql.query
+    with:
+      format: json
+      query: |
+        FROM metrics-gcp.compute-default
+        | WHERE @timestamp > NOW() - 24 hours
+        | STATS avg_cpu = AVG(gcp.compute.instance.cpu.usage.pct) BY host.name, cloud.availability_zone, cloud.project.id
+    on-failure:
+      continue: true
+
+  # Fallback data source: generic system CPU metrics (only used if the primary query fails)
+  - name: query_system_cpu_fallback
+    type: elasticsearch.esql.query
+    if: 'steps.query_gcp_cpu.status: "failed"'
+    with:
+      format: json
+      query: |
+        FROM metrics-system.cpu-default
+        | WHERE @timestamp > NOW() - 24 hours
+        | EVAL cpu_pct = system.cpu.total.norm.pct * 100
+        | STATS avg_cpu = AVG(cpu_pct) BY host.name
+    on-failure:
+      continue: true
+
+  - name: map_gcp_hosts
+    type: data.map
+    if: 'steps.query_gcp_cpu.status: "success"'
+    items: "{{ steps.query_gcp_cpu.output.values | json }}"
+    with:
+      fields:
+        host: "{{ item[1] }}"
+        avg_cpu: "{{ item[0] }}"
+        zone: "{{ item[2] }}"
+        project_id: "{{ item[3] }}"
+
+  - name: map_system_hosts
+    type: data.map
+    if: 'steps.query_gcp_cpu.status: "failed"'
+    items: "{{ steps.query_system_cpu_fallback.output.values | json }}"
+    with:
+      fields:
+        host: "{{ item[1] }}"
+        avg_cpu: "{{ item[0] }}"
+        zone: ""
+        project_id: ""
+
+  - name: process_gcp_hosts
+    type: foreach
+    if: 'steps.query_gcp_cpu.status: "success"'
+    foreach: "{{ steps.map_gcp_hosts.output | json }}"
+    steps:
+      - name: check_low_cpu_gcp
+        type: if
+        condition: "foreach.item.avg_cpu < {{ inputs.low_cpu_threshold }}"
+        steps:
+          - name: index_cost_optimization_recommendation_gcp
+            type: elasticsearch.index
+            with:
+              index: gcp-cockpit-recommendations
+              id: "{{ foreach.item.host }}-cost_optimization-{{ now | date: '%Y%m%d%H%M%S' }}-{{ foreach.index }}"
+              document:
+                "@timestamp": "{{ now | date_to_xmlschema }}"
+                category: cost_optimization
+                severity: medium
+                metric_name: avg_cpu_pct
+                recommendation: "Host {{ foreach.item.host }} is underutilized (avg CPU {{ foreach.item.avg_cpu | round: 1 }}% over 24h) - consider downsizing or stopping this instance to save cost."
+                resource:
+                  type: compute_instance
+                  name: "{{ foreach.item.host }}"
+                threshold: "{{ inputs.low_cpu_threshold }}"
+                metric_value: "{{ foreach.item.avg_cpu | round: 2 }}"
+                cloud:
+                  availability_zone: "{{ foreach.item.zone }}"
+                  project:
+                    id: "{{ foreach.item.project_id }}"
+        else:
+          - name: check_high_cpu_gcp
+            type: if
+            condition: "foreach.item.avg_cpu > {{ inputs.high_cpu_threshold }}"
+            steps:
+              - name: index_performance_risk_recommendation_gcp
+                type: elasticsearch.index
+                with:
+                  index: gcp-cockpit-recommendations
+                  id: "{{ foreach.item.host }}-performance_risk-{{ now | date: '%Y%m%d%H%M%S' }}-{{ foreach.index }}"
+                  document:
+                    "@timestamp": "{{ now | date_to_xmlschema }}"
+                    category: performance_risk
+                    severity: high
+                    metric_name: avg_cpu_pct
+                    recommendation: "Host {{ foreach.item.host }} shows sustained high CPU utilization (avg CPU {{ foreach.item.avg_cpu | round: 1 }}% over 24h) - consider upsizing this instance or redistributing workload to avoid performance degradation."
+                    resource:
+                      type: compute_instance
+                      name: "{{ foreach.item.host }}"
+                    threshold: "{{ inputs.high_cpu_threshold }}"
+                    metric_value: "{{ foreach.item.avg_cpu | round: 2 }}"
+                    cloud:
+                      availability_zone: "{{ foreach.item.zone }}"
+                      project:
+                        id: "{{ foreach.item.project_id }}"
+
+  - name: process_system_hosts
+    type: foreach
+    if: 'steps.query_gcp_cpu.status: "failed"'
+    foreach: "{{ steps.map_system_hosts.output | json }}"
+    steps:
+      - name: check_low_cpu_system
+        type: if
+        condition: "foreach.item.avg_cpu < {{ inputs.low_cpu_threshold }}"
+        steps:
+          - name: index_cost_optimization_recommendation_system
+            type: elasticsearch.index
+            with:
+              index: gcp-cockpit-recommendations
+              id: "{{ foreach.item.host }}-cost_optimization-{{ now | date: '%Y%m%d%H%M%S' }}-{{ foreach.index }}"
+              document:
+                "@timestamp": "{{ now | date_to_xmlschema }}"
+                category: cost_optimization
+                severity: medium
+                metric_name: avg_cpu_pct
+                recommendation: "Host {{ foreach.item.host }} is underutilized (avg CPU {{ foreach.item.avg_cpu | round: 1 }}% over 24h) - consider downsizing or stopping this instance to save cost."
+                resource:
+                  type: compute_instance
+                  name: "{{ foreach.item.host }}"
+                threshold: "{{ inputs.low_cpu_threshold }}"
+                metric_value: "{{ foreach.item.avg_cpu | round: 2 }}"
+                cloud:
+                  availability_zone: "{{ foreach.item.zone }}"
+                  project:
+                    id: "{{ foreach.item.project_id }}"
+        else:
+          - name: check_high_cpu_system
+            type: if
+            condition: "foreach.item.avg_cpu > {{ inputs.high_cpu_threshold }}"
+            steps:
+              - name: index_performance_risk_recommendation_system
+                type: elasticsearch.index
+                with:
+                  index: gcp-cockpit-recommendations
+                  id: "{{ foreach.item.host }}-performance_risk-{{ now | date: '%Y%m%d%H%M%S' }}-{{ foreach.index }}"
+                  document:
+                    "@timestamp": "{{ now | date_to_xmlschema }}"
+                    category: performance_risk
+                    severity: high
+                    metric_name: avg_cpu_pct
+                    recommendation: "Host {{ foreach.item.host }} shows sustained high CPU utilization (avg CPU {{ foreach.item.avg_cpu | round: 1 }}% over 24h) - consider upsizing this instance or redistributing workload to avoid performance degradation."
+                    resource:
+                      type: compute_instance
+                      name: "{{ foreach.item.host }}"
+                    threshold: "{{ inputs.high_cpu_threshold }}"
+                    metric_value: "{{ foreach.item.avg_cpu | round: 2 }}"
+                    cloud:
+                      availability_zone: "{{ foreach.item.zone }}"
+                      project:
+                        id: "{{ foreach.item.project_id }}"

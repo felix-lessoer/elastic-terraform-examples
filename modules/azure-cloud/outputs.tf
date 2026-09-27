@@ -44,3 +44,12 @@ output "applied_tags" {
   description = "Tags applied to Azure resources."
   value       = local.common_tags
 }
+
+output "agent_subnet_id" {
+  description = "Subnet id for Elastic Agent VMs (null when enable_agent_network is false)."
+  value       = try(azurerm_subnet.agents[0].id, null)
+}
+
+output "agent_vnet_name" {
+  value = try(azurerm_virtual_network.agents[0].name, null)
+}

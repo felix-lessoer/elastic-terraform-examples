@@ -70,6 +70,24 @@ variable "enable_cockpit_dashboard" {
   default     = true
 }
 
+variable "enable_ml_jobs" {
+  type        = bool
+  description = "Create and start AWS telemetry/security anomaly detection jobs."
+  default     = true
+}
+
+variable "enable_ai_agents" {
+  type        = bool
+  description = "Create AWS cockpit Agent Builder tools and specialist agents."
+  default     = true
+}
+
+variable "enable_observability_alerts" {
+  type        = bool
+  description = "Create telemetry-gap and security-findings alert rules."
+  default     = true
+}
+
 variable "enable_workflows" {
   type        = bool
   description = "Deploy pinned Kibana Workflow YAML from examples/aws/workflows."

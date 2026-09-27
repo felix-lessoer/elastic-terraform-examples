@@ -43,7 +43,7 @@ variable "description" {
 variable "dashboard_id" {
   type        = string
   description = "Saved object id embedded in the pinned NDJSON (used for dashboard_url output)."
-  default     = "c51727b1-226a-4955-9cb2-fcd59f950d55"
+  default     = "fcf1246c-6ee2-4c91-94f8-f034e8d345bc"
 }
 
 variable "ndjson_path" {

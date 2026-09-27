@@ -136,3 +136,21 @@ resource "azurerm_role_assignment" "eventhub_data_receiver" {
   role_definition_name = "Azure Event Hubs Data Receiver"
   principal_id         = azuread_service_principal.elastic.object_id
 }
+
+# Shared VNet for dual Elastic Agent VMs (Security + Observability Fleet).
+resource "azurerm_virtual_network" "agents" {
+  count               = var.enable_agent_network ? 1 : 0
+  name                = "${var.name_prefix}-agents-vnet"
+  address_space       = [var.agent_vnet_cidr]
+  location            = azurerm_resource_group.main.location
+  resource_group_name = azurerm_resource_group.main.name
+  tags                = local.common_tags
+}
+
+resource "azurerm_subnet" "agents" {
+  count                = var.enable_agent_network ? 1 : 0
+  name                 = "agents"
+  resource_group_name  = azurerm_resource_group.main.name
+  virtual_network_name = azurerm_virtual_network.agents[0].name
+  address_prefixes     = [var.agent_subnet_cidr]
+}

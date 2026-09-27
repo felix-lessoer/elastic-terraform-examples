@@ -72,6 +72,22 @@ output "workflow_ids" {
   value       = try(module.workflows[0].workflow_ids, [])
 }
 
+output "ml_job_ids" {
+  value = module.observability_seed.ml_job_ids
+}
+
+output "ai_agent_ids" {
+  value = module.observability_seed.ai_agent_ids
+}
+
+output "insight_tool_ids" {
+  value = module.observability_seed.insight_tool_ids
+}
+
+output "workflow_tool_ids" {
+  value = keys(elasticstack_kibana_agentbuilder_tool.aws_workflow)
+}
+
 output "enabled_datasets" {
   description = "AWS observability datasets enabled through managed and EC2 collectors."
   value = sort(distinct(concat(flatten([
@@ -107,6 +123,9 @@ output "next_steps" {
     - Dashboards: open the AWS integration dashboards
     - Cockpit dashboard: ${try(module.cockpit[0].dashboard_url, "(disabled)")}
     - Workflows: ${join(", ", try(module.workflows[0].workflow_ids, []))}
+    - Agent Builder agents: ${join(", ", module.observability_seed.ai_agent_ids)}
+    - Insight tools: ${join(", ", module.observability_seed.insight_tool_ids)}
+    - Workflow tools: ${join(", ", keys(elasticstack_kibana_agentbuilder_tool.aws_workflow))}
     - Discover: filter data_stream.dataset by aws.*
   EOT
 }

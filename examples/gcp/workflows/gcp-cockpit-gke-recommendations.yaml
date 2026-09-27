@@ -1,0 +1,45 @@
+id: gcp-cockpit-gke-recommendations
+name: GCP GKE Recommendations
+description: >
+  Finds underutilized GKE nodes (avg CPU < 5% over 24h) and writes
+  cost-optimization recommendations to gcp-cockpit-recommendations.
+triggers:
+  - type: manual
+  - type: scheduled
+    with:
+      every: "1h"
+steps:
+  - name: query_underutilized_nodes
+    type: elasticsearch.esql.query
+    with:
+      format: json
+      query: |
+        FROM metrics-gcp.gke-default
+        | WHERE @timestamp > NOW() - 24 hours
+        | STATS avg_cpu_pct = AVG(gcp.gke.node.cpu.allocatable_utilization.pct) BY node_name = gcp.labels.resource.node_name, cluster_name = gcp.labels.resource.cluster_name
+        | WHERE avg_cpu_pct < 5
+
+  - name: process_underutilized_nodes
+    type: foreach
+    foreach: "{{ steps.query_underutilized_nodes.output.values | json }}"
+    steps:
+      - name: index_recommendation
+        type: elasticsearch.index
+        with:
+          index: gcp-cockpit-recommendations
+          id: "{{ foreach.item[1] }}-cost_optimization-{{ now | date: '%Y%m%dT%H%M' }}"
+          document:
+            "@timestamp": "{{ now | date_to_xmlschema }}"
+            category: cost_optimization
+            severity: medium
+            metric_name: node_avg_cpu_pct
+            recommendation: >-
+              GKE node {{ foreach.item[1] }} in cluster {{ foreach.item[2] }} is
+              underutilized (avg CPU {{ foreach.item[0] }}% over 24h) - consider
+              reducing node pool size or enabling more aggressive cluster
+              autoscaling.
+            resource:
+              type: gke_node
+              name: "{{ foreach.item[1] }}"
+            threshold: "5"
+            metric_value: "{{ foreach.item[0] }}"

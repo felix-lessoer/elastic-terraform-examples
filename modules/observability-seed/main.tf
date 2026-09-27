@@ -239,7 +239,7 @@ resource "elasticstack_elasticsearch_ml_job_state" "gcp_event_rate" {
 }
 
 resource "elasticstack_elasticsearch_ml_datafeed_state" "gcp_event_rate" {
-  count = var.enable_ml_jobs ? 1 : 0
+  count = var.enable_ml_jobs && var.start_ml_datafeeds ? 1 : 0
 
   datafeed_id = elasticstack_elasticsearch_ml_datafeed.gcp_event_rate[0].datafeed_id
   # Omit start/end so the datafeed runs real-time (avoids provider start-alignment drift).
@@ -284,7 +284,7 @@ resource "elasticstack_elasticsearch_ml_job_state" "gcp_cspm_findings_rate" {
 }
 
 resource "elasticstack_elasticsearch_ml_datafeed_state" "gcp_cspm_findings_rate" {
-  count = var.enable_ml_jobs ? 1 : 0
+  count = var.enable_ml_jobs && var.start_ml_datafeeds ? 1 : 0
 
   datafeed_id = elasticstack_elasticsearch_ml_datafeed.gcp_cspm_findings_rate[0].datafeed_id
   state       = "started"

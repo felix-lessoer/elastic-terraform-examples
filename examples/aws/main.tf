@@ -909,6 +909,7 @@ module "observability_seed" {
   elasticsearch_username      = module.observability.username
   elasticsearch_password      = module.observability.password
   enable_ml_jobs              = var.enable_ml_jobs
+  start_ml_datafeeds          = false
   enable_ai_agents            = var.enable_ai_agents
   enable_observability_alerts = var.enable_observability_alerts
   security_findings_indices = [

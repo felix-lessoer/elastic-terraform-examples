@@ -25,6 +25,12 @@ variable "enable_ml_jobs" {
   default = true
 }
 
+variable "start_ml_datafeeds" {
+  type        = bool
+  description = "Start ML datafeeds during apply. Disable for greenfield projects until source indices exist."
+  default     = true
+}
+
 variable "enable_ai_agents" {
   type    = bool
   default = true

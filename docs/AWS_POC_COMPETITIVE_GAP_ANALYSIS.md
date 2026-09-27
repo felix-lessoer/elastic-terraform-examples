@@ -6,7 +6,9 @@
 
 **Research date:** 2026-09-27
 
-**Implementation baseline:** [PR 12](https://github.com/felix-lessoer/elastic-terraform-examples/pull/12), head `1f8cc8de` when reviewed
+**Implementation baseline:** [PR 12](https://github.com/felix-lessoer/elastic-terraform-examples/pull/12), head `b91c89cdf2c968a91987af9b7a45a31e6c0740a1` when last reviewed
+
+**Brownfield correction:** The PoC must not create an example application or other monitored workload. The detailed replacement plan is in [AWS brownfield observability gap plan](AWS_BROWNFIELD_OBSERVABILITY_PLAN.md). Discover the customer's existing services first, derive value from existing telemetry, and instrument only a named customer workload after approval.
 
 ## Executive recommendation
 
@@ -65,7 +67,7 @@ The highest-value next increment is therefore not another dashboard. It is one e
 |---|---|---|---|---|
 | AWS account onboarding | CloudFormation, Terraform, Control Tower, Organizations; 90+ AWS services | Guided CloudFormation and Organizations/StackSets; topology always on | Terraform, managed policies, one agent, existing-source discovery | Keep Terraform path; add organization preset, health checks, and time-to-first-data report |
 | Infrastructure | CloudWatch plus Agent, resource catalog, processes and containers | CloudWatch plus OneAgent/Smartscape | Broad managed metrics and cockpit | Add topology/entity view and collection-health evidence |
-| APM | Deep traces, profiling, deployment comparison | OneAgent auto-instrumentation and causal context | Missing | OTel/EDOT sample service with deployment metadata and service map |
+| APM | Deep traces, profiling, deployment comparison | OneAgent auto-instrumentation and causal context | Missing | Discover existing APM/OTel first; generate approval-ready instrumentation plans for high-value customer services |
 | Logs | Pipelines, archive/rehydration, Flex Logs | Grail logs with entity correlation | Existing-source discovery and AWS datasets | Show ECS normalization, tiered retention, and source-to-search latency |
 | RUM/synthetics | RUM, replay, tests, replay-to-test | RUM, replay, public/private synthetic locations | Missing | Add one browser journey and synthetic; do not over-invest before core AWS story works |
 | Lambda/serverless | Extension/library, cold starts, inferred resources, Step Functions | Lambda layer/extension, cold starts, async propagation | Metrics and discovered logs only | Add OTel/X-Ray-compatible trace path and cold-start/error workflow |
@@ -105,7 +107,7 @@ Every gap below includes an Elastic response. Priorities assume the goal is to w
 
 **Elastic response — close (P1):**
 
-- add OTel traces and Elastic entity metadata for one representative application;
+- detect existing customer APM, OTel, and X-Ray telemetry and reuse it before proposing new instrumentation;
 - normalize AWS ARN, account, region, availability zone, Kubernetes, service, deployment, and owner fields;
 - create ES|QL tools for upstream/downstream dependencies, recent changes, impacted resources, and telemetry gaps;
 - link cockpit assets to APM services, traces, infrastructure, and security entity pages.
@@ -118,15 +120,17 @@ Every gap below includes an Elastic response. Priorities assume the goal is to w
 
 **PR 12 gap:** No APM or profiling data is collected.
 
-**Elastic response — close with an openness differentiator (P0/P1):**
+**Elastic response — close with a brownfield openness differentiator (P0/P1):**
 
-- deploy a small but realistic service chain on EKS or EC2 using EDOT or upstream OpenTelemetry;
+- inventory existing EC2/ASG, ECS, EKS, Lambda, API Gateway, ELB, and RDS workloads;
+- detect existing Elastic APM, OTel collectors/exporters, X-Ray, AMP/Prometheus, logs, and deployment metadata;
+- automatically rank real customer services by criticality, active symptoms, dependency centrality, telemetry gap, instrumentation feasibility, risk, and estimated cost;
+- generate an exact instrumentation proposal for a named customer workload, including owner, deployment diff, permissions, restart/replacement, canary, success criteria, and rollback;
 - preserve standard resource attributes and document every Elastic-specific enrichment;
-- capture traces, logs, metrics, profiles if supported, deployment markers, and service ownership;
-- create an `aws_service_regression` ES|QL tool that compares latency, errors, saturation, and versions;
-- score restart requirements, trace completeness, collector overhead, and the ability to redirect telemetry to another backend.
+- modify the workload only after explicit approval, preferably through the customer's deployment mechanism;
+- score trace completeness, collector overhead, and the ability to redirect telemetry to another backend.
 
-**Winning proof:** Diagnose a deployment regression with source evidence and demonstrate that instrumentation is not locked to a proprietary-only agent path.
+**Winning proof:** Diagnose an existing customer incident or anomaly using current telemetry, then show how one approved canary closes a demonstrated evidence gap. Do not deploy or break a sample service.
 
 ### O4 — Lambda and event-driven application depth
 
@@ -136,7 +140,9 @@ Every gap below includes an Elastic response. Priorities assume the goal is to w
 
 **Elastic response — close (P1):**
 
-- instrument one API Gateway → Lambda → SQS/EventBridge → Lambda flow with supported OTel or Elastic instrumentation;
+- discover existing API Gateway, Lambda, SQS, SNS, and EventBridge relationships and tracing/logging state;
+- select an active customer flow only when current evidence shows a high-value tracing gap;
+- generate a version/alias-aware layer or OTel instrumentation plan and require approval before changing the function;
 - add tools for cold-start impact, timeout/error concentration, memory pressure, and broken trace links;
 - correlate function deployment/configuration changes from CloudTrail;
 - add a Workflow that opens a case when latency and cold-start regressions cross defined thresholds.
@@ -151,8 +157,9 @@ Every gap below includes an Elastic response. Priorities assume the goal is to w
 
 **Elastic response — close and differentiate on explicit controls (P1):**
 
-- deploy the OpenTelemetry Operator and Elastic Kubernetes integration with scoped RBAC;
-- instrument only selected namespaces and document webhook, restart, privilege, and resource requirements;
+- discover existing EKS clusters, node groups, Fargate profiles, add-ons, and telemetry; use the Kubernetes API only after approval;
+- deploy infrastructure collection only with cluster approval and scoped RBAC;
+- propose application injection only for a selected existing workload or namespace and document webhook, restart, privilege, and rollback requirements;
 - add KSPM and Elastic Defend only where supported and consented;
 - correlate traces with pods, nodes, deployments, audit events, posture findings, and runtime alerts;
 - expose collector and agent health in the cockpit.
@@ -168,7 +175,7 @@ Every gap below includes an Elastic response. Priorities assume the goal is to w
 **Elastic response — close selectively (P1):**
 
 - enable supported RDS logs, Enhanced Monitoring, and Performance Insights ingestion;
-- instrument database spans from the sample application;
+- reuse existing caller traces; otherwise identify and propose instrumentation for the highest-value real caller;
 - create tools for query fingerprint regression, waits/connections, storage pressure, and calling services;
 - record database permissions and network paths required for each level of depth.
 
@@ -197,7 +204,7 @@ Every gap below includes an Elastic response. Priorities assume the goal is to w
 
 **Elastic response — close narrowly (P2):**
 
-- add one browser journey and one API synthetic for the representative application;
+- discover customer endpoints and existing synthetics, then propose one high-value journey only with service-owner approval;
 - correlate frontend errors and synthetic failures with backend traces and AWS dependencies;
 - configure privacy masking and document captured fields;
 - do not claim replay-to-test parity unless demonstrated in the selected Elastic release.
@@ -246,7 +253,7 @@ Every gap below includes an Elastic response. Priorities assume the goal is to w
 
 - ingest CUR 2.0 or FOCUS-shaped billing data;
 - normalize account, owner, application, environment, and cost-center tags;
-- calculate cost per request/transaction for the sample service;
+- calculate resource and service cost immediately; calculate unit cost only for real services with request/transaction telemetry;
 - add EBS, NAT Gateway, RDS, Lambda, idle load balancer, and storage-lifecycle recommendations;
 - require performance/SLO evidence before recommending rightsizing;
 - create an approval workflow that opens a ticket rather than changing production directly.
@@ -459,20 +466,20 @@ Every gap below includes an Elastic response. Priorities assume the goal is to w
 
 ## Differentiated AWS PoC scenarios
 
-### Scenario A — Deployment regression with a security-relevant change
+### Scenario A — Existing customer service degradation
 
-1. Deploy a new version of an OTel-instrumented service on EKS.
-2. Introduce an RDS query regression and a related Security Group change.
-3. Detect user-facing latency through synthetic/APM signals.
-4. Correlate deployment, traces, pod pressure, RDS evidence, VPC rejects, and CloudTrail change.
-5. Have the Observability Triage agent produce an evidence pack and uncertainty.
-6. Open a case, route it to the owner, and offer an approval-gated rollback.
+1. Discover customer services and rank active health anomalies from existing alarms, metrics, logs, traces, and AWS Health.
+2. Select a real degradation or recent incident with the service owner; do not create or inject a failure.
+3. Correlate deployment/configuration changes, traces when present, compute pressure, dependencies, VPC flows, and CloudTrail.
+4. Have the Observability Triage agent produce an evidence pack, confidence, contradictory evidence, and missing telemetry.
+5. Open a case and route it to the inferred or confirmed owner.
+6. If missing telemetry blocks the investigation, generate an approval-ready canary instrumentation plan for that existing workload.
 
 **Value:** Demonstrates an investigation that crosses the normal observability/security boundary.
 
 ### Scenario B — Compromised AWS identity affecting a production workload
 
-1. Generate a controlled unusual role assumption and IAM/API sequence.
+1. Use an existing customer finding or a customer-approved validation event; do not create a new workload.
 2. Combine prebuilt rules, ES|QL sequences, ML anomaly, asset criticality, and entity risk.
 3. Correlate GuardDuty/Security Hub, CloudTrail, network flow, affected workload, and application ownership.
 4. Use the Security Analyst to summarize evidence and missing context.
@@ -480,19 +487,20 @@ Every gap below includes an Elastic response. Priorities assume the goal is to w
 
 **Value:** Competes directly with Splunk RBA, UEBA, Mission Control, and SOAR while showing application impact.
 
-### Scenario C — Lambda reliability, cost, and change
+### Scenario C — Existing Lambda reliability, cost, and change
 
-1. Trace an API Gateway/Lambda/queue flow.
-2. Induce cold starts, retries, or a memory/timeout regression.
-3. Correlate function version, CloudTrail configuration change, logs, traces, and cost per successful invocation.
-4. Create a recommendation with SLO impact and an approval-gated ticket.
+1. Discover active API Gateway, Lambda, queue, and event-bus relationships.
+2. Rank real functions by errors, throttles, duration, concurrency, log evidence, cost, and missing traces.
+3. Correlate an existing anomaly with function version, CloudTrail configuration change, logs, available traces, and invocation cost.
+4. If tracing is absent, generate a layer/extension canary plan against a named function alias or version.
+5. Create a recommendation with expected value, change impact, rollback, and an approval-gated ticket.
 
 **Value:** Competes with purpose-built Datadog/Dynatrace serverless views and adds transparent unit economics.
 
 ### Scenario D — Posture finding to runtime priority
 
-1. Create a controlled CSPM failure or vulnerable supported workload.
-2. Add internet exposure, application ownership, runtime presence, and suspicious activity.
+1. Use an existing CSPM or vulnerability finding in the approved customer scope.
+2. Add internet exposure, application ownership, runtime presence, and available threat activity.
 3. Prioritize the finding using evidence rather than base severity alone.
 4. Open a case and propose the least disruptive remediation.
 
@@ -506,7 +514,7 @@ Every gap below includes an Elastic response. Priorities assume the goal is to w
 2. For combined scope, add a Security project/cross-project experience and real CSPM/detection inputs.
 3. Correct seeder, cockpit, and agent behavior when security datasets are absent.
 4. Enable a curated AWS detection pack and automated test events.
-5. Add one OTel-instrumented service chain and deployment metadata.
+5. Add brownfield resource/service discovery, detect existing APM/OTel/X-Ray, and index deployment metadata.
 6. Add entity risk, asset criticality, Cases, and one approved-response Workflow.
 7. Attach bounded workflow tools to the correct agents.
 8. Add setup, freshness, ECS quality, and cost measurements.
@@ -514,8 +522,8 @@ Every gap below includes an Elastic response. Priorities assume the goal is to w
 
 ### P1 — Build the winning cross-domain story
 
-1. Add EKS collection, selective OTel instrumentation, and KSPM.
-2. Add Lambda tracing and async propagation.
+1. Add EKS discovery and approved infrastructure collection; propose selective OTel instrumentation only for existing workloads with demonstrated value.
+2. Discover Lambda relationships and tracing state; add tracing only through an approved function canary.
 3. Add RDS query-level evidence and Performance Insights where supported.
 4. Add CSPM/CNVM/cloud asset/runtime correlations within documented support.
 5. Add CUR/FOCUS and cost-per-service/transaction.

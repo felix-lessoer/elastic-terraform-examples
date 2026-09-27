@@ -70,6 +70,9 @@ export async function executeCommand(
   });
 
   const result = await child;
+  if (result.exitCode !== 0 && !result.stderr && result.shortMessage) {
+    options.write(result.shortMessage);
+  }
   return {
     exitCode: result.exitCode ?? 1,
     stdout: result.stdout,

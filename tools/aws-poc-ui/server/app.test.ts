@@ -9,6 +9,7 @@ import {
   deploymentConfigSchema,
 } from './config.js';
 import { saveCredentialsAt } from './credentials.js';
+import { executeCommand } from './run-manager.js';
 import { sanitizeTerraformOutputs } from './terraform.js';
 
 describe('local API security', () => {
@@ -160,6 +161,19 @@ describe('credential persistence', () => {
     } finally {
       await fs.rm(directory, { recursive: true, force: true });
     }
+  });
+});
+
+describe('command progress output', () => {
+  it('reports an actionable error when a required command is unavailable', async () => {
+    const logs: string[] = [];
+    const result = await executeCommand(
+      'elastic-poc-command-that-does-not-exist',
+      [],
+      { cwd: os.tmpdir(), write: (line) => logs.push(line) },
+    );
+    expect(result.exitCode).not.toBe(0);
+    expect(logs.join('\n')).toContain('ENOENT');
   });
 });
 

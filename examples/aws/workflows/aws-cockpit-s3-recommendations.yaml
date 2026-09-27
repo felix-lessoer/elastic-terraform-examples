@@ -39,6 +39,7 @@ steps:
           index: aws-cockpit-recommendations
           id: "{{ foreach.item.bucket }}-empty_bucket-{{ now | date: '%Y%m%dT%H%M' }}"
           document:
+            "@timestamp": "{{ now | date_to_xmlschema }}"
             category: cost_optimization
             severity: low
             metric_name: s3_bucket_size_bytes

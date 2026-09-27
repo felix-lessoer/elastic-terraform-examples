@@ -96,6 +96,17 @@ def ensure_index(es: str, user: str, password: str) -> None:
     except RuntimeError as e:
         if "resource_already_exists_exception" not in str(e):
             raise
+    # Existing indices may have been created dynamically by an older workflow
+    # before any timestamped document was written. Index creation is then a
+    # no-op, so explicitly reconcile the field required by every dashboard
+    # time-range query.
+    req(
+        "PUT",
+        f"{es}/{INDEX}/_mapping",
+        user,
+        password,
+        {"properties": {"@timestamp": {"type": "date"}}},
+    )
 
 
 def main() -> int:

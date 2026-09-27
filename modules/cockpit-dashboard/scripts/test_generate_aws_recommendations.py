@@ -11,6 +11,32 @@ from seed_aws_insight_indices import aws_s3_asset_docs, manifest_asset_docs
 
 
 class EsqlTests(unittest.TestCase):
+    def test_existing_recommendation_index_gets_timestamp_mapping(self):
+        existing = RuntimeError(
+            "resource_already_exists_exception: index already exists"
+        )
+        with patch.object(
+            recommendations,
+            "req",
+            side_effect=[existing, {}],
+        ) as request:
+            recommendations.ensure_index(
+                "https://example.test",
+                "elastic",
+                "secret",
+            )
+        self.assertEqual(request.call_count, 2)
+        method, url, _, _, body = request.call_args.args
+        self.assertEqual(method, "PUT")
+        self.assertEqual(
+            url,
+            "https://example.test/aws-cockpit-recommendations/_mapping",
+        )
+        self.assertEqual(
+            body,
+            {"properties": {"@timestamp": {"type": "date"}}},
+        )
+
     def test_missing_metric_index_returns_no_recommendations(self):
         error = RuntimeError(
             "POST https://example.test/_query -> 400: "

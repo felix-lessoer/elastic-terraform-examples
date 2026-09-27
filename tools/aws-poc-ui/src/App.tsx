@@ -585,7 +585,7 @@ function PlanProgress({ run }: { run?: RunRecord }) {
       )}
       <EuiSpacer size="m" />
       <details>
-        <summary css={{ cursor: 'pointer' }}>Show technical output</summary>
+        <summary style={{ cursor: 'pointer' }}>Show technical output</summary>
         <EuiSpacer size="s" />
         <EuiCodeBlock
           language="shell"

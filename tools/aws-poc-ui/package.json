@@ -12,7 +12,9 @@
     "dev:ui": "vite --host 127.0.0.1",
     "build": "tsc -b && vite build",
     "start": "tsx server/index.ts",
-    "test": "vitest run",
+    "test": "npm run test:node && npm run test:python",
+    "test:node": "vitest run",
+    "test:python": "python3 -m unittest discover -s python -p 'test_*.py'",
     "typecheck": "tsc -b --pretty false"
   },
   "dependencies": {

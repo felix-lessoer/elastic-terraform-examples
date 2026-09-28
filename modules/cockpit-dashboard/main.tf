@@ -44,7 +44,7 @@ resource "terraform_data" "default_route" {
       KIBANA_USER  = var.elasticsearch_username
       KIBANA_PASS  = var.elasticsearch_password
       DASHBOARD_ID = var.dashboard_id
-      SPACE_ID      = var.space_id
+      SPACE_ID     = var.space_id
     }
     command = <<-EOT
       python3 "${path.module}/scripts/set_kibana_default_route.py" \

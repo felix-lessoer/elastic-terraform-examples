@@ -1,5 +1,8 @@
-name: AWS S3 Recommendations
+name: AWS Insight Engine — S3
 id: aws-cockpit-s3-recommendations
+description: >-
+  Converts the workflow-generated S3 asset inventory into utilization and cost
+  insights in aws-cockpit-recommendations for the AWS Insight Engine.
 triggers:
   - type: manual
   - type: scheduled

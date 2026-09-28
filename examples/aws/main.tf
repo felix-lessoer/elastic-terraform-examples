@@ -965,7 +965,7 @@ module "workflows" {
   depends_on = [module.stack, module.observability_seed, module.cockpit]
 }
 
-# Seed the local insight fabric and initial recommendations after integrations,
+# Seed the local Insight Engine after integrations,
 # agents, dashboard, and workflows are available.
 resource "terraform_data" "seed_aws_insight_indices" {
   count = var.enable_cockpit_dashboard ? 1 : 0
@@ -973,6 +973,7 @@ resource "terraform_data" "seed_aws_insight_indices" {
   triggers_replace = [
     filesha256("${path.module}/../../modules/cockpit-dashboard/scripts/seed_aws_insight_indices.py"),
     filesha256("${path.module}/../../modules/cockpit-dashboard/scripts/generate_aws_recommendations.py"),
+    filesha256("${path.module}/workflows/aws-cockpit-insight-engine-summary.yaml"),
     filesha256("${path.module}/../../modules/cockpit-dashboard/cockpit-aws.ndjson"),
     module.observability.elasticsearch_endpoint,
   ]
@@ -980,13 +981,18 @@ resource "terraform_data" "seed_aws_insight_indices" {
   provisioner "local-exec" {
     interpreter = ["/bin/bash", "-c"]
     environment = {
-      OBS_ES     = module.observability.elasticsearch_endpoint
-      OBS_KIBANA = module.observability.kibana_endpoint
-      OBS_USER   = module.observability.username
-      OBS_PASS   = module.observability.password
+      OBS_ES            = module.observability.elasticsearch_endpoint
+      OBS_KIBANA        = module.observability.kibana_endpoint
+      OBS_USER          = module.observability.username
+      OBS_PASS          = module.observability.password
+      RUN_AGENT_SUMMARY = tostring(var.enable_workflows && var.enable_ai_agents)
     }
     command = <<-EOT
       set -euo pipefail
+      python3 "${path.module}/../../modules/cockpit-dashboard/scripts/generate_aws_recommendations.py" \
+        --es-url "$OBS_ES" \
+        --user "$OBS_USER" \
+        --password "$OBS_PASS"
       python3 "${path.module}/../../modules/cockpit-dashboard/scripts/seed_aws_insight_indices.py" \
         --obs-es "$OBS_ES" \
         --sec-es "$OBS_ES" \
@@ -995,10 +1001,13 @@ resource "terraform_data" "seed_aws_insight_indices" {
         --sec-user "$OBS_USER" \
         --obs-password "$OBS_PASS" \
         --sec-password "$OBS_PASS"
-      python3 "${path.module}/../../modules/cockpit-dashboard/scripts/generate_aws_recommendations.py" \
-        --es-url "$OBS_ES" \
-        --user "$OBS_USER" \
-        --password "$OBS_PASS"
+      if [[ "$RUN_AGENT_SUMMARY" == "true" ]]; then
+        curl -fsS -u "$OBS_USER:$OBS_PASS" \
+          -H 'kbn-xsrf: aws-insight-engine' \
+          -H 'Content-Type: application/json' \
+          -X POST "$OBS_KIBANA/api/workflows/workflow/aws-cockpit-insight-engine-summary/run" \
+          --data '{"inputs":{},"metadata":{"source":"terraform-insight-refresh"}}'
+      fi
     EOT
   }
 

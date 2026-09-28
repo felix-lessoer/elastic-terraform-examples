@@ -335,6 +335,29 @@ resource "terraform_data" "insight_indices" {
             --data '{}'
         fi
       done
+      summary_index="$PREFIX-insight-summary"
+      if ! curl -fsS -u "$ES_USER:$ES_PASS" -I "$ES_URL/$summary_index" >/dev/null; then
+        curl -fsS -u "$ES_USER:$ES_PASS" -X PUT \
+          -H 'Content-Type: application/json' \
+          "$ES_URL/$summary_index" \
+          --data '{
+            "mappings": {
+              "properties": {
+                "@timestamp": {"type": "date"},
+                "level": {"type": "keyword"},
+                "source": {"type": "keyword"},
+                "agent_id": {"type": "keyword"},
+                "conversation_id": {"type": "keyword"},
+                "priority": {"type": "keyword"},
+                "headline": {"type": "keyword"},
+                "summary": {"type": "keyword", "ignore_above": 8191},
+                "action_1": {"type": "keyword", "ignore_above": 2048},
+                "action_2": {"type": "keyword", "ignore_above": 2048},
+                "action_3": {"type": "keyword", "ignore_above": 2048}
+              }
+            }
+          }'
+      fi
     EOT
   }
 }
@@ -563,8 +586,8 @@ resource "elasticstack_kibana_agentbuilder_agent" "recs_advisor" {
   count = var.enable_ai_agents ? 1 : 0
 
   agent_id      = "${local.cloud}-recs-advisor"
-  name          = "${local.cloud_name} Recommendations Advisor"
-  description   = "Prioritizes cost and performance recommendations from the cockpit insight engine."
+  name          = "${local.cloud_name} Insight Engine Analyst"
+  description   = "Synthesizes workflow insights, telemetry coverage, and recommendations into the cockpit briefing."
   space_id      = var.space_id
   labels        = [local.cloud, "recommendations", "cockpit", "insight"]
   avatar_color  = "#F04E98"
@@ -572,11 +595,12 @@ resource "elasticstack_kibana_agentbuilder_agent" "recs_advisor" {
   tools         = local.agent_tool_ids
 
   instructions = <<-EOT
-    You are a ${local.cloud_name} FinOps / performance advisor for the Observe & Protect cockpit.
-    Primary data: ${local.insight_prefix}-recommendations (and the recs ES|QL tool for aggregates).
-    Cross-check ${local.insight_prefix}-assets and ${local.insight_prefix}-coverage when a recommendation
-    needs inventory or telemetry context. Rank by severity/impact, group by category (cost vs performance),
-    and return a short action list owners can execute. Prefer counts and top resources over raw docs.
+    You are the ${local.cloud_name} Insight Engine analyst for the Observe & Protect cockpit.
+    The cockpit has three levels: raw cloud telemetry, workflow-generated insights, and your
+    customer-facing summary. Use ${local.insight_prefix}-recommendations, -coverage, -events,
+    -assets, and -security-kpi as the evidence for that summary. Rank findings by severity and
+    customer impact, call out missing telemetry rather than guessing, and return a short action
+    list owners can execute. Prefer counts and top resources over raw documents.
   EOT
 
   kibana_connection {

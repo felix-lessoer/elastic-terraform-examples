@@ -1,9 +1,8 @@
-name: AWS EC2 Recommendations
+name: AWS Insight Engine — EC2
 id: aws-cockpit-ec2-recommendations
 description: >-
-  Analyzes EC2 CloudWatch metrics over a 24h window and writes cost
-  optimization / performance risk recommendations into
-  aws-cockpit-recommendations.
+  Converts raw EC2 CloudWatch metrics into cost and performance insights in
+  aws-cockpit-recommendations for the AWS Insight Engine.
 
 triggers:
   - type: manual

@@ -149,10 +149,15 @@ export async function refreshElasticInsights(
     details,
     write,
   );
-  write('Cockpit recommendations and insight snapshots refreshed');
+  if (details.workflowIds.includes('aws-cockpit-insight-engine-summary')) {
+    write('Starting the Agent Builder Insight Engine summary');
+    await runElasticWorkflow('aws-cockpit-insight-engine-summary', write);
+  }
+  write('Cockpit Insight Engine snapshots refreshed');
   return {
     refreshed: [
       'aws-cockpit-recommendations',
+      'aws-cockpit-insight-summary',
       'aws-cockpit-security-kpi',
       'aws-cockpit-coverage',
       'aws-cockpit-assets',

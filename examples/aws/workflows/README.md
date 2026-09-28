@@ -1,8 +1,7 @@
-# Pinned Kibana Workflow YAML — AWS cockpit insight fabric
+# Pinned Kibana Workflow YAML — AWS Insight Engine
 
-These workflows (plus the cross-project seeder) power Datadog-comparable
-insights on the Observability cockpit. Filenames are stable `workflow_id`s
-deployed by `module.workflows_obs`.
+These workflows turn raw AWS data into durable insights and an Agent Builder
+briefing on the Observability cockpit. Filenames are stable `workflow_id`s.
 
 | File | Writes to | Purpose |
 | --- | --- | --- |
@@ -10,6 +9,7 @@ deployed by `module.workflows_obs`.
 | `aws-cockpit-s3-recommendations.yaml` | `aws-cockpit-recommendations` | Empty / near-empty S3 buckets |
 | `aws-cockpit-assets.yaml` | `aws-cockpit-assets` | Live EC2/S3 inventory from metrics |
 | `aws-cockpit-coverage.yaml` | `aws-cockpit-coverage` | Per-dataset coverage rows (supplemental) |
+| `aws-cockpit-insight-engine-summary.yaml` | `aws-cockpit-insight-summary` | Structured, prioritized summary from the `aws-recs-advisor` agent |
 
 ## Cross-project seeder (Security → Observability)
 
@@ -31,6 +31,7 @@ on apply (`terraform_data.seed_aws_insight_indices`). It mirrors:
 | `aws-cockpit-assets` | EC2 + S3 inventory |
 | `aws-cockpit-health` | mirrored AWS Health events (Security → Observability) |
 | `aws-cockpit-events` | AWS Health + CloudTrail highlights + recommendation churn |
+| `aws-cockpit-insight-summary` | Latest workflow-triggered Agent Builder briefing |
 
 Triggers: workflows = manual + scheduled every `1h`. Seeder = every apply
 (and safe to cron hourly).

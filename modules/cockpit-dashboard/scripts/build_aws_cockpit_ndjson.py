@@ -651,19 +651,19 @@ def build(gcp_path: Path) -> dict:
             section_id=live_section_id,
         ),
         esql_metric_panel(
-            title="Open recommendations",
-            metric_label="Recommendations",
+            title="Open actionable insights",
+            metric_label="Insights",
             esql=(
                 "FROM aws-cockpit-recommendations\n"
                 "| WHERE @timestamp >= ?_tstart AND @timestamp < ?_tend\n"
-                "| STATS `Recommendations` = COUNT(*)"
+                "| STATS `Insights` = COUNT(*)"
             ),
             index="aws-cockpit-recommendations-@timestamp",
             grid={"x": 32, "y": 7, "w": 8, "h": 5},
             section_id=live_section_id,
         ),
         esql_metric_panel(
-            title="High severity recs",
+            title="High severity insights",
             metric_label="High severity",
             esql=(
                 "FROM aws-cockpit-recommendations\n"
@@ -774,14 +774,15 @@ def build(gcp_path: Path) -> dict:
     ]
 
     rec_intro = markdown_panel(
-        title="AWS recommendations",
+        title="Insight Engine workflow details",
         section_id=rec_section_id,
         content=(
             '<a id="aws-recommendations"></a>\n'
-            "### Recommendations (from live AWS metrics)\n"
-            "Derived from EC2 CPU / status checks and S3 utilization, written to "
-            "`aws-cockpit-recommendations` (same concept as GCP's "
-            "`gcp-cockpit-recommendations`).\n\n"
+            "### Insight Engine — workflow-generated insights\n"
+            "Level 1 is raw AWS telemetry in `metrics-aws.*` and `logs-aws.*`. "
+            "Level 2 workflows derive the EC2 CPU, status-check, and S3 "
+            "utilization insights shown here. Level 3 is the Agent Builder "
+            "briefing displayed prominently at the top of this cockpit.\n\n"
             "| Category | Meaning |\n"
             "| --- | --- |\n"
             "| **cost_optimization** | Underutilized EC2 (avg CPU &lt; 5% / 24h) or empty S3 buckets |\n"
@@ -795,7 +796,7 @@ def build(gcp_path: Path) -> dict:
     rec_panels = [
         rec_intro,
         esql_xy_panel(
-            title="Recommendations by category",
+            title="Insights by category",
             x_field="Category",
             y_field="Count",
             esql=(
@@ -809,7 +810,7 @@ def build(gcp_path: Path) -> dict:
             section_id=rec_section_id,
         ),
         esql_xy_panel(
-            title="Recommendations by severity",
+            title="Insights by severity",
             x_field="Severity",
             y_field="Count",
             esql=(
@@ -823,7 +824,7 @@ def build(gcp_path: Path) -> dict:
             section_id=rec_section_id,
         ),
         esql_xy_panel(
-            title="Recommendations by resource type",
+            title="Insights by resource type",
             x_field="Resource Type",
             y_field="Count",
             esql=(
@@ -837,7 +838,7 @@ def build(gcp_path: Path) -> dict:
             section_id=rec_section_id,
         ),
         esql_table_panel(
-            title="Latest recommendations",
+            title="Latest actionable insights",
             esql=(
                 "FROM aws-cockpit-recommendations\n"
                 "| WHERE @timestamp >= ?_tstart AND @timestamp < ?_tend\n"
@@ -955,7 +956,7 @@ def build(gcp_path: Path) -> dict:
         {
             "collapsed": False,
             "gridData": {"i": rec_section_id, "y": live_section_y + 55},
-            "title": "AWS Recommendations",
+            "title": "Insight Engine — Workflow Insights",
         },
     ]
 
@@ -963,7 +964,7 @@ def build(gcp_path: Path) -> dict:
         "attributes": {
             "description": (
                 "Aggregated security + observability posture across linked Elastic serverless AWS projects. "
-                "Includes CSPM asset inventory, live AWS metrics inventory, and cost/performance recommendations."
+                "Includes raw AWS telemetry, workflow-generated insights, and an Agent Builder summary."
             ),
             "esqlApproximation": False,
             "kibanaSavedObjectMeta": {"searchSourceJSON": json.dumps({"query": {"query": "", "language": "kuery"}})},

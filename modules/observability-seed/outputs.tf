@@ -21,7 +21,7 @@ output "ai_agents" {
     }] : [],
     length(elasticstack_kibana_agentbuilder_agent.recs_advisor) > 0 ? [{
       id    = elasticstack_kibana_agentbuilder_agent.recs_advisor[0].agent_id
-      role  = "Prioritize cost/performance recommendations"
+      role  = "Create the customer-facing Insight Engine summary"
       state = "Ready in Agent Builder"
     }] : [],
   )

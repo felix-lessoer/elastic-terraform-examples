@@ -1,0 +1,115 @@
+name: AWS Insight Engine Summary
+id: aws-cockpit-insight-engine-summary
+description: >-
+  Uses the AWS Recommendations Advisor agent to turn workflow-generated
+  cockpit insights into one prioritized customer briefing.
+
+triggers:
+  - type: manual
+  - type: scheduled
+    with:
+      every: "1h"
+
+steps:
+  - name: recommendation_snapshot
+    type: elasticsearch.esql.query
+    with:
+      format: json
+      query: |
+        FROM aws-cockpit-recommendations
+        | WHERE @timestamp > NOW() - 7 days
+        | STATS count = COUNT(*) BY severity, category
+        | SORT count DESC
+        | LIMIT 25
+
+  - name: coverage_snapshot
+    type: elasticsearch.esql.query
+    with:
+      format: json
+      query: |
+        FROM aws-cockpit-coverage
+        | STATS services = COUNT(*), documents = SUM(docs_24h) BY status
+        | SORT services DESC
+
+  - name: event_snapshot
+    type: elasticsearch.esql.query
+    with:
+      format: json
+      query: |
+        FROM aws-cockpit-events
+        | WHERE @timestamp > NOW() - 24 hours
+        | KEEP @timestamp, event.source, event.severity, title, detail
+        | SORT @timestamp DESC
+        | LIMIT 20
+
+  - name: agent_summary
+    type: ai.agent
+    agent-id: aws-recs-advisor
+    create-conversation: true
+    with:
+      message: |
+        Create the current AWS cockpit Insight Engine briefing.
+
+        The cockpit has three data levels:
+        1. Raw AWS telemetry in metrics-aws.* and logs-aws.*.
+        2. Workflow-generated insights in aws-cockpit-* indices.
+        3. This agent summary, which must prioritize the most useful actions.
+
+        Recommendation aggregates:
+        {{ steps.recommendation_snapshot.output.values | json }}
+
+        Coverage aggregates:
+        {{ steps.coverage_snapshot.output.values | json }}
+
+        Recent insight events:
+        {{ steps.event_snapshot.output.values | json }}
+
+        Use your cockpit tools when more context is needed. Be concise,
+        customer-facing, evidence-based, and explicit when data is missing.
+      schema:
+        type: object
+        required:
+          - priority
+          - headline
+          - summary
+          - action_1
+          - action_2
+          - action_3
+        properties:
+          priority:
+            type: string
+            enum:
+              - critical
+              - high
+              - medium
+              - low
+              - informational
+          headline:
+            type: string
+          summary:
+            type: string
+          action_1:
+            type: string
+          action_2:
+            type: string
+          action_3:
+            type: string
+        additionalProperties: false
+
+  - name: publish_summary
+    type: elasticsearch.index
+    with:
+      index: aws-cockpit-insight-summary
+      id: latest
+      document:
+        "@timestamp": "{{ now | date_to_xmlschema }}"
+        level: agent_summary
+        source: aws-cockpit-insight-engine-summary
+        agent_id: aws-recs-advisor
+        conversation_id: "{{ steps.agent_summary.output.conversation_id }}"
+        priority: "{{ steps.agent_summary.output.structured_output.priority }}"
+        headline: "{{ steps.agent_summary.output.structured_output.headline }}"
+        summary: "{{ steps.agent_summary.output.structured_output.summary }}"
+        action_1: "{{ steps.agent_summary.output.structured_output.action_1 }}"
+        action_2: "{{ steps.agent_summary.output.structured_output.action_2 }}"
+        action_3: "{{ steps.agent_summary.output.structured_output.action_3 }}"

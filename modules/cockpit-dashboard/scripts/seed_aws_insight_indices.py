@@ -54,6 +54,21 @@ COVERAGE = "aws-cockpit-coverage"
 ASSETS = "aws-cockpit-assets"
 EVENTS = "aws-cockpit-events"
 HEALTH = "aws-cockpit-health"
+INSIGHT_SUMMARY = "aws-cockpit-insight-summary"
+
+INSIGHT_SUMMARY_MAPPINGS = {
+    "@timestamp": {"type": "date"},
+    "level": {"type": "keyword"},
+    "source": {"type": "keyword"},
+    "agent_id": {"type": "keyword"},
+    "conversation_id": {"type": "keyword"},
+    "priority": {"type": "keyword"},
+    "headline": {"type": "keyword"},
+    "summary": {"type": "keyword", "ignore_above": 8191},
+    "action_1": {"type": "keyword", "ignore_above": 2048},
+    "action_2": {"type": "keyword", "ignore_above": 2048},
+    "action_3": {"type": "keyword", "ignore_above": 2048},
+}
 
 # Canonical service tiles for the Datadog-style coverage matrix.
 # `link` drills into the OOTB integration dashboard (or Fleet when not configured).
@@ -936,6 +951,13 @@ def main() -> int:
     sec_es = args.sec_es.rstrip("/")
 
     print("Seeding AWS cockpit insight indices…")
+    ensure_index(
+        obs_es,
+        args.obs_user,
+        args.obs_password,
+        INSIGHT_SUMMARY,
+        INSIGHT_SUMMARY_MAPPINGS,
+    )
     seed_security_kpi(obs_es, sec_es, args.obs_user, args.obs_password, args.sec_user, args.sec_password)
     seed_coverage(
         obs_es,

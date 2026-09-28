@@ -21,7 +21,7 @@ steps:
 
   - name: normalize_metrics
     type: data.map
-    items: "{{ steps.query_metrics.output.values }}"
+    items: "${{ steps.query_metrics.output.values }}"
     with:
       fields:
         avg_cpu: "{{ item[0] }}"
@@ -35,7 +35,7 @@ steps:
 
   - name: process_metrics
     type: foreach
-    foreach: "{{ steps.normalize_metrics.output }}"
+    foreach: "${{ steps.normalize_metrics.output }}"
     steps:
       - name: check_status_failed
         type: if

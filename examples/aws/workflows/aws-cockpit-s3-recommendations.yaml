@@ -24,7 +24,7 @@ steps:
 
   - name: map_empty_buckets
     type: data.map
-    items: "{{ steps.find_empty_buckets.output.values }}"
+    items: "${{ steps.find_empty_buckets.output.values }}"
     with:
       fields:
         max_size: "{{ item[0] }}"
@@ -34,7 +34,7 @@ steps:
 
   - name: process_empty_buckets
     type: foreach
-    foreach: "{{ steps.map_empty_buckets.output }}"
+    foreach: "${{ steps.map_empty_buckets.output }}"
     steps:
       - name: index_recommendation
         type: elasticsearch.index

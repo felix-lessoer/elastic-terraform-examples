@@ -23,7 +23,7 @@ steps:
 
   - name: map_datasets
     type: data.map
-    items: "{{ steps.dataset_stats.output.values }}"
+    items: "${{ steps.dataset_stats.output.values }}"
     with:
       fields:
         docs: "{{ item[0] }}"
@@ -32,7 +32,7 @@ steps:
 
   - name: index_rows
     type: foreach
-    foreach: "{{ steps.map_datasets.output }}"
+    foreach: "${{ steps.map_datasets.output }}"
     steps:
       - name: write_coverage_row
         type: elasticsearch.index

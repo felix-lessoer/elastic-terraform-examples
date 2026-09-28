@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Set the space-scoped Kibana default route without discarding other settings."""
+"""Set defaultRoute by round-tripping Kibana's versioned config saved object."""
 
 from __future__ import annotations
 
 import argparse
 import json
+import secrets
 import sys
 from base64 import b64encode
 from urllib import error, parse, request
@@ -38,14 +39,64 @@ def api(
         return exc.code, payload
 
 
-def config_url(kibana_url: str, space_id: str, version: str) -> str:
+def space_api_url(kibana_url: str, space_id: str, path: str) -> str:
     base = kibana_url.rstrip("/")
     space = (
         ""
         if space_id == "default"
         else f"/s/{parse.quote(space_id, safe='')}"
     )
-    return f"{base}{space}/api/saved_objects/config/{parse.quote(version, safe='')}"
+    return f"{base}{space}{path}"
+
+
+def with_default_route(config: dict, dashboard_id: str) -> tuple[dict, str]:
+    updated = dict(config)
+    attributes = dict(updated.get("attributes") or {})
+    route = f"/app/dashboards#/view/{dashboard_id}?_g=(filters:!())"
+    attributes["defaultRoute"] = route
+    updated["attributes"] = attributes
+    return updated, route
+
+
+def import_saved_object(
+    kibana_url: str,
+    space_id: str,
+    user: str,
+    password: str,
+    saved_object: dict,
+) -> tuple[int, dict]:
+    boundary = f"----aws-cockpit-{secrets.token_hex(12)}"
+    ndjson = json.dumps(saved_object, separators=(",", ":")) + "\n"
+    payload = (
+        f"--{boundary}\r\n"
+        'Content-Disposition: form-data; name="file"; filename="kibana-config.ndjson"\r\n'
+        "Content-Type: application/x-ndjson\r\n\r\n"
+        f"{ndjson}\r\n"
+        f"--{boundary}--\r\n"
+    ).encode()
+    headers = {
+        "Authorization": "Basic "
+        + b64encode(f"{user}:{password}".encode()).decode(),
+        "Content-Type": f"multipart/form-data; boundary={boundary}",
+        "kbn-xsrf": "aws-cockpit",
+    }
+    url = space_api_url(
+        kibana_url,
+        space_id,
+        "/api/saved_objects/_import?overwrite=true",
+    )
+    req = request.Request(url, data=payload, headers=headers, method="POST")
+    try:
+        with request.urlopen(req, timeout=60) as response:
+            raw = response.read().decode()
+            return response.status, json.loads(raw) if raw else {}
+    except error.HTTPError as exc:
+        raw = exc.read().decode()
+        try:
+            result = json.loads(raw) if raw else {}
+        except json.JSONDecodeError:
+            result = {"message": raw}
+        return exc.code, result
 
 
 def main() -> int:
@@ -72,36 +123,42 @@ def main() -> int:
         )
         return 0
 
-    url = config_url(args.kibana_url, args.space_id, version)
-    get_code, existing = api("GET", url, args.user, args.password)
-    if get_code not in (200, 404):
-        print(
-            "Kibana default route was not changed: Advanced Settings are not "
-            "available through this project API. Use the cockpit dashboard URL.",
-            file=sys.stderr,
-        )
-        return 0
-
-    attributes = dict(existing.get("attributes") or {}) if get_code == 200 else {}
-    route = f"/app/dashboards#/view/{args.dashboard_id}"
-    attributes["defaultRoute"] = route
-    put_code, response = api(
-        "PUT",
-        f"{url}?overwrite=true",
+    export_code, existing = api(
+        "POST",
+        space_api_url(
+            args.kibana_url,
+            args.space_id,
+            "/api/saved_objects/_export",
+        ),
         args.user,
         args.password,
-        {"attributes": attributes},
+        {
+            "objects": [{"type": "config", "id": version}],
+            "excludeExportDetails": True,
+        },
     )
-    if put_code not in (200, 201):
-        message = response.get("message") or f"HTTP {put_code}"
-        print(
-            "Kibana default route was not changed: "
-            f"{message}. Use the cockpit dashboard URL as the entry point.",
-            file=sys.stderr,
+    if export_code != 200 or existing.get("type") != "config":
+        message = existing.get("message") or f"HTTP {export_code}"
+        raise RuntimeError(
+            "Unable to export the Kibana config saved object: "
+            f"{message}. Set the cockpit default route once in Advanced Settings."
         )
-        return 0
 
-    print(f"Kibana default route set to {route}")
+    updated, route = with_default_route(existing, args.dashboard_id)
+    import_code, response = import_saved_object(
+        args.kibana_url,
+        args.space_id,
+        args.user,
+        args.password,
+        updated,
+    )
+    if import_code != 200 or response.get("success") is not True:
+        message = response.get("message") or f"HTTP {import_code}"
+        raise RuntimeError(
+            f"Unable to import the Kibana config saved object: {message}"
+        )
+
+    print(f"Kibana config saved object imported with default route {route}")
     return 0
 
 

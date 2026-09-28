@@ -107,7 +107,7 @@ Optional Python seeds for offline backfill:
    `aws-cockpit-insight-summary`, and the first ES|QL table in the cockpit shows
    the latest briefing.
 
-The module also makes a best-effort update of the space-scoped Kibana
-`defaultRoute` so opening the Elastic project lands directly on the cockpit.
-Serverless versions that restrict Advanced Settings keep the emitted
-`dashboard_url` as the canonical entry point instead of failing deployment.
+The module exports the current versioned Kibana `config` saved object, updates
+only its space-scoped `defaultRoute`, and imports it again during apply. This
+preserves settings such as `defaultIndex` while making the cockpit the first
+screen when customers open the Elastic project.

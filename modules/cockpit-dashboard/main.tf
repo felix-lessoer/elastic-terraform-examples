@@ -25,9 +25,9 @@ resource "elasticstack_kibana_import_saved_objects" "cockpit" {
 }
 
 # Kibana's defaultRoute is a space-scoped Advanced Setting. The provider does
-# not expose it directly, so preserve the current config saved object and only
-# update defaultRoute. Some serverless project versions restrict this API; the
-# helper then leaves the canonical dashboard deep-link as the safe fallback.
+# not expose it directly. Serverless does expose the versioned config object
+# through Saved Objects export/import, so round-trip that object to preserve
+# every other Advanced Setting while updating only defaultRoute.
 resource "terraform_data" "default_route" {
   count = var.set_as_default_route ? 1 : 0
 

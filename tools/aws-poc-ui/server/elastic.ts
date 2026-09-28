@@ -112,6 +112,22 @@ export async function refreshElasticInsights(
   const details = await connection();
   const scripts = path.join(repoRoot, 'modules/cockpit-dashboard/scripts');
   await importCockpitDashboard(details, write);
+  write('Configuring the cockpit as the Elastic landing page');
+  await runInsightScript(
+    path.join(scripts, 'set_kibana_default_route.py'),
+    [
+      '--kibana-url',
+      details.kibanaUrl,
+      '--user',
+      details.username,
+      '--password',
+      details.password,
+      '--dashboard-id',
+      '752a1ac0-26e4-49d8-a2b4-5483068809b9',
+    ],
+    details,
+    write,
+  );
   write('Refreshing stable cockpit indices from available AWS telemetry');
   await runInsightScript(
     path.join(scripts, 'generate_aws_recommendations.py'),

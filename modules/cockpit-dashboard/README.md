@@ -106,3 +106,8 @@ Optional Python seeds for offline backfill:
    agent, persists its structured conversation result in
    `aws-cockpit-insight-summary`, and the first ES|QL table in the cockpit shows
    the latest briefing.
+
+The module also makes a best-effort update of the space-scoped Kibana
+`defaultRoute` so opening the Elastic project lands directly on the cockpit.
+Serverless versions that restrict Advanced Settings keep the emitted
+`dashboard_url` as the canonical entry point instead of failing deployment.

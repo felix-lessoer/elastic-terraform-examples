@@ -52,6 +52,12 @@ variable "ndjson_path" {
   default     = ""
 }
 
+variable "set_as_default_route" {
+  type        = bool
+  description = "Best-effort configuration of this cockpit as the space landing page."
+  default     = true
+}
+
 variable "ml_jobs" {
   type = list(object({
     id          = string

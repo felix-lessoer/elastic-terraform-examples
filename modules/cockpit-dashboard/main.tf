@@ -23,3 +23,38 @@ resource "elasticstack_kibana_import_saved_objects" "cockpit" {
     password  = var.elasticsearch_password
   }
 }
+
+# Kibana's defaultRoute is a space-scoped Advanced Setting. The provider does
+# not expose it directly, so preserve the current config saved object and only
+# update defaultRoute. Some serverless project versions restrict this API; the
+# helper then leaves the canonical dashboard deep-link as the safe fallback.
+resource "terraform_data" "default_route" {
+  count = var.set_as_default_route ? 1 : 0
+
+  triggers_replace = [
+    var.dashboard_id,
+    var.space_id,
+    filesha256("${path.module}/scripts/set_kibana_default_route.py"),
+  ]
+
+  provisioner "local-exec" {
+    interpreter = ["/bin/bash", "-c"]
+    environment = {
+      KIBANA_URL   = local.kibana_url
+      KIBANA_USER  = var.elasticsearch_username
+      KIBANA_PASS  = var.elasticsearch_password
+      DASHBOARD_ID = var.dashboard_id
+      SPACE_ID      = var.space_id
+    }
+    command = <<-EOT
+      python3 "${path.module}/scripts/set_kibana_default_route.py" \
+        --kibana-url "$KIBANA_URL" \
+        --user "$KIBANA_USER" \
+        --password "$KIBANA_PASS" \
+        --dashboard-id "$DASHBOARD_ID" \
+        --space-id "$SPACE_ID"
+    EOT
+  }
+
+  depends_on = [elasticstack_kibana_import_saved_objects.cockpit]
+}

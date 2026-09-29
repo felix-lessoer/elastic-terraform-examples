@@ -71,7 +71,7 @@ locals {
   }
 
   required_aws_tag_keys_missing = [
-    for key in (var.elastic_tags_required ? var.required_tag_keys : []) : key
+    for key in(var.elastic_tags_required ? var.required_tag_keys : []) : key
     if !contains(keys(local.effective_company_tags), key)
   ]
 
@@ -599,14 +599,14 @@ module "observability" {
 module "aws_cloud" {
   source = "../../modules/aws-cloud"
 
-  name_prefix          = var.name_prefix
-  bucket_name          = var.bucket_name
-  enable_cloudtrail    = var.existing_cloudtrail_bucket_name == ""
-  enable_vpc_flow_logs = true
-  enable_sqs           = true
-  company_tags         = local.effective_company_tags
+  name_prefix           = var.name_prefix
+  bucket_name           = var.bucket_name
+  enable_cloudtrail     = var.existing_cloudtrail_bucket_name == ""
+  enable_vpc_flow_logs  = true
+  enable_sqs            = true
+  company_tags          = local.effective_company_tags
   company_tags_required = !(var.deployment_creator_mode && !var.elastic_tags_required)
-  required_tag_keys    = var.required_tag_keys
+  required_tag_keys     = var.required_tag_keys
   additional_read_bucket_arns = distinct(concat(
     var.existing_cloudtrail_bucket_name != "" ? [
       "arn:${data.aws_partition.current.partition}:s3:::${var.existing_cloudtrail_bucket_name}"
@@ -920,7 +920,7 @@ resource "terraform_data" "fleet_agent_reconciliation" {
     kibana_password = module.observability.password
     agent_policy_id = module.stack.agent_policy_id
     aws_instance_id = module.elastic_agent.instance_id
-    aws_private_ip   = module.elastic_agent.private_ip
+    aws_private_ip  = module.elastic_agent.private_ip
   }
 
   triggers_replace = [
@@ -937,7 +937,7 @@ resource "terraform_data" "fleet_agent_reconciliation" {
       KIBANA_PASSWORD = self.input.kibana_password
       AGENT_POLICY_ID = self.input.agent_policy_id
       AWS_INSTANCE_ID = self.input.aws_instance_id
-      AWS_PRIVATE_IP   = self.input.aws_private_ip
+      AWS_PRIVATE_IP  = self.input.aws_private_ip
     }
   }
 

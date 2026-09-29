@@ -1,0 +1,85 @@
+name: AWS Insight Engine — RDS
+id: aws-cockpit-rds-insights
+description: >-
+  Converts RDS CPU, storage, and memory pressure into current capacity insights
+  in aws-cockpit-recommendations.
+
+triggers:
+  - type: manual
+  - type: scheduled
+    with:
+      every: "1h"
+
+steps:
+  - name: remove_previous_rds_insights
+    type: elasticsearch.request
+    with:
+      method: POST
+      path: /aws-cockpit-recommendations/_delete_by_query?conflicts=proceed&refresh=true
+      body:
+        query:
+          term:
+            resource.type: rds_instance
+
+  - name: query_metrics
+    type: elasticsearch.esql.query
+    with:
+      format: json
+      query: |
+        FROM metrics-aws.rds*
+        | WHERE @timestamp > NOW() - 24 hours
+        | STATS cpu = AVG(aws.rds.cpu.total.pct),
+                free_storage = MIN(aws.rds.free_storage.bytes),
+                free_memory = MIN(aws.rds.freeable_memory.bytes)
+            BY instance = aws.dimensions.DBInstanceIdentifier, cloud.region, cloud.account.id
+        | WHERE instance IS NOT NULL AND (cpu > 0.8 OR free_storage < 10737418240 OR free_memory < 536870912)
+        | EVAL category = CASE(cpu > 0.8, "performance_risk", free_storage < 10737418240, "capacity_risk", "memory_pressure"),
+               severity = CASE(free_storage < 5368709120 OR free_memory < 268435456, "high", "medium"),
+               metric_name = CASE(cpu > 0.8, "cpu_utilization", free_storage < 10737418240, "free_storage_bytes", "free_memory_bytes"),
+               metric_value = CASE(cpu > 0.8, cpu, free_storage < 10737418240, free_storage, free_memory)
+        | LIMIT 200
+
+  - name: normalize_metrics
+    type: data.map
+    items: "${{ steps.query_metrics.output.values }}"
+    with:
+      fields:
+        cpu: "{{ item[0] }}"
+        free_storage: "{{ item[1] }}"
+        free_memory: "{{ item[2] }}"
+        instance: "{{ item[3] }}"
+        region: "{{ item[4] }}"
+        account_id: "{{ item[5] }}"
+        category: "{{ item[6] }}"
+        severity: "{{ item[7] }}"
+        metric_name: "{{ item[8] }}"
+        metric_value: "{{ item[9] }}"
+
+  - name: publish_insights
+    type: foreach
+    foreach: "${{ steps.normalize_metrics.output }}"
+    steps:
+      - name: index_rds_insight
+        type: elasticsearch.index
+        with:
+          index: aws-cockpit-recommendations
+          id: "{{ foreach.item.instance }}-rds-health"
+          document:
+            "@timestamp": "{{ now | date_to_xmlschema }}"
+            category: "{{ foreach.item.category }}"
+            severity: "{{ foreach.item.severity }}"
+            metric_name: "{{ foreach.item.metric_name }}"
+            metric_value: "{{ foreach.item.metric_value }}"
+            threshold: 0
+            recommendation: >-
+              RDS {{ foreach.item.instance }} has CPU {{ foreach.item.cpu }},
+              {{ foreach.item.free_storage }} free storage bytes, and {{
+              foreach.item.free_memory }} free memory bytes. Review instance
+              sizing, storage autoscaling, and workload pressure.
+            resource:
+              type: rds_instance
+              name: "{{ foreach.item.instance }}"
+            cloud:
+              region: "{{ foreach.item.region }}"
+              account:
+                id: "{{ foreach.item.account_id }}"

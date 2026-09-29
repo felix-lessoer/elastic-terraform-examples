@@ -780,8 +780,8 @@ def build(gcp_path: Path) -> dict:
             '<a id="aws-recommendations"></a>\n'
             "### Insight Engine — workflow-generated insights\n"
             "Level 1 is raw AWS telemetry in `metrics-aws.*` and `logs-aws.*`. "
-            "Level 2 workflows derive the EC2 CPU, status-check, and S3 "
-            "utilization insights shown here. Level 3 is the Agent Builder "
+            "Level 2 workflows derive compute, database, load-balancing, "
+            "storage, and serverless insights shown here. Level 3 is the Agent Builder "
             "briefing displayed prominently at the top of this cockpit.\n\n"
             "| Category | Meaning |\n"
             "| --- | --- |\n"

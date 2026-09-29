@@ -27,6 +27,22 @@ class AwsWorkflowContractTests(unittest.TestCase):
             self.assertIn("manual", trigger_types)
             self.assertTrue(workflow["steps"])
 
+    def test_service_insight_workflows_cover_the_managed_metric_families(self):
+        expected = {
+            "aws-cockpit-ec2-recommendations",
+            "aws-cockpit-s3-recommendations",
+            "aws-cockpit-lambda-insights",
+            "aws-cockpit-rds-insights",
+            "aws-cockpit-elb-insights",
+            "aws-cockpit-dynamodb-insights",
+            "aws-cockpit-ecs-insights",
+            "aws-cockpit-ebs-insights",
+        }
+        actual = {
+            workflow["id"] for workflow in self.workflows.values()
+        }
+        self.assertTrue(expected.issubset(actual))
+
     def test_structured_outputs_remain_expressions(self):
         for workflow in self.workflows.values():
             for step in workflow["steps"]:

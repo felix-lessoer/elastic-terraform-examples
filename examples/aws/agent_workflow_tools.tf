@@ -11,6 +11,30 @@ locals {
       workflow_id = "aws-cockpit-s3-recommendations"
       description = "Run the AWS S3 recommendations workflow (writes aws-cockpit-recommendations)."
     }
+    "aws-wf-lambda-insights" = {
+      workflow_id = "aws-cockpit-lambda-insights"
+      description = "Run the AWS Lambda reliability and latency insight workflow."
+    }
+    "aws-wf-rds-insights" = {
+      workflow_id = "aws-cockpit-rds-insights"
+      description = "Run the AWS RDS capacity and performance insight workflow."
+    }
+    "aws-wf-elb-insights" = {
+      workflow_id = "aws-cockpit-elb-insights"
+      description = "Run the AWS ELB target health, error, and latency insight workflow."
+    }
+    "aws-wf-dynamodb-insights" = {
+      workflow_id = "aws-cockpit-dynamodb-insights"
+      description = "Run the AWS DynamoDB throttling, error, and latency insight workflow."
+    }
+    "aws-wf-ecs-insights" = {
+      workflow_id = "aws-cockpit-ecs-insights"
+      description = "Run the AWS ECS utilization and sizing insight workflow."
+    }
+    "aws-wf-ebs-insights" = {
+      workflow_id = "aws-cockpit-ebs-insights"
+      description = "Run the AWS EBS queue depth and burst balance insight workflow."
+    }
     "aws-wf-coverage" = {
       workflow_id = "aws-cockpit-coverage"
       description = "Run the AWS cockpit coverage scout workflow."

@@ -88,7 +88,7 @@ Recommendation documents are produced by pinned Kibana Workflows under
 | Cloud | Index | Seeded by workflows |
 | --- | --- | --- |
 | GCP | `gcp-cockpit-recommendations` | Cloud Run, Cloud SQL, GKE, Host |
-| AWS | `aws-cockpit-recommendations` | EC2, S3 |
+| AWS | `aws-cockpit-recommendations` | EC2, S3, Lambda, RDS, ELB, DynamoDB, ECS, EBS |
 | Azure | `azure-cockpit-recommendations` | VM, Storage |
 
 Optional Python seeds for offline backfill:

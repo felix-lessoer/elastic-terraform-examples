@@ -227,8 +227,10 @@ def inject(panels: list[dict]) -> list[dict]:
                 "cockpit.\n\n"
                 "| Category | Meaning |\n"
                 "| --- | --- |\n"
-                "| **cost_optimization** | Underutilized EC2 or empty S3 buckets |\n"
-                "| **performance_risk** | Hot EC2 or failed status checks |"
+                "| **cost_optimization** | Underutilized compute or empty storage |\n"
+                "| **performance_risk** | Saturated compute, database, or storage resources |\n"
+                "| **reliability_risk** | Errors, throttles, unhealthy targets, or latency |\n"
+                "| **capacity_risk / memory_pressure** | RDS storage or memory constraints |"
             )
         kept.append(panel)
 

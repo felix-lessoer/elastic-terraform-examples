@@ -1,0 +1,149 @@
+name: AWS Insight Engine — Lambda
+id: aws-cockpit-lambda-insights
+description: >-
+  Converts Lambda errors, throttles, and duration into current reliability and
+  latency insights in aws-cockpit-recommendations.
+
+triggers:
+  - type: manual
+  - type: scheduled
+    with:
+      every: "1h"
+
+steps:
+  - name: remove_previous_lambda_insights
+    type: elasticsearch.request
+    with:
+      method: POST
+      path: /aws-cockpit-recommendations/_delete_by_query?conflicts=proceed&refresh=true
+      body:
+        query:
+          term:
+            resource.type: lambda_function
+
+  - name: query_metrics
+    type: elasticsearch.esql.query
+    with:
+      format: json
+      query: |
+        FROM metrics-aws.lambda*
+        | WHERE @timestamp > NOW() - 24 hours
+        | STATS invocations = SUM(aws.lambda.metrics.Invocations.sum),
+                errors = SUM(aws.lambda.metrics.Errors.sum),
+                throttles = SUM(aws.lambda.metrics.Throttles.sum),
+                duration = AVG(aws.lambda.metrics.Duration.avg)
+            BY function = aws.dimensions.FunctionName, cloud.region, cloud.account.id
+        | WHERE function IS NOT NULL AND (errors > 0 OR throttles > 0 OR duration > 3000)
+        | EVAL severity = CASE(errors > 0 OR throttles > 0, "high", "medium"),
+               metric_name = CASE(errors > 0, "errors", throttles > 0, "throttles", "duration_ms"),
+               metric_value = CASE(errors > 0, TO_DOUBLE(errors), throttles > 0, TO_DOUBLE(throttles), duration)
+        | LIMIT 200
+
+  - name: normalize_metrics
+    type: data.map
+    items: "${{ steps.query_metrics.output.values }}"
+    with:
+      fields:
+        invocations: "{{ item[0] }}"
+        errors: "{{ item[1] }}"
+        throttles: "{{ item[2] }}"
+        duration: "{{ item[3] }}"
+        function: "{{ item[4] }}"
+        region: "{{ item[5] }}"
+        account_id: "{{ item[6] }}"
+        severity: "{{ item[7] }}"
+        metric_name: "{{ item[8] }}"
+        metric_value: "{{ item[9] }}"
+
+  - name: publish_insights
+    type: foreach
+    foreach: "${{ steps.normalize_metrics.output }}"
+    steps:
+      - name: index_lambda_insight
+        type: elasticsearch.index
+        with:
+          index: aws-cockpit-recommendations
+          id: "{{ foreach.item.function }}-lambda-health"
+          document:
+            "@timestamp": "{{ now | date_to_xmlschema }}"
+            category: reliability_risk
+            severity: "{{ foreach.item.severity }}"
+            metric_name: "{{ foreach.item.metric_name }}"
+            metric_value: "{{ foreach.item.metric_value }}"
+            threshold: 0
+            recommendation: >-
+              Lambda {{ foreach.item.function }} needs attention: {{
+              foreach.item.errors }} errors, {{ foreach.item.throttles }}
+              throttles, {{ foreach.item.invocations }} invocations, and {{
+              foreach.item.duration }} ms average duration in the last 24h.
+              Review failures, concurrency, and timeout configuration.
+            resource:
+              type: lambda_function
+              name: "{{ foreach.item.function }}"
+              id: "{{ foreach.item.function }}"
+              key: "{{ foreach.item.region }}:lambda_function:{{ foreach.item.function }}"
+            cloud:
+              region: "{{ foreach.item.region }}"
+              account:
+                id: "{{ foreach.item.account_id }}"
+
+  - name: query_potentially_unused_functions
+    type: elasticsearch.esql.query
+    with:
+      format: json
+      query: |
+        FROM metrics-aws.lambda*
+        | WHERE @timestamp > NOW() - 14 days
+        | STATS observations = COUNT(*),
+                invocations = SUM(aws.lambda.metrics.Invocations.sum)
+            BY function = aws.dimensions.FunctionName,
+               cloud.region, cloud.account.id
+        | WHERE function IS NOT NULL
+            AND invocations IS NOT NULL
+            AND invocations == 0
+        | LIMIT 200
+
+  - name: map_potentially_unused_functions
+    type: data.map
+    items: "${{ steps.query_potentially_unused_functions.output.values }}"
+    with:
+      fields:
+        observations: "{{ item[0] }}"
+        invocations: "{{ item[1] }}"
+        function: "{{ item[2] }}"
+        region: "{{ item[3] }}"
+        account_id: "{{ item[4] }}"
+
+  - name: publish_potentially_unused_functions
+    type: foreach
+    foreach: "${{ steps.map_potentially_unused_functions.output }}"
+    steps:
+      - name: index_potentially_unused_function
+        type: elasticsearch.index
+        with:
+          index: aws-cockpit-recommendations
+          id: "{{ foreach.item.function }}-potentially-unused"
+          document:
+            "@timestamp": "{{ now | date_to_xmlschema }}"
+            category: unused_resource
+            severity: medium
+            confidence: high
+            activity_status: potentially_unused
+            lookback_days: 14
+            metric_name: invocations_14d
+            metric_value: "{{ foreach.item.invocations }}"
+            threshold: 0
+            recommendation: >-
+              Lambda function {{ foreach.item.function }} had zero invocations
+              over 14 days across {{ foreach.item.observations }} observed
+              metric documents. Confirm event sources and owner requirements
+              before removing or disabling it.
+            resource:
+              type: lambda_function
+              name: "{{ foreach.item.function }}"
+              id: "{{ foreach.item.function }}"
+              key: "{{ foreach.item.region }}:lambda_function:{{ foreach.item.function }}"
+            cloud:
+              region: "{{ foreach.item.region }}"
+              account:
+                id: "{{ foreach.item.account_id }}"

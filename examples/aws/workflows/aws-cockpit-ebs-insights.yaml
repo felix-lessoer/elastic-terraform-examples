@@ -1,0 +1,148 @@
+name: AWS Insight Engine — EBS
+id: aws-cockpit-ebs-insights
+description: >-
+  Converts EBS queue depth and burst balance into current storage performance
+  insights in aws-cockpit-recommendations.
+
+triggers:
+  - type: manual
+  - type: scheduled
+    with:
+      every: "1h"
+
+steps:
+  - name: remove_previous_ebs_insights
+    type: elasticsearch.request
+    with:
+      method: POST
+      path: /aws-cockpit-recommendations/_delete_by_query?conflicts=proceed&refresh=true
+      body:
+        query:
+          term:
+            resource.type: ebs_volume
+
+  - name: query_metrics
+    type: elasticsearch.esql.query
+    with:
+      format: json
+      query: |
+        FROM metrics-aws.ebs*
+        | WHERE @timestamp > NOW() - 24 hours
+        | STATS queue = AVG(aws.ebs.metrics.VolumeQueueLength.avg),
+                burst = MIN(aws.ebs.metrics.BurstBalance.avg)
+            BY volume = aws.dimensions.VolumeId, cloud.region, cloud.account.id
+        | WHERE volume IS NOT NULL AND (queue > 5 OR burst < 20)
+        | EVAL severity = CASE(queue > 10 OR burst < 10, "high", "medium"),
+               metric_name = CASE(queue > 5, "volume_queue_length", "burst_balance_pct"),
+               metric_value = CASE(queue > 5, queue, burst)
+        | LIMIT 200
+
+  - name: normalize_metrics
+    type: data.map
+    items: "${{ steps.query_metrics.output.values }}"
+    with:
+      fields:
+        queue: "{{ item[0] }}"
+        burst: "{{ item[1] }}"
+        volume: "{{ item[2] }}"
+        region: "{{ item[3] }}"
+        account_id: "{{ item[4] }}"
+        severity: "{{ item[5] }}"
+        metric_name: "{{ item[6] }}"
+        metric_value: "{{ item[7] }}"
+
+  - name: publish_insights
+    type: foreach
+    foreach: "${{ steps.normalize_metrics.output }}"
+    steps:
+      - name: index_ebs_insight
+        type: elasticsearch.index
+        with:
+          index: aws-cockpit-recommendations
+          id: "{{ foreach.item.volume }}-ebs-health"
+          document:
+            "@timestamp": "{{ now | date_to_xmlschema }}"
+            category: performance_risk
+            severity: "{{ foreach.item.severity }}"
+            metric_name: "{{ foreach.item.metric_name }}"
+            metric_value: "{{ foreach.item.metric_value }}"
+            threshold: 0
+            recommendation: >-
+              EBS volume {{ foreach.item.volume }} has average queue depth {{
+              foreach.item.queue }} and minimum burst balance {{
+              foreach.item.burst }}%. Review provisioned IOPS, throughput,
+              volume type, and attached workload pressure.
+            resource:
+              type: ebs_volume
+              name: "{{ foreach.item.volume }}"
+              id: "{{ foreach.item.volume }}"
+              key: "{{ foreach.item.region }}:ebs_volume:{{ foreach.item.volume }}"
+            cloud:
+              region: "{{ foreach.item.region }}"
+              account:
+                id: "{{ foreach.item.account_id }}"
+
+  - name: query_potentially_unused_volumes
+    type: elasticsearch.esql.query
+    with:
+      format: json
+      query: |
+        FROM metrics-aws.ebs*
+        | WHERE @timestamp > NOW() - 14 days
+        | STATS observations = COUNT(*),
+                reads = MAX(aws.ebs.metrics.VolumeReadOps.avg),
+                writes = MAX(aws.ebs.metrics.VolumeWriteOps.avg)
+            BY volume = aws.dimensions.VolumeId,
+               cloud.region, cloud.account.id
+        | WHERE volume IS NOT NULL
+            AND reads IS NOT NULL
+            AND writes IS NOT NULL
+            AND reads == 0
+            AND writes == 0
+        | LIMIT 200
+
+  - name: map_potentially_unused_volumes
+    type: data.map
+    items: "${{ steps.query_potentially_unused_volumes.output.values }}"
+    with:
+      fields:
+        observations: "{{ item[0] }}"
+        reads: "{{ item[1] }}"
+        writes: "{{ item[2] }}"
+        volume: "{{ item[3] }}"
+        region: "{{ item[4] }}"
+        account_id: "{{ item[5] }}"
+
+  - name: publish_potentially_unused_volumes
+    type: foreach
+    foreach: "${{ steps.map_potentially_unused_volumes.output }}"
+    steps:
+      - name: index_potentially_unused_volume
+        type: elasticsearch.index
+        with:
+          index: aws-cockpit-recommendations
+          id: "{{ foreach.item.volume }}-potentially-unused"
+          document:
+            "@timestamp": "{{ now | date_to_xmlschema }}"
+            category: unused_resource
+            severity: medium
+            confidence: high
+            activity_status: potentially_unused
+            lookback_days: 14
+            metric_name: max_volume_ops_14d
+            metric_value: 0
+            threshold: 0
+            recommendation: >-
+              EBS volume {{ foreach.item.volume }} recorded no read or write
+              operations over 14 days across {{ foreach.item.observations }}
+              observed metric documents. Confirm attachment, snapshot, and
+              retention requirements before detaching or deleting it.
+            resource:
+              type: ebs_volume
+              name: "{{ foreach.item.volume }}"
+              id: "{{ foreach.item.volume }}"
+              key: "{{ foreach.item.region }}:ebs_volume:{{ foreach.item.volume }}"
+            cloud:
+              region: "{{ foreach.item.region }}"
+              account:
+                id: "{{ foreach.item.account_id }}"

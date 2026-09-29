@@ -85,7 +85,7 @@ resource "aws_instance" "agent" {
 
   metadata_options {
     http_endpoint               = "enabled"
-    http_tokens                 = "required"
+    http_tokens                 = var.metadata_http_tokens
     http_put_response_hop_limit = 2
   }
 

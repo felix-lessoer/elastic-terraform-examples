@@ -55,3 +55,14 @@ variable "iam_instance_profile" {
   description = "Optional IAM instance profile name for AWS API collection via IMDS (no static keys)."
   default     = ""
 }
+
+variable "metadata_http_tokens" {
+  type        = string
+  description = "IMDS token mode. Keep required normally; UI PoCs may allow IMDSv1 for Elastic Agent AWS inputs that cannot acquire IMDSv2 credentials."
+  default     = "required"
+
+  validation {
+    condition     = contains(["optional", "required"], var.metadata_http_tokens)
+    error_message = "metadata_http_tokens must be optional or required."
+  }
+}

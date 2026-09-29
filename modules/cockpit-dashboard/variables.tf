@@ -52,6 +52,18 @@ variable "ndjson_path" {
   default     = ""
 }
 
+variable "additional_ndjson_paths" {
+  type        = set(string)
+  description = "Additional saved-object NDJSON bundles imported alongside the cockpit."
+  default     = []
+}
+
+variable "set_as_default_route" {
+  type        = bool
+  description = "Best-effort configuration of this cockpit as the space landing page."
+  default     = true
+}
+
 variable "ml_jobs" {
   type = list(object({
     id          = string

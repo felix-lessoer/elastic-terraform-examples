@@ -3,6 +3,7 @@
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -12,15 +13,32 @@ import sys
 query = json.load(sys.stdin)
 aws_cli = shutil.which("aws") or str(Path.home() / ".local" / "bin" / "aws")
 bootstrap_region = query["bootstrap_region"]
+MAX_WORKERS = 32
 
 
-def aws(*args: str, timeout: int = 20) -> dict:
+def aws(*args: str, timeout: int = 12) -> dict:
+    environment = {
+        **os.environ,
+        "AWS_MAX_ATTEMPTS": "2",
+        "AWS_RETRY_MODE": "standard",
+    }
     result = subprocess.run(
-        [aws_cli, *args, "--output", "json"],
+        [
+            aws_cli,
+            *args,
+            "--cli-connect-timeout",
+            "5",
+            "--cli-read-timeout",
+            "10",
+            "--no-cli-pager",
+            "--output",
+            "json",
+        ],
         check=True,
         capture_output=True,
         text=True,
         timeout=timeout,
+        env=environment,
     )
     return json.loads(result.stdout) if result.stdout.strip() else {}
 
@@ -73,7 +91,9 @@ def discover_region(region: str) -> list[dict]:
             "describe-log-groups",
             "--region",
             region,
-            timeout=30,
+            "--max-items",
+            "500",
+            timeout=15,
         ).get("logGroups", [])
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
         return []
@@ -127,7 +147,7 @@ enabled_regions = [
 ]
 
 sources: list[dict] = []
-with ThreadPoolExecutor(max_workers=10) as executor:
+with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
     futures = [executor.submit(discover_region, region) for region in enabled_regions]
     for future in as_completed(futures):
         sources.extend(future.result())
@@ -159,7 +179,7 @@ def discover_bucket(bucket: str) -> dict | None:
         return None
 
 
-with ThreadPoolExecutor(max_workers=10) as executor:
+with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
     futures = [executor.submit(discover_bucket, bucket) for bucket in buckets]
     for future in as_completed(futures):
         source = future.result()
@@ -198,6 +218,8 @@ def discover_load_balancers(region: str) -> list[dict]:
             "describe-load-balancers",
             "--region",
             region,
+            "--max-items",
+            "100",
         ).get("LoadBalancers", [])
         for load_balancer in load_balancers:
             attributes = aws(
@@ -228,6 +250,8 @@ def discover_load_balancers(region: str) -> list[dict]:
             "describe-load-balancers",
             "--region",
             region,
+            "--max-items",
+            "100",
         ).get("LoadBalancerDescriptions", [])
         for load_balancer in classic:
             name = load_balancer["LoadBalancerName"]
@@ -254,7 +278,7 @@ def discover_load_balancers(region: str) -> list[dict]:
     return discovered
 
 
-with ThreadPoolExecutor(max_workers=10) as executor:
+with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
     futures = [
         executor.submit(discover_load_balancers, region)
         for region in enabled_regions

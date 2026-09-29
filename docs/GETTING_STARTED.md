@@ -45,7 +45,9 @@ Open the `kibana_url` output. CSPM findings, integration dashboards, and Securit
 - `enable_detection_rules = true`
 - AWS IAM **assume_role + external id** (no static keys in Fleet policies)
 - Latest Fleet package versions via `data.elasticstack_fleet_integration`
-- **Company tags/labels are required** — set `company_labels` (GCP) or `company_tags` (AWS/Azure/multicloud)
+- **Company tags/labels are required** — set `company_labels` (GCP) or
+  `company_tags` (AWS/Azure/multicloud). The local AWS Deployment Creator
+  explicitly opts into UI mode, where its tag switch can disable them.
 
 ### Company tagging
 
@@ -71,7 +73,8 @@ company_tags = {
 }
 ```
 
-Labels/tags are applied to all taggable cloud resources. On AWS, missing org tags cause SCP denies (e.g. `sqs:CreateQueue`).
+Labels/tags are applied to all taggable cloud resources. On AWS, missing org
+tags cause SCP denies (e.g. `sqs:CreateQueue`).
 
 ## Enrolling an agent
 

@@ -23,6 +23,8 @@ from __future__ import annotations
 
 import argparse
 import json
+from pathlib import Path
+import subprocess
 import sys
 import time
 from base64 import b64encode
@@ -47,11 +49,27 @@ except ImportError:
     )
 
 SECURITY_KPI = "aws-cockpit-security-kpi"
-AWS_COCKPIT_DASHBOARD_ID = "752a1ac0-26e4-49d8-a2b4-5483068809b9"
+AWS_COCKPIT_DASHBOARD_ID = "45f84000-d68b-4bb1-9df2-09223fba6b29"
 COVERAGE = "aws-cockpit-coverage"
 ASSETS = "aws-cockpit-assets"
 EVENTS = "aws-cockpit-events"
 HEALTH = "aws-cockpit-health"
+INSIGHT_SUMMARY = "aws-cockpit-insight-summary"
+
+INSIGHT_SUMMARY_MAPPINGS = {
+    "@timestamp": {"type": "date"},
+    "level": {"type": "keyword"},
+    "source": {"type": "keyword"},
+    "agent_id": {"type": "keyword"},
+    "conversation_id": {"type": "keyword"},
+    "priority": {"type": "keyword"},
+    "headline": {"type": "keyword"},
+    "summary": {"type": "keyword", "ignore_above": 8191},
+    "action_1": {"type": "keyword", "ignore_above": 2048},
+    "action_2": {"type": "keyword", "ignore_above": 2048},
+    "action_3": {"type": "keyword", "ignore_above": 2048},
+    "lookup": {"properties": {"key": {"type": "keyword"}}},
+}
 
 # Canonical service tiles for the Datadog-style coverage matrix.
 # `link` drills into the OOTB integration dashboard (or Fleet when not configured).
@@ -140,6 +158,11 @@ def bulk_index(es: str, user: str, password: str, index: str, docs: list[tuple[s
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+
+def resource_key(region: object, resource_type: str, resource_id: object) -> str:
+    """Return the key shared by asset and recommendation lookup indices."""
+    return f"{region or 'global'}:{resource_type}:{resource_id}"
 
 
 def scalar(rows: list[dict], key: str = "c", default: float | int = 0):
@@ -263,6 +286,7 @@ def seed_coverage(
             "datasets": {"type": "keyword"},
             "detail": {"type": "keyword"},
             "link": {"type": "keyword"},
+            "lookup": {"properties": {"key": {"type": "keyword"}}},
         },
     )
     # Merge OBS + SEC dataset stats (wildcard + explicit probes for sparse streams)
@@ -431,15 +455,146 @@ def seed_coverage(
                     "datasets": svc["datasets"],
                     "detail": detail,
                     "link": link,
+                    "lookup": {"key": svc["service"]},
                 },
             )
         )
+    try:
+        req(
+            "POST",
+            f"{obs_es}/{COVERAGE}/_delete_by_query?refresh=true",
+            obs_user,
+            obs_pass,
+            {"query": {"match_all": {}}},
+        )
+    except RuntimeError as exc:
+        print(f"  coverage snapshot cleanup warning: {exc}", file=sys.stderr)
     bulk_index(obs_es, obs_user, obs_pass, COVERAGE, docs)
     healthy = sum(1 for _, d in docs if d["status"] == "healthy")
     print(f"  {COVERAGE}: {healthy}/{len(docs)} healthy services")
 
 
-def seed_assets(obs_es: str, obs_user: str, obs_pass: str) -> None:
+def manifest_asset_docs(manifest_path: str, timestamp: str) -> list[tuple[str, dict]]:
+    if not manifest_path:
+        return []
+    path = Path(manifest_path)
+    if not path.exists():
+        return []
+    manifest = json.loads(path.read_text())
+    docs = []
+    supported = {
+        "aws.ec2.instance": "ec2_instance",
+        "aws.s3.bucket": "s3_bucket",
+        "aws.lambda.function": "lambda_function",
+        "aws.rds.instance": "rds_instance",
+        "aws.ecs.service": "ecs_service",
+        "aws.elbv2.load_balancer": "load_balancer",
+        "aws.eks.cluster": "eks_cluster",
+    }
+    for resource in manifest.get("resources", []):
+        resource_type = supported.get(resource.get("type"))
+        if not resource_type:
+            continue
+        resource_id = (
+            resource.get("configuration", {}).get("instance_id")
+            or resource.get("name")
+            or resource.get("arn")
+        )
+        if resource.get("type") == "aws.ecs.service":
+            cluster = (
+                resource.get("configuration", {})
+                .get("cluster_arn", "")
+                .rsplit("/", 1)[-1]
+            )
+            resource_id = f"{cluster}/{resource.get('name') or resource_id}"
+        elif resource.get("type") == "aws.elbv2.load_balancer":
+            arn = resource.get("arn") or ""
+            resource_id = (
+                arn.split(":loadbalancer/", 1)[-1]
+                if ":loadbalancer/" in arn
+                else resource_id
+            )
+        docs.append(
+            (
+                f"{resource_type}-{resource_id}",
+                {
+                    "@timestamp": timestamp,
+                    "resource": {
+                        "type": resource_type,
+                        "name": resource.get("name") or resource_id,
+                        "id": resource_id,
+                        "key": resource_key(
+                            resource.get("region"), resource_type, resource_id
+                        ),
+                    },
+                    "cloud": {
+                        "region": resource.get("region"),
+                        "account": {"id": resource.get("account_id")},
+                    },
+                    "metric_name": "inventory_only",
+                    "metric_value": 0,
+                    "last_seen": manifest.get("discovered_at") or timestamp,
+                },
+            )
+        )
+    return docs
+
+
+def aws_s3_asset_docs(timestamp: str) -> list[tuple[str, dict]]:
+    try:
+        result = subprocess.run(
+            ["aws", "s3api", "list-buckets", "--output", "json"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        print(f"  S3 inventory fallback unavailable: {exc}", file=sys.stderr)
+        return []
+    if result.returncode != 0:
+        print(
+            f"  S3 inventory fallback unavailable: {result.stderr[-500:]}",
+            file=sys.stderr,
+        )
+        return []
+    buckets = json.loads(result.stdout).get("Buckets", [])
+    return [
+        (
+            f"s3_bucket-{bucket['Name']}",
+            {
+                "@timestamp": timestamp,
+                "resource": {
+                    "type": "s3_bucket",
+                    "name": bucket["Name"],
+                    "id": bucket["Name"],
+                    "key": resource_key(
+                        bucket.get("BucketRegion") or "global",
+                        "s3_bucket",
+                        bucket["Name"],
+                    ),
+                },
+                "cloud": {
+                    "region": bucket.get("BucketRegion") or "global",
+                    "account": {"id": None},
+                },
+                "metric_name": "inventory_only",
+                "metric_value": 0,
+                "last_seen": timestamp,
+            },
+        )
+        for bucket in buckets
+        if bucket.get("Name")
+    ]
+
+
+def seed_assets(
+    obs_es: str,
+    obs_user: str,
+    obs_pass: str,
+    *,
+    manifest_path: str = "",
+) -> None:
     ensure_index(
         obs_es,
         obs_user,
@@ -449,6 +604,7 @@ def seed_assets(obs_es: str, obs_user: str, obs_pass: str) -> None:
             "@timestamp": {"type": "date"},
             "resource": {
                 "properties": {
+                    "key": {"type": "keyword"},
                     "type": {"type": "keyword"},
                     "name": {"type": "keyword"},
                     "id": {"type": "keyword"},
@@ -473,7 +629,7 @@ def seed_assets(obs_es: str, obs_user: str, obs_pass: str) -> None:
         obs_es,
         obs_user,
         obs_pass,
-        """FROM metrics-aws.ec2_metrics-default
+        """FROM metrics-aws.ec2_metrics*
 | WHERE @timestamp > NOW() - 24 hours
 | STATS avg_cpu = AVG(aws.ec2.metrics.CPUUtilization.avg), last_seen = MAX(@timestamp)
     BY cloud.instance.id, cloud.instance.name, cloud.region, cloud.availability_zone, cloud.account.id, cloud.machine.type
@@ -488,7 +644,14 @@ def seed_assets(obs_es: str, obs_user: str, obs_pass: str) -> None:
                 f"ec2-{rid}",
                 {
                     "@timestamp": ts,
-                    "resource": {"type": "ec2_instance", "name": name, "id": rid},
+                    "resource": {
+                        "type": "ec2_instance",
+                        "name": name,
+                        "id": rid,
+                        "key": resource_key(
+                            row.get("cloud.region"), "ec2_instance", rid
+                        ),
+                    },
                     "cloud": {
                         "region": row.get("cloud.region"),
                         "availability_zone": row.get("cloud.availability_zone"),
@@ -505,7 +668,7 @@ def seed_assets(obs_es: str, obs_user: str, obs_pass: str) -> None:
         obs_es,
         obs_user,
         obs_pass,
-        """FROM metrics-aws.s3_daily_storage-default
+        """FROM metrics-aws.s3_daily_storage*
 | WHERE @timestamp > NOW() - 7 days
 | STATS max_size = MAX(aws.s3_daily_storage.bucket.size.bytes), last_seen = MAX(@timestamp)
     BY aws.s3.bucket.name, cloud.region, cloud.account.id
@@ -519,7 +682,14 @@ def seed_assets(obs_es: str, obs_user: str, obs_pass: str) -> None:
                 f"s3-{name}",
                 {
                     "@timestamp": ts,
-                    "resource": {"type": "s3_bucket", "name": name, "id": name},
+                    "resource": {
+                        "type": "s3_bucket",
+                        "name": name,
+                        "id": name,
+                        "key": resource_key(
+                            row.get("cloud.region"), "s3_bucket", name
+                        ),
+                    },
                     "cloud": {
                         "region": row.get("cloud.region"),
                         "account": {"id": row.get("cloud.account.id")},
@@ -530,6 +700,24 @@ def seed_assets(obs_es: str, obs_user: str, obs_pass: str) -> None:
                 },
             )
         )
+    metric_resource_types = {doc["resource"]["type"] for _, doc in docs}
+    fallback_docs = [
+        *manifest_asset_docs(manifest_path, ts),
+        *aws_s3_asset_docs(ts),
+    ]
+    for doc_id, doc in fallback_docs:
+        if doc["resource"]["type"] not in metric_resource_types:
+            docs.append((doc_id, doc))
+    try:
+        req(
+            "POST",
+            f"{obs_es}/{ASSETS}/_delete_by_query?refresh=true",
+            obs_user,
+            obs_pass,
+            {"query": {"match_all": {}}},
+        )
+    except RuntimeError as exc:
+        print(f"  asset snapshot cleanup warning: {exc}", file=sys.stderr)
     bulk_index(obs_es, obs_user, obs_pass, ASSETS, docs)
     print(f"  {ASSETS}: {len(docs)} resources")
 
@@ -806,6 +994,11 @@ def main() -> int:
     p.add_argument("--obs-password", required=True)
     p.add_argument("--sec-password", required=True)
     p.add_argument(
+        "--manifest",
+        default="",
+        help="Optional brownfield manifest used as inventory fallback",
+    )
+    p.add_argument(
         "--sec-kibana",
         default="",
         help="Security Kibana base URL for absolute CloudTrail/Health drill-downs",
@@ -815,6 +1008,13 @@ def main() -> int:
     sec_es = args.sec_es.rstrip("/")
 
     print("Seeding AWS cockpit insight indices…")
+    ensure_index(
+        obs_es,
+        args.obs_user,
+        args.obs_password,
+        INSIGHT_SUMMARY,
+        INSIGHT_SUMMARY_MAPPINGS,
+    )
     seed_security_kpi(obs_es, sec_es, args.obs_user, args.obs_password, args.sec_user, args.sec_password)
     seed_coverage(
         obs_es,
@@ -825,7 +1025,12 @@ def main() -> int:
         args.sec_password,
         sec_kibana=args.sec_kibana,
     )
-    seed_assets(obs_es, args.obs_user, args.obs_password)
+    seed_assets(
+        obs_es,
+        args.obs_user,
+        args.obs_password,
+        manifest_path=args.manifest,
+    )
     seed_health(obs_es, sec_es, args.obs_user, args.obs_password, args.sec_user, args.sec_password)
     seed_events(
         obs_es,

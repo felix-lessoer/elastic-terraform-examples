@@ -1,8 +1,8 @@
 name: AWS Cockpit Coverage Scout
 id: aws-cockpit-coverage
 description: >-
-  Builds a Datadog-style service coverage snapshot from Observability datasets
-  into aws-cockpit-coverage for the cockpit service matrix panel.
+  Builds supplemental dataset-level coverage rows. Canonical service coverage
+  remains a reconciled snapshot in aws-cockpit-coverage.
 triggers:
   - type: manual
   - type: scheduled
@@ -23,7 +23,7 @@ steps:
 
   - name: map_datasets
     type: data.map
-    items: "{{ steps.dataset_stats.output.values }}"
+    items: "${{ steps.dataset_stats.output.values }}"
     with:
       fields:
         docs: "{{ item[0] }}"
@@ -32,12 +32,12 @@ steps:
 
   - name: index_rows
     type: foreach
-    foreach: "{{ steps.map_datasets.output }}"
+    foreach: "${{ steps.map_datasets.output }}"
     steps:
       - name: write_coverage_row
         type: elasticsearch.index
         with:
-          index: aws-cockpit-coverage
+          index: aws-cockpit-dataset-coverage
           id: "dataset-{{ foreach.item.dataset }}"
           document:
             "@timestamp": "{{ now | date_to_xmlschema }}"
@@ -50,3 +50,5 @@ steps:
             datasets:
               - "{{ foreach.item.dataset }}"
             detail: "{{ foreach.item.docs }} docs"
+            lookup:
+              key: "{{ foreach.item.dataset }}"

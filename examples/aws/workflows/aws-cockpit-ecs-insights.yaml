@@ -1,0 +1,156 @@
+name: AWS Insight Engine — ECS
+id: aws-cockpit-ecs-insights
+description: >-
+  Converts ECS service CPU and memory utilization into current cost and
+  performance insights in aws-cockpit-recommendations.
+
+triggers:
+  - type: manual
+  - type: scheduled
+    with:
+      every: "1h"
+
+steps:
+  - name: remove_previous_ecs_insights
+    type: elasticsearch.request
+    with:
+      method: POST
+      path: /aws-cockpit-recommendations/_delete_by_query?conflicts=proceed&refresh=true
+      body:
+        query:
+          term:
+            resource.type: ecs_service
+
+  - name: query_metrics
+    type: elasticsearch.esql.query
+    with:
+      format: json
+      query: |
+        FROM metrics-aws.ecs_metrics*
+        | WHERE @timestamp > NOW() - 24 hours
+        | STATS cpu = AVG(aws.ecs.metrics.CPUUtilization.avg),
+                memory = AVG(aws.ecs.metrics.MemoryUtilization.avg)
+            BY cluster = aws.dimensions.ClusterName,
+               service = aws.dimensions.ServiceName,
+               cloud.region, cloud.account.id
+        | WHERE service IS NOT NULL AND (cpu > 85 OR memory > 85 OR cpu < 5)
+        | EVAL category = CASE(cpu < 5 AND memory < 20, "cost_optimization", "performance_risk"),
+               severity = CASE(cpu > 90 OR memory > 90, "high", "medium"),
+               metric_name = CASE(cpu < 5 AND memory < 20, "cpu_utilization", memory > cpu, "memory_utilization", "cpu_utilization"),
+               metric_value = CASE(cpu < 5 AND memory < 20, cpu, memory > cpu, memory, cpu)
+        | LIMIT 200
+
+  - name: normalize_metrics
+    type: data.map
+    items: "${{ steps.query_metrics.output.values }}"
+    with:
+      fields:
+        cpu: "{{ item[0] }}"
+        memory: "{{ item[1] }}"
+        cluster: "{{ item[2] }}"
+        service: "{{ item[3] }}"
+        region: "{{ item[4] }}"
+        account_id: "{{ item[5] }}"
+        category: "{{ item[6] }}"
+        severity: "{{ item[7] }}"
+        metric_name: "{{ item[8] }}"
+        metric_value: "{{ item[9] }}"
+
+  - name: publish_insights
+    type: foreach
+    foreach: "${{ steps.normalize_metrics.output }}"
+    steps:
+      - name: index_ecs_insight
+        type: elasticsearch.index
+        with:
+          index: aws-cockpit-recommendations
+          id: "{{ foreach.item.cluster }}-{{ foreach.item.service }}-ecs-health"
+          document:
+            "@timestamp": "{{ now | date_to_xmlschema }}"
+            category: "{{ foreach.item.category }}"
+            severity: "{{ foreach.item.severity }}"
+            metric_name: "{{ foreach.item.metric_name }}"
+            metric_value: "{{ foreach.item.metric_value }}"
+            threshold: 0
+            recommendation: >-
+              ECS service {{ foreach.item.service }} in cluster {{
+              foreach.item.cluster }} averages {{ foreach.item.cpu }}% CPU and
+              {{ foreach.item.memory }}% memory. Review task sizing, desired
+              count, and autoscaling thresholds.
+            resource:
+              type: ecs_service
+              name: "{{ foreach.item.service }}"
+              id: "{{ foreach.item.cluster }}/{{ foreach.item.service }}"
+              key: "{{ foreach.item.region }}:ecs_service:{{ foreach.item.cluster }}/{{ foreach.item.service }}"
+            cloud:
+              region: "{{ foreach.item.region }}"
+              account:
+                id: "{{ foreach.item.account_id }}"
+
+  - name: query_potentially_unused_services
+    type: elasticsearch.esql.query
+    with:
+      format: json
+      query: |
+        FROM metrics-aws.ecs_metrics*
+        | WHERE @timestamp > NOW() - 14 days
+        | STATS observations = COUNT(*),
+                cpu = AVG(aws.ecs.metrics.CPUUtilization.avg),
+                memory = AVG(aws.ecs.metrics.MemoryUtilization.avg)
+            BY cluster = aws.dimensions.ClusterName,
+               service = aws.dimensions.ServiceName,
+               cloud.region, cloud.account.id
+        | WHERE service IS NOT NULL
+            AND cpu IS NOT NULL
+            AND memory IS NOT NULL
+            AND cpu < 1
+            AND memory < 5
+        | LIMIT 200
+
+  - name: map_potentially_unused_services
+    type: data.map
+    items: "${{ steps.query_potentially_unused_services.output.values }}"
+    with:
+      fields:
+        observations: "{{ item[0] }}"
+        cpu: "{{ item[1] }}"
+        memory: "{{ item[2] }}"
+        cluster: "{{ item[3] }}"
+        service: "{{ item[4] }}"
+        region: "{{ item[5] }}"
+        account_id: "{{ item[6] }}"
+
+  - name: publish_potentially_unused_services
+    type: foreach
+    foreach: "${{ steps.map_potentially_unused_services.output }}"
+    steps:
+      - name: index_potentially_unused_service
+        type: elasticsearch.index
+        with:
+          index: aws-cockpit-recommendations
+          id: "{{ foreach.item.cluster }}-{{ foreach.item.service }}-potentially-unused"
+          document:
+            "@timestamp": "{{ now | date_to_xmlschema }}"
+            category: unused_resource
+            severity: medium
+            confidence: medium
+            activity_status: potentially_unused
+            lookback_days: 14
+            metric_name: avg_cpu_utilization_14d
+            metric_value: "{{ foreach.item.cpu }}"
+            threshold: 1
+            recommendation: >-
+              ECS service {{ foreach.item.service }} in cluster {{
+              foreach.item.cluster }} averaged less than 1% CPU and 5% memory
+              over 14 days across {{ foreach.item.observations }} observed
+              metric documents. Confirm traffic patterns, schedules, and owner
+              requirements before scaling to zero or removing it.
+            resource:
+              type: ecs_service
+              name: "{{ foreach.item.service }}"
+              id: "{{ foreach.item.cluster }}/{{ foreach.item.service }}"
+              key: "{{ foreach.item.region }}:ecs_service:{{ foreach.item.cluster }}/{{ foreach.item.service }}"
+            cloud:
+              region: "{{ foreach.item.region }}"
+              account:
+                id: "{{ foreach.item.account_id }}"

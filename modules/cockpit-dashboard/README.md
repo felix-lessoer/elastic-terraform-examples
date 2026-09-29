@@ -7,6 +7,7 @@ Imports a pinned Kibana NDJSON export so Terraform owns the live cockpit layout
 | --- | --- | --- | --- |
 | GCP | `cockpit.ndjson` | `fcf1246c-6ee2-4c91-94f8-f034e8d345bc` | Latest Observability export |
 | AWS | `cockpit-aws.ndjson` | `45f84000-d68b-4bb1-9df2-09223fba6b29` | Latest Observability export |
+| AWS | `aws-security-observability-dashboards.ndjson` | 18 `ecs-aws-*` dashboards | Supplemental security and observability views |
 | Azure | `cockpit-azure.ndjson` | `b8e4c2f1-9a7d-4e3b-8c5a-1d6f0e9b2a47` | Built from the GCP/AWS cockpit template |
 
 Data panels use Kibana `vis` (Lens attributes with ES|QL `textBased`
@@ -24,6 +25,10 @@ python3 modules/cockpit-dashboard/scripts/inject_ootb_nav.py
 
 Curated link catalogs live in `scripts/ootb_nav.py` (`OOTB` / `PRIMARY_LINKS`).
 AWS and Azure rebuild scripts call `inject_ootb_nav()` automatically.
+
+Callers can deploy supplemental saved-object bundles through
+`additional_ndjson_paths`; these imports do not change the configured cockpit
+default route.
 
 ## Refresh from a live Observability Kibana
 

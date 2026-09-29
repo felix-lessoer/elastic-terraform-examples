@@ -24,6 +24,20 @@ resource "elasticstack_kibana_import_saved_objects" "cockpit" {
   }
 }
 
+resource "elasticstack_kibana_import_saved_objects" "additional" {
+  for_each = var.additional_ndjson_paths
+
+  space_id      = var.space_id
+  overwrite     = true
+  file_contents = file(each.value)
+
+  kibana_connection {
+    endpoints = [local.kibana_url]
+    username  = var.elasticsearch_username
+    password  = var.elasticsearch_password
+  }
+}
+
 # Kibana's defaultRoute is a space-scoped Advanced Setting. The provider does
 # not expose it directly. Serverless does expose the versioned config object
 # through Saved Objects export/import, so round-trip that object to preserve
@@ -56,5 +70,8 @@ resource "terraform_data" "default_route" {
     EOT
   }
 
-  depends_on = [elasticstack_kibana_import_saved_objects.cockpit]
+  depends_on = [
+    elasticstack_kibana_import_saved_objects.cockpit,
+    elasticstack_kibana_import_saved_objects.additional,
+  ]
 }

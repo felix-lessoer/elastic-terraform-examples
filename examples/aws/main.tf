@@ -979,8 +979,11 @@ module "cockpit" {
   description            = "AWS service health and metrics collected across all regions."
   dashboard_id           = "45f84000-d68b-4bb1-9df2-09223fba6b29"
   ndjson_path            = "${path.module}/../../modules/cockpit-dashboard/cockpit-aws.ndjson"
-  ml_jobs                = module.observability_seed.ml_jobs
-  ai_agents              = module.observability_seed.ai_agents
+  additional_ndjson_paths = [
+    "${path.module}/../../modules/cockpit-dashboard/aws-security-observability-dashboards.ndjson",
+  ]
+  ml_jobs   = module.observability_seed.ml_jobs
+  ai_agents = module.observability_seed.ai_agents
 
   depends_on = [module.stack, module.observability_seed]
 }

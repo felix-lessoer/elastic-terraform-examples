@@ -28,6 +28,35 @@ def instance_id(agent: dict) -> str:
     return str(nested_value(metadata, "cloud", "instance", "id") or "")
 
 
+def base_policy_id(agent: dict) -> str:
+    return str(agent.get("policy_id") or "").split("#", 1)[0]
+
+
+def private_ips(agent: dict) -> set[str]:
+    metadata = agent.get("local_metadata") or {}
+    addresses = nested_value(metadata, "host", "ip") or []
+    return {
+        str(address).split("/", 1)[0]
+        for address in addresses
+        if isinstance(address, str)
+    }
+
+
+def is_current_agent(
+    agent: dict,
+    *,
+    current_instance_id: str,
+    current_private_ip: str,
+) -> bool:
+    return (
+        instance_id(agent) == current_instance_id
+        or (
+            bool(current_private_ip)
+            and current_private_ip in private_ips(agent)
+        )
+    )
+
+
 def parse_time(value: str) -> datetime | None:
     if not value:
         return None
@@ -42,15 +71,22 @@ def stale_agents(
     *,
     policy_id: str,
     current_instance_id: str,
+    current_private_ip: str = "",
     now: datetime | None = None,
 ) -> list[dict]:
     now = now or datetime.now(timezone.utc)
-    matching = [agent for agent in agents if agent.get("policy_id") == policy_id]
+    matching = [
+        agent for agent in agents if base_policy_id(agent) == policy_id
+    ]
     current = next(
         (
             agent
             for agent in matching
-            if instance_id(agent) == current_instance_id
+            if is_current_agent(
+                agent,
+                current_instance_id=current_instance_id,
+                current_private_ip=current_private_ip,
+            )
             and agent.get("status") in {"online", "updating", "enrolling"}
         ),
         None,
@@ -106,22 +142,21 @@ class FleetClient:
         items: list[dict] = []
         page = 1
         while True:
-            query = urllib.parse.urlencode(
-                {
-                    "page": page,
-                    "perPage": 100,
-                    "kuery": f'policy_id:"{policy_id}"',
-                }
-            )
+            query = urllib.parse.urlencode({"page": page, "perPage": 100})
             response = self.request("GET", f"/api/fleet/agents?{query}")
-            batch = response.get("items", [])
+            batch = [
+                agent
+                for agent in response.get("items", [])
+                if base_policy_id(agent) == policy_id
+            ]
             items.extend(batch)
             total = response.get("total")
-            if not batch or (
-                isinstance(total, int) and len(items) >= total
+            scanned = page * 100
+            if not response.get("items") or (
+                isinstance(total, int) and scanned >= total
             ):
                 return items
-            if len(batch) < 100:
+            if len(response.get("items", [])) < 100:
                 return items
             page += 1
 
@@ -138,12 +173,17 @@ def main() -> int:
         raise SystemExit("usage: reconcile_fleet_agents.py reconcile")
     policy_id = os.environ["AGENT_POLICY_ID"]
     expected_instance = os.environ["AWS_INSTANCE_ID"]
+    expected_private_ip = os.environ.get("AWS_PRIVATE_IP", "")
     client = FleetClient()
     wait_seconds = int(os.environ.get("FLEET_WAIT_SECONDS", "300"))
     deadline = time.monotonic() + wait_seconds
     agents = client.agents(policy_id)
     while not any(
-        instance_id(agent) == expected_instance
+        is_current_agent(
+            agent,
+            current_instance_id=expected_instance,
+            current_private_ip=expected_private_ip,
+        )
         and agent.get("status") in {"online", "updating", "enrolling"}
         for agent in agents
     ) and time.monotonic() < deadline:
@@ -153,9 +193,14 @@ def main() -> int:
         agents,
         policy_id=policy_id,
         current_instance_id=expected_instance,
+        current_private_ip=expected_private_ip,
     )
     current_is_ready = any(
-        instance_id(agent) == expected_instance
+        is_current_agent(
+            agent,
+            current_instance_id=expected_instance,
+            current_private_ip=expected_private_ip,
+        )
         and agent.get("status") in {"online", "updating", "enrolling"}
         for agent in agents
     )

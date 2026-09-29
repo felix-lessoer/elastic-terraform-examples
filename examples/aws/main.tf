@@ -916,6 +916,7 @@ resource "terraform_data" "fleet_agent_reconciliation" {
     kibana_password = module.observability.password
     agent_policy_id = module.stack.agent_policy_id
     aws_instance_id = module.elastic_agent.instance_id
+    aws_private_ip   = module.elastic_agent.private_ip
   }
 
   triggers_replace = [
@@ -932,6 +933,7 @@ resource "terraform_data" "fleet_agent_reconciliation" {
       KIBANA_PASSWORD = self.input.kibana_password
       AGENT_POLICY_ID = self.input.agent_policy_id
       AWS_INSTANCE_ID = self.input.aws_instance_id
+      AWS_PRIVATE_IP   = self.input.aws_private_ip
     }
   }
 

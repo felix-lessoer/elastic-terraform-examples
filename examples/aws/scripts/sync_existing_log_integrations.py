@@ -241,12 +241,21 @@ def sync(*, preserve_unselected: bool = False) -> None:
         list(executor.map(reconcile, desired))
 
     if not preserve_unselected:
-        for name, item in existing.items():
-            if name.startswith(POLICY_PREFIX) and name not in desired_names:
-                request(
-                    "DELETE",
-                    f"/api/fleet/package_policies/{item['id']}?force=true",
-                )
+        stale = [
+            item
+            for name, item in existing.items()
+            if name.startswith(POLICY_PREFIX) and name not in desired_names
+        ]
+
+        def remove(item: dict) -> None:
+            request(
+                "DELETE",
+                f"/api/fleet/package_policies/{item['id']}?force=true",
+            )
+
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            list(executor.map(remove, stale))
+
 
 def cleanup_selected() -> None:
     sources: list[dict] = json.loads(os.environ["SOURCES_JSON"])

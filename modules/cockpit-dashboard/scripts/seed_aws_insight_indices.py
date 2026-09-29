@@ -451,6 +451,16 @@ def seed_coverage(
                 },
             )
         )
+    try:
+        req(
+            "POST",
+            f"{obs_es}/{COVERAGE}/_delete_by_query?refresh=true",
+            obs_user,
+            obs_pass,
+            {"query": {"match_all": {}}},
+        )
+    except RuntimeError as exc:
+        print(f"  coverage snapshot cleanup warning: {exc}", file=sys.stderr)
     bulk_index(obs_es, obs_user, obs_pass, COVERAGE, docs)
     healthy = sum(1 for _, d in docs if d["status"] == "healthy")
     print(f"  {COVERAGE}: {healthy}/{len(docs)} healthy services")

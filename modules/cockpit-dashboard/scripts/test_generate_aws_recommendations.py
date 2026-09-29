@@ -7,7 +7,12 @@ import unittest
 from unittest.mock import patch
 
 import generate_aws_recommendations as recommendations
-from seed_aws_insight_indices import aws_s3_asset_docs, manifest_asset_docs
+from seed_aws_insight_indices import (
+    SERVICE_CATALOG,
+    aws_s3_asset_docs,
+    manifest_asset_docs,
+    seed_coverage,
+)
 
 
 class EsqlTests(unittest.TestCase):
@@ -127,6 +132,40 @@ class ManifestAssetFallbackTests(unittest.TestCase):
         self.assertEqual(len(docs), 1)
         self.assertEqual(docs[0][1]["resource"]["type"], "s3_bucket")
         self.assertEqual(docs[0][1]["metric_name"], "inventory_only")
+
+
+class CoverageSnapshotTests(unittest.TestCase):
+    @patch("seed_aws_insight_indices.bulk_index")
+    @patch("seed_aws_insight_indices.req")
+    @patch("seed_aws_insight_indices.esql", return_value=[])
+    @patch("seed_aws_insight_indices.ensure_index")
+    def test_replaces_coverage_with_one_row_per_service(
+        self,
+        ensure_index,
+        esql,
+        request,
+        bulk_index,
+    ):
+        seed_coverage(
+            "https://obs.example",
+            "https://sec.example",
+            "elastic",
+            "obs-secret",
+            "elastic",
+            "sec-secret",
+        )
+        cleanup = [
+            call
+            for call in request.call_args_list
+            if "_delete_by_query" in call.args[1]
+        ]
+        self.assertEqual(len(cleanup), 1)
+        docs = bulk_index.call_args.args[-1]
+        self.assertEqual(len(docs), len(SERVICE_CATALOG))
+        self.assertEqual(
+            {doc_id for doc_id, _ in docs},
+            {service["service"] for service in SERVICE_CATALOG},
+        )
 
 
 if __name__ == "__main__":

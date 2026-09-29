@@ -11,6 +11,16 @@ triggers:
       every: "1h"
 
 steps:
+  - name: remove_previous_ec2_insights
+    type: elasticsearch.request
+    with:
+      method: POST
+      path: /aws-cockpit-recommendations/_delete_by_query?conflicts=proceed&refresh=true
+      body:
+        query:
+          term:
+            resource.type: ec2_instance
+
   - name: query_metrics
     type: elasticsearch.esql.query
     with:
@@ -18,6 +28,8 @@ steps:
         FROM metrics-aws.ec2_metrics-default
         | WHERE @timestamp > NOW() - 24 hours
         | STATS avg_cpu = AVG(aws.ec2.metrics.CPUUtilization.avg), max_status_failed = MAX(aws.ec2.metrics.StatusCheckFailed.avg) BY cloud.instance.name, cloud.instance.id, cloud.availability_zone, cloud.account.id, cloud.region, cloud.machine.type
+        | WHERE max_status_failed > 0 OR avg_cpu < 5 OR avg_cpu > 85
+        | LIMIT 200
 
   - name: normalize_metrics
     type: data.map
@@ -45,7 +57,7 @@ steps:
             type: elasticsearch.index
             with:
               index: aws-cockpit-recommendations
-              id: "{{ foreach.item.instance_name }}-status_check-{{ now | date: '%Y%m%dT%H%M' }}"
+              id: "{{ foreach.item.instance_id }}-status_check"
               document:
                 "@timestamp": "{{ now | date_to_xmlschema }}"
                 category: performance_risk
@@ -74,7 +86,7 @@ steps:
             type: elasticsearch.index
             with:
               index: aws-cockpit-recommendations
-              id: "{{ foreach.item.instance_name }}-cost_optimization-{{ now | date: '%Y%m%dT%H%M' }}"
+              id: "{{ foreach.item.instance_id }}-cost_optimization"
               document:
                 "@timestamp": "{{ now | date_to_xmlschema }}"
                 category: cost_optimization
@@ -103,7 +115,7 @@ steps:
             type: elasticsearch.index
             with:
               index: aws-cockpit-recommendations
-              id: "{{ foreach.item.instance_name }}-performance_risk-{{ now | date: '%Y%m%dT%H%M' }}"
+              id: "{{ foreach.item.instance_id }}-performance_risk"
               document:
                 "@timestamp": "{{ now | date_to_xmlschema }}"
                 category: performance_risk

@@ -8,7 +8,7 @@ briefing on the Observability cockpit. Filenames are stable `workflow_id`s.
 | `aws-cockpit-ec2-recommendations.yaml` | `aws-cockpit-recommendations` | EC2 underutilized / hot CPU + failed status checks |
 | `aws-cockpit-s3-recommendations.yaml` | `aws-cockpit-recommendations` | Empty / near-empty S3 buckets |
 | `aws-cockpit-assets.yaml` | `aws-cockpit-assets` | Live EC2/S3 inventory from metrics |
-| `aws-cockpit-coverage.yaml` | `aws-cockpit-coverage` | Per-dataset coverage rows (supplemental) |
+| `aws-cockpit-coverage.yaml` | `aws-cockpit-dataset-coverage` | Per-dataset coverage rows (supplemental) |
 | `aws-cockpit-insight-engine-summary.yaml` | `aws-cockpit-insight-summary` | Structured, prioritized summary from the `aws-recs-advisor` agent |
 
 ## Cross-project seeder (Security → Observability)

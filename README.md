@@ -2,7 +2,9 @@
 
 Provision an Elastic Cloud environment and the AWS / Azure / GCP collectors needed so **data flows and Security content understands the environment** — from nothing to a strong PoC in minutes.
 
-> **Start here:** [`docs/GETTING_STARTED.md`](docs/GETTING_STARTED.md) and the [`examples/`](examples/) folder.
+> **Start here:** use the [PoC Builder UI](#quick-start-aws-poc-builder-ui)
+> for an AWS PoC. The UI guides credentials, configuration, discovery,
+> Terraform deployment, visibility expansion, and validation.
 
 ## Modern layout (use this)
 
@@ -45,31 +47,56 @@ docs/
   that do not support managed mode. Metrics cover all AWS regions; the pinned
   cockpit dashboard and Kibana workflow deployment are retained.
 
-## Quick start (AWS)
+## Quick start: AWS PoC Builder UI
 
-Run the **Elastic PoC Deployment Creator** for a guided local EUI experience
-on the Terraform workstation:
+The **Elastic PoC Deployment Creator** is the recommended way to build an AWS
+PoC. It runs locally on the Terraform workstation and guides the complete
+process—do not run `terraform init`, `plan`, or `apply` separately.
+
+### Prerequisites
+
+- Node.js 22 or later
+- Terraform
+- Python 3
+- AWS CLI
+- an Elastic Cloud API key
+- AWS credentials for the customer account
+
+The AWS CLI and Terraform must be available on `PATH`. The UI preflight checks
+all prerequisites before enabling deployment.
+
+### Start the UI
+
+From the repository root:
 
 ```bash
-export EC_API_KEY="your-elastic-cloud-api-key"
 cd tools/aws-poc-ui
 npm ci
 npm run build
 npm start
 ```
 
-Open <http://127.0.0.1:5602>. See
+Open <http://127.0.0.1:5602> and keep the page open while operations run.
+
+Enter the Elastic Cloud API key and AWS credentials in the first step, then
+follow the guided workflow. The UI handles:
+
+1. credential and local-tool validation;
+2. AWS identity verification and PoC configuration;
+3. Terraform initialization, plan creation, and a reviewable resource summary;
+4. explicit approval and application of the saved plan;
+5. read-only AWS discovery and service-gap analysis;
+6. selection and deployment of approved visibility candidates;
+7. Insight Engine workflow execution and validation; and
+8. links to the deployed Elastic project and default AWS cockpit.
+
+Credentials stay on the local workstation, and the server binds only to
+`127.0.0.1`. For optional environment-variable startup, development mode, and
+the full security model, see
 [`tools/aws-poc-ui/README.md`](tools/aws-poc-ui/README.md).
 
-For direct Terraform:
-
-```bash
-export EC_API_KEY="your-elastic-cloud-api-key"
-cd examples/aws
-cp terraform.tfvars.example terraform.tfvars
-terraform init
-terraform apply
-```
+Direct Terraform remains available for automation and advanced operators in
+[`examples/aws/`](examples/aws/), but it is not the recommended PoC Quick Start.
 
 ## Legacy trees (deprecated)
 

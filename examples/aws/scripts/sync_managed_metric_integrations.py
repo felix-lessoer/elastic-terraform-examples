@@ -6,6 +6,7 @@ import json
 import os
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 
 
@@ -37,10 +38,27 @@ def request(method: str, path: str, body: dict | None = None) -> dict:
         raise RuntimeError(f"{method} {path} failed ({error.code}): {detail}") from error
 
 
+def paginated_items(path: str, *, page_size: int = 100) -> list[dict]:
+    items: list[dict] = []
+    page = 1
+    while True:
+        separator = "&" if "?" in path else "?"
+        response = request(
+            "GET",
+            f"{path}{separator}{urllib.parse.urlencode({'page': page, 'perPage': page_size})}",
+        )
+        batch = response.get("items", [])
+        items.extend(batch)
+        total = response.get("total")
+        if not batch or (isinstance(total, int) and len(items) >= total):
+            return items
+        if len(batch) < page_size:
+            return items
+        page += 1
+
+
 def integrations() -> list[dict]:
-    return request(
-        "GET", "/api/fleet/managed_integrations?perPage=10000"
-    ).get("items", [])
+    return paginated_items("/api/fleet/managed_integrations")
 
 
 def cleanup() -> None:
@@ -63,7 +81,20 @@ def decode_vars(inputs: dict) -> dict:
 
 def sync() -> None:
     specs: list[dict] = json.loads(os.environ["SPECS_JSON"])
-    existing = {item["name"]: item for item in integrations()}
+    current = integrations()
+    existing = {item["name"]: item for item in current}
+    desired_names = {item["name"] for item in specs}
+    for item in current:
+        name = item.get("name", "")
+        if (
+            name.startswith("aws-managed-")
+            and name.endswith(POLICY_SUFFIX)
+            and name not in desired_names
+        ):
+            request(
+                "DELETE",
+                f"/api/fleet/managed_integrations/{item['id']}?force=true",
+            )
     connectors = {
         item["name"]: item
         for item in request(
@@ -103,12 +134,11 @@ def sync() -> None:
                 "inputs": decode_vars(spec["inputs"]),
             }
         if name in existing:
-            if os.environ.get("UPDATE_EXISTING") == "true":
-                request(
-                    "PUT",
-                    f"/api/fleet/managed_integrations/{existing[name]['id']}",
-                    body,
-                )
+            request(
+                "PUT",
+                f"/api/fleet/managed_integrations/{existing[name]['id']}",
+                body,
+            )
         else:
             request("POST", "/api/fleet/managed_integrations", body)
 

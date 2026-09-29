@@ -909,6 +909,35 @@ module "elastic_agent" {
   iam_instance_profile = module.aws_cloud.agent_instance_profile_name
 }
 
+resource "terraform_data" "fleet_agent_reconciliation" {
+  input = {
+    kibana_url      = module.observability.kibana_endpoint
+    kibana_username = module.observability.username
+    kibana_password = module.observability.password
+    agent_policy_id = module.stack.agent_policy_id
+    aws_instance_id = module.elastic_agent.instance_id
+  }
+
+  triggers_replace = [
+    module.elastic_agent.instance_id,
+    filesha256("${path.module}/scripts/reconcile_fleet_agents.py"),
+  ]
+
+  provisioner "local-exec" {
+    interpreter = ["/bin/bash", "-c"]
+    command     = "python3 '${path.module}/scripts/reconcile_fleet_agents.py' reconcile"
+    environment = {
+      KIBANA_URL      = self.input.kibana_url
+      KIBANA_USERNAME = self.input.kibana_username
+      KIBANA_PASSWORD = self.input.kibana_password
+      AGENT_POLICY_ID = self.input.agent_policy_id
+      AWS_INSTANCE_ID = self.input.aws_instance_id
+    }
+  }
+
+  depends_on = [module.elastic_agent, module.stack]
+}
+
 module "observability_seed" {
   source = "../../modules/observability-seed"
 

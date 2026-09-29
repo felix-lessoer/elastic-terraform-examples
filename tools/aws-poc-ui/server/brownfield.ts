@@ -346,11 +346,12 @@ const lambdaLogSource = (proposal: VisibilityProposal) => ({
   dataset: 'aws.lambda_logs',
 });
 
-async function runLambdaLogAdapter(
+async function runLambdaLogAdapters(
   action: 'deploy' | 'rollback',
-  proposal: VisibilityProposal,
+  proposals: VisibilityProposal[],
   write: LogWriter,
 ): Promise<void> {
+  if (!proposals.length) return;
   const [kibanaUrl, username, password, agentPolicyId] = await Promise.all([
     readPrivateTerraformOutput('kibana_url'),
     readPrivateTerraformOutput('username'),
@@ -364,7 +365,7 @@ async function runLambdaLogAdapter(
         repoRoot,
         'examples/aws/scripts/sync_existing_log_integrations.py',
       ),
-      action === 'deploy' ? 'sync-selected' : 'cleanup-selected',
+      action === 'deploy' ? 'sync' : 'cleanup-selected',
     ],
     {
       cwd: repoRoot,
@@ -376,7 +377,7 @@ async function runLambdaLogAdapter(
         KIBANA_URL: kibanaUrl,
         KIBANA_USERNAME: username,
         POLICY_PREFIX: 'aws-poc-canary-',
-        SOURCES_JSON: JSON.stringify([lambdaLogSource(proposal)]),
+        SOURCES_JSON: JSON.stringify(proposals.map(lambdaLogSource)),
       },
     },
   );
@@ -544,14 +545,7 @@ async function runVisibilityAdapter(
   proposal: VisibilityProposal,
   write: LogWriter,
 ): Promise<void> {
-  if (
-    proposal.resource_type === 'aws.lambda.function' &&
-    proposal.signal === 'logs'
-  ) {
-    await runLambdaLogAdapter(action, proposal, write);
-  } else {
-    await runWorkloadAdapter(action, proposal, write);
-  }
+  await runWorkloadAdapter(action, proposal, write);
 }
 
 export async function deployVisibilityExpansions(
@@ -596,7 +590,46 @@ export async function deployVisibilityExpansions(
   }
   write(`Deploying ${deployable.length} selected visibility canary adapters`);
   const failures: string[] = [];
-  for (const proposal of deployable) {
+  const lambdaLogs = deployable.filter(
+    (proposal) =>
+      proposal.resource_type === 'aws.lambda.function' &&
+      proposal.signal === 'logs',
+  );
+  const workloadAdapters = deployable.filter(
+    (proposal) => !lambdaLogs.includes(proposal),
+  );
+  if (lambdaLogs.length) {
+    write(
+      `Deploying Lambda log collection for ${lambdaLogs.length} selected functions`,
+    );
+    try {
+      const alreadyDeployedLambdaLogs = selection.deployedProposalIds
+        .map((id) => byId.get(id))
+        .filter(
+          (proposal): proposal is VisibilityProposal =>
+            proposal?.resource_type === 'aws.lambda.function' &&
+            proposal.signal === 'logs',
+        );
+      await runLambdaLogAdapters(
+        'deploy',
+        [...alreadyDeployedLambdaLogs, ...lambdaLogs],
+        write,
+      );
+      selection.deployedProposalIds = [
+        ...new Set([
+          ...selection.deployedProposalIds,
+          ...lambdaLogs.map((proposal) => proposal.id),
+        ]),
+      ];
+      await persistVisibilitySelection(selection);
+      write(`${lambdaLogs.length} Lambda log adapters deployed`);
+    } catch (error) {
+      failures.push(...lambdaLogs.map((proposal) => proposal.resource_name));
+      write('Lambda log collector deployment needs attention');
+      write(error instanceof Error ? error.message : String(error));
+    }
+  }
+  for (const proposal of workloadAdapters) {
     write(`Deploying ${optionTitle(proposal.resource_type, proposal.signal)}`);
     try {
       await runVisibilityAdapter('deploy', proposal, write);
@@ -636,7 +669,15 @@ export async function rollbackVisibilityExpansions(
     throw new Error('No deployed visibility canaries are available to roll back');
   }
   write(`Rolling back ${deployed.length} visibility canary adapters`);
-  for (const proposal of [...deployed].reverse()) {
+  const lambdaLogs = deployed.filter(
+    (proposal) =>
+      proposal.resource_type === 'aws.lambda.function' &&
+      proposal.signal === 'logs',
+  );
+  const workloadAdapters = deployed.filter(
+    (proposal) => !lambdaLogs.includes(proposal),
+  );
+  for (const proposal of [...workloadAdapters].reverse()) {
     write(`Rolling back ${optionTitle(proposal.resource_type, proposal.signal)}`);
     await runVisibilityAdapter('rollback', proposal, write);
     selection.deployedProposalIds = selection.deployedProposalIds.filter(
@@ -644,6 +685,16 @@ export async function rollbackVisibilityExpansions(
     );
     await persistVisibilitySelection(selection);
     write(`${proposal.resource_name}: rollback complete`);
+  }
+  if (lambdaLogs.length) {
+    write(`Removing Lambda log collection for ${lambdaLogs.length} functions`);
+    await runLambdaLogAdapters('rollback', lambdaLogs, write);
+    const lambdaIds = new Set(lambdaLogs.map((proposal) => proposal.id));
+    selection.deployedProposalIds = selection.deployedProposalIds.filter(
+      (id) => !lambdaIds.has(id),
+    );
+    await persistVisibilitySelection(selection);
+    write('Lambda log collector rollback complete');
   }
   return visibilityExpansionStatus();
 }
@@ -655,6 +706,21 @@ export async function reconcileDeployedVisibilityExpansions(
   const proposals = await readProposals();
   const resourceConfigurations = await readResourceConfigurations();
   const byId = new Map(proposals.map((proposal) => [proposal.id, proposal]));
+  const deployedLambdaLogs = selection.deployedProposalIds
+    .map((id) => byId.get(id))
+    .filter(
+      (proposal): proposal is VisibilityProposal =>
+        proposal?.resource_type === 'aws.lambda.function' &&
+        proposal.signal === 'logs',
+    );
+  if (deployedLambdaLogs.length) {
+    try {
+      await runLambdaLogAdapters('deploy', deployedLambdaLogs, write);
+    } catch (error) {
+      write('Lambda log collector reconciliation needs attention');
+      write(error instanceof Error ? error.message : String(error));
+    }
+  }
   for (const id of selection.deployedProposalIds) {
     const proposal = byId.get(id);
     if (!proposal) continue;

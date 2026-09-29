@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 
 
@@ -55,16 +56,31 @@ def request(method: str, path: str, body: dict | None = None) -> dict:
         raise RuntimeError(f"{method} {path} failed ({error.code}): {detail}") from error
 
 
+def paginated_items(path: str, *, page_size: int = 100) -> list[dict]:
+    items: list[dict] = []
+    page = 1
+    while True:
+        separator = "&" if "?" in path else "?"
+        response = request(
+            "GET",
+            f"{path}{separator}{urllib.parse.urlencode({'page': page, 'perPage': page_size})}",
+        )
+        batch = response.get("items", [])
+        items.extend(batch)
+        total = response.get("total")
+        if not batch or (isinstance(total, int) and len(items) >= total):
+            return items
+        if len(batch) < page_size:
+            return items
+        page += 1
+
+
 def managed_integrations() -> list[dict]:
-    return request(
-        "GET", "/api/fleet/managed_integrations?perPage=10000"
-    ).get("items", [])
+    return paginated_items("/api/fleet/managed_integrations")
 
 
 def package_policies() -> list[dict]:
-    return request("GET", "/api/fleet/package_policies?perPage=10000").get(
-        "items", []
-    )
+    return paginated_items("/api/fleet/package_policies")
 
 
 def remove_legacy_policies() -> None:
@@ -207,6 +223,16 @@ def sync() -> None:
     remove_legacy_policies()
     policies = package_policies()
     existing = {item["name"]: item for item in policies}
+    desired_names = {
+        f"{POLICY_PREFIX}{region}" for region in regional_detectors
+    }
+    for item in policies:
+        name = item.get("name", "")
+        if name.startswith(POLICY_PREFIX) and name not in desired_names:
+            request(
+                "DELETE",
+                f"/api/fleet/package_policies/{item['id']}?force=true",
+            )
     template = next(
         item for item in policies if item.get("name") == "aws-agent-only-integrations"
     )

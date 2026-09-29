@@ -15,9 +15,12 @@ import urllib.parse
 import urllib.request
 
 
-KIBANA_URL = os.environ["KIBANA_URL"].rstrip("/")
+KIBANA_URL = os.environ.get("KIBANA_URL", "").rstrip("/")
 AUTH = base64.b64encode(
-    f"{os.environ['KIBANA_USERNAME']}:{os.environ['KIBANA_PASSWORD']}".encode()
+    (
+        f"{os.environ.get('KIBANA_USERNAME', '')}:"
+        f"{os.environ.get('KIBANA_PASSWORD', '')}"
+    ).encode()
 ).decode()
 POLICY_PREFIX = os.environ.get("POLICY_PREFIX", "aws-existing-log-")
 MAX_STREAMS_PER_POLICY = int(os.environ.get("MAX_STREAMS_PER_POLICY", "50"))
@@ -131,14 +134,9 @@ def configure_stream(stream: dict, source: dict) -> None:
         set_value(variables, "preserve_original_event", False)
 
 
-def sync(*, preserve_unselected: bool = False) -> None:
-    sources: list[dict] = json.loads(os.environ["SOURCES_JSON"])
-    policies = package_policies()
-    existing = {item["name"]: item for item in policies}
-    template = next(
-        item for item in policies if item.get("name") == "aws-agent-only-integrations"
-    )
-    agent_policy_id = os.environ["AGENT_POLICY_ID"]
+def desired_policy_groups(
+    sources: list[dict],
+) -> list[tuple[str, list[dict]]]:
     grouped: dict[tuple[str, ...], list[dict]] = {}
     for source in sources:
         grouped.setdefault(source_group_key(source), []).append(source)
@@ -156,6 +154,18 @@ def sync(*, preserve_unselected: bool = False) -> None:
                     ordered[offset : offset + MAX_STREAMS_PER_POLICY],
                 )
             )
+    return desired
+
+
+def sync(*, preserve_unselected: bool = False) -> None:
+    sources: list[dict] = json.loads(os.environ["SOURCES_JSON"])
+    policies = package_policies()
+    existing = {item["name"]: item for item in policies}
+    template = next(
+        item for item in policies if item.get("name") == "aws-agent-only-integrations"
+    )
+    agent_policy_id = os.environ["AGENT_POLICY_ID"]
+    desired = desired_policy_groups(sources)
     desired_names = {name for name, _ in desired}
 
     def reconcile(item: tuple[str, list[dict]]) -> None:
@@ -255,22 +265,28 @@ def cleanup_selected() -> None:
             )
 
 
-if len(sys.argv) != 2 or sys.argv[1] not in {
-    "sync",
-    "sync-selected",
-    "cleanup",
-    "cleanup-selected",
-}:
-    raise SystemExit(
-        "usage: sync_existing_log_integrations.py "
-        "sync|sync-selected|cleanup|cleanup-selected"
-    )
+def main() -> int:
+    if len(sys.argv) != 2 or sys.argv[1] not in {
+        "sync",
+        "sync-selected",
+        "cleanup",
+        "cleanup-selected",
+    }:
+        raise SystemExit(
+            "usage: sync_existing_log_integrations.py "
+            "sync|sync-selected|cleanup|cleanup-selected"
+        )
 
-if sys.argv[1] == "sync":
-    sync()
-elif sys.argv[1] == "sync-selected":
-    sync(preserve_unselected=True)
-elif sys.argv[1] == "cleanup-selected":
-    cleanup_selected()
-else:
-    cleanup()
+    if sys.argv[1] == "sync":
+        sync()
+    elif sys.argv[1] == "sync-selected":
+        sync(preserve_unselected=True)
+    elif sys.argv[1] == "cleanup-selected":
+        cleanup_selected()
+    else:
+        cleanup()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

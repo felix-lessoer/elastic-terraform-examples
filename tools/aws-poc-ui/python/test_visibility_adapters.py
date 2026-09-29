@@ -2,11 +2,14 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from visibility_adapters import (
+    cleanup_eks,
+    cleanup_orphaned_api_keys,
     eks_manifest,
     eks_principal_arn,
     eks_resources,
     elastic_request,
     parse_arn,
+    rollback_rds,
 )
 
 
@@ -74,6 +77,54 @@ class VisibilityAdapterTest(unittest.TestCase):
             by_kind["Secret"]["data"]["api-key"],
             "ZW5jb2RlZC10ZXN0LWtleQ==",
         )
+
+    def test_kubernetes_cleanup_removes_namespace_and_cluster_rbac(self):
+        api = MagicMock()
+        cleanup_eks(api, "elastic-poc-canary")
+        self.assertEqual(
+            [call.args[0] for call in api.delete.call_args_list],
+            [
+                "/api/v1/namespaces/elastic-poc-canary",
+                (
+                    "/apis/rbac.authorization.k8s.io/v1/clusterroles/"
+                    "elastic-otel-canary"
+                ),
+                (
+                    "/apis/rbac.authorization.k8s.io/v1/"
+                    "clusterrolebindings/elastic-otel-canary"
+                ),
+            ],
+        )
+
+    @patch("visibility_adapters.elastic_request")
+    def test_orphaned_api_key_cleanup_preserves_tracked_keys(self, request):
+        request.return_value = {
+            "api_keys": [
+                {"id": "tracked", "invalidated": False},
+                {"id": "orphaned", "invalidated": False},
+                {"id": "invalidated", "invalidated": True},
+            ]
+        }
+        cleanup_orphaned_api_keys(
+            {"adapters": {"proposal": {"api_key_id": "tracked"}}}
+        )
+        request.assert_any_call(
+            "DELETE",
+            "/_security/api_key",
+            {"ids": ["orphaned"]},
+        )
+
+    @patch("visibility_adapters.aws")
+    def test_rds_rollback_only_reverts_changes_made_by_adapter(self, aws):
+        rollback_rds(
+            {
+                "changed": False,
+                "performance_insights_enabled": True,
+                "region": "eu-west-1",
+                "identifier": "customer-db",
+            }
+        )
+        aws.assert_not_called()
 
 
 if __name__ == "__main__":

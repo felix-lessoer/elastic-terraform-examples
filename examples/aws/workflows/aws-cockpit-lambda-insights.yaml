@@ -84,3 +84,62 @@ steps:
               region: "{{ foreach.item.region }}"
               account:
                 id: "{{ foreach.item.account_id }}"
+
+  - name: query_potentially_unused_functions
+    type: elasticsearch.esql.query
+    with:
+      format: json
+      query: |
+        FROM metrics-aws.lambda*
+        | WHERE @timestamp > NOW() - 14 days
+        | STATS observations = COUNT(*),
+                invocations = SUM(aws.lambda.metrics.Invocations.sum)
+            BY function = aws.dimensions.FunctionName,
+               cloud.region, cloud.account.id
+        | WHERE function IS NOT NULL
+            AND invocations IS NOT NULL
+            AND invocations == 0
+        | LIMIT 200
+
+  - name: map_potentially_unused_functions
+    type: data.map
+    items: "${{ steps.query_potentially_unused_functions.output.values }}"
+    with:
+      fields:
+        observations: "{{ item[0] }}"
+        invocations: "{{ item[1] }}"
+        function: "{{ item[2] }}"
+        region: "{{ item[3] }}"
+        account_id: "{{ item[4] }}"
+
+  - name: publish_potentially_unused_functions
+    type: foreach
+    foreach: "${{ steps.map_potentially_unused_functions.output }}"
+    steps:
+      - name: index_potentially_unused_function
+        type: elasticsearch.index
+        with:
+          index: aws-cockpit-recommendations
+          id: "{{ foreach.item.function }}-potentially-unused"
+          document:
+            "@timestamp": "{{ now | date_to_xmlschema }}"
+            category: unused_resource
+            severity: medium
+            confidence: high
+            activity_status: potentially_unused
+            lookback_days: 14
+            metric_name: invocations_14d
+            metric_value: "{{ foreach.item.invocations }}"
+            threshold: 0
+            recommendation: >-
+              Lambda function {{ foreach.item.function }} had zero invocations
+              over 14 days across {{ foreach.item.observations }} observed
+              metric documents. Confirm event sources and owner requirements
+              before removing or disabling it.
+            resource:
+              type: lambda_function
+              name: "{{ foreach.item.function }}"
+            cloud:
+              region: "{{ foreach.item.region }}"
+              account:
+                id: "{{ foreach.item.account_id }}"

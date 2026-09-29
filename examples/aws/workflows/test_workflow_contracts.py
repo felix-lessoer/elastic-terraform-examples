@@ -73,6 +73,31 @@ class AwsWorkflowContractTests(unittest.TestCase):
         )
         self.assertIn("| LIMIT 200", source)
 
+    def test_unused_resource_detections_require_observed_activity_metrics(self):
+        metric_workflows = (
+            "aws-cockpit-ec2-recommendations.yaml",
+            "aws-cockpit-lambda-insights.yaml",
+            "aws-cockpit-rds-insights.yaml",
+            "aws-cockpit-elb-insights.yaml",
+            "aws-cockpit-dynamodb-insights.yaml",
+            "aws-cockpit-ecs-insights.yaml",
+            "aws-cockpit-ebs-insights.yaml",
+        )
+        for name in metric_workflows:
+            with self.subTest(workflow=name):
+                source = (DIRECTORY / name).read_text()
+                self.assertIn("category: unused_resource", source)
+                self.assertIn("activity_status: potentially_unused", source)
+                self.assertIn("lookback_days: 14", source)
+                self.assertIn("IS NOT NULL", source)
+
+        s3_source = (
+            DIRECTORY / "aws-cockpit-s3-recommendations.yaml"
+        ).read_text()
+        self.assertIn("category: unused_resource", s3_source)
+        self.assertIn("activity_status: potentially_unused", s3_source)
+        self.assertIn("lookback_days: 7", s3_source)
+
 
 if __name__ == "__main__":
     unittest.main()

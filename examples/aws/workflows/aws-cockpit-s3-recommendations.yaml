@@ -53,14 +53,18 @@ steps:
           id: "{{ foreach.item.bucket }}-empty_bucket"
           document:
             "@timestamp": "{{ now | date_to_xmlschema }}"
-            category: cost_optimization
+            category: unused_resource
             severity: low
+            confidence: medium
+            activity_status: potentially_unused
+            lookback_days: 7
             metric_name: s3_bucket_size_bytes
             metric_value: "{{ foreach.item.max_size }}"
             threshold: 0
             recommendation: >-
-              S3 bucket {{ foreach.item.bucket }} appears empty
-              (size={{ foreach.item.max_size }} bytes) — confirm it is still needed or remove it.
+              S3 bucket {{ foreach.item.bucket }} remained empty across the
+              available seven-day inventory window. Confirm request metrics,
+              retention policies, and owner requirements before removing it.
             resource:
               type: s3_bucket
               name: "{{ foreach.item.bucket }}"

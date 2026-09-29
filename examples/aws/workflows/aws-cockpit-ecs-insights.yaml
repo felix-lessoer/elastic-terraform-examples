@@ -84,3 +84,69 @@ steps:
               region: "{{ foreach.item.region }}"
               account:
                 id: "{{ foreach.item.account_id }}"
+
+  - name: query_potentially_unused_services
+    type: elasticsearch.esql.query
+    with:
+      format: json
+      query: |
+        FROM metrics-aws.ecs_metrics*
+        | WHERE @timestamp > NOW() - 14 days
+        | STATS observations = COUNT(*),
+                cpu = AVG(aws.ecs.metrics.CPUUtilization.avg),
+                memory = AVG(aws.ecs.metrics.MemoryUtilization.avg)
+            BY cluster = aws.dimensions.ClusterName,
+               service = aws.dimensions.ServiceName,
+               cloud.region, cloud.account.id
+        | WHERE service IS NOT NULL
+            AND cpu IS NOT NULL
+            AND memory IS NOT NULL
+            AND cpu < 1
+            AND memory < 5
+        | LIMIT 200
+
+  - name: map_potentially_unused_services
+    type: data.map
+    items: "${{ steps.query_potentially_unused_services.output.values }}"
+    with:
+      fields:
+        observations: "{{ item[0] }}"
+        cpu: "{{ item[1] }}"
+        memory: "{{ item[2] }}"
+        cluster: "{{ item[3] }}"
+        service: "{{ item[4] }}"
+        region: "{{ item[5] }}"
+        account_id: "{{ item[6] }}"
+
+  - name: publish_potentially_unused_services
+    type: foreach
+    foreach: "${{ steps.map_potentially_unused_services.output }}"
+    steps:
+      - name: index_potentially_unused_service
+        type: elasticsearch.index
+        with:
+          index: aws-cockpit-recommendations
+          id: "{{ foreach.item.cluster }}-{{ foreach.item.service }}-potentially-unused"
+          document:
+            "@timestamp": "{{ now | date_to_xmlschema }}"
+            category: unused_resource
+            severity: medium
+            confidence: medium
+            activity_status: potentially_unused
+            lookback_days: 14
+            metric_name: avg_cpu_utilization_14d
+            metric_value: "{{ foreach.item.cpu }}"
+            threshold: 1
+            recommendation: >-
+              ECS service {{ foreach.item.service }} in cluster {{
+              foreach.item.cluster }} averaged less than 1% CPU and 5% memory
+              over 14 days across {{ foreach.item.observations }} observed
+              metric documents. Confirm traffic patterns, schedules, and owner
+              requirements before scaling to zero or removing it.
+            resource:
+              type: ecs_service
+              name: "{{ foreach.item.service }}"
+            cloud:
+              region: "{{ foreach.item.region }}"
+              account:
+                id: "{{ foreach.item.account_id }}"

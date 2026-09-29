@@ -83,3 +83,71 @@ steps:
               region: "{{ foreach.item.region }}"
               account:
                 id: "{{ foreach.item.account_id }}"
+
+  - name: query_potentially_unused_databases
+    type: elasticsearch.esql.query
+    with:
+      format: json
+      query: |
+        FROM metrics-aws.rds*
+        | WHERE @timestamp > NOW() - 14 days
+        | STATS observations = COUNT(*),
+                connections = MAX(aws.rds.database_connections),
+                read_iops = MAX(aws.rds.read_io.ops_per_sec),
+                write_iops = MAX(aws.rds.write_io.ops_per_sec)
+            BY instance = aws.dimensions.DBInstanceIdentifier,
+               cloud.region, cloud.account.id
+        | WHERE instance IS NOT NULL
+            AND connections IS NOT NULL
+            AND read_iops IS NOT NULL
+            AND write_iops IS NOT NULL
+            AND connections == 0
+            AND read_iops == 0
+            AND write_iops == 0
+        | LIMIT 200
+
+  - name: map_potentially_unused_databases
+    type: data.map
+    items: "${{ steps.query_potentially_unused_databases.output.values }}"
+    with:
+      fields:
+        observations: "{{ item[0] }}"
+        connections: "{{ item[1] }}"
+        read_iops: "{{ item[2] }}"
+        write_iops: "{{ item[3] }}"
+        instance: "{{ item[4] }}"
+        region: "{{ item[5] }}"
+        account_id: "{{ item[6] }}"
+
+  - name: publish_potentially_unused_databases
+    type: foreach
+    foreach: "${{ steps.map_potentially_unused_databases.output }}"
+    steps:
+      - name: index_potentially_unused_database
+        type: elasticsearch.index
+        with:
+          index: aws-cockpit-recommendations
+          id: "{{ foreach.item.instance }}-potentially-unused"
+          document:
+            "@timestamp": "{{ now | date_to_xmlschema }}"
+            category: unused_resource
+            severity: medium
+            confidence: high
+            activity_status: potentially_unused
+            lookback_days: 14
+            metric_name: max_database_connections_14d
+            metric_value: "{{ foreach.item.connections }}"
+            threshold: 0
+            recommendation: >-
+              RDS instance {{ foreach.item.instance }} had no database
+              connections and no read or write I/O over 14 days across {{
+              foreach.item.observations }} observed metric documents. Confirm
+              backups, scheduled jobs, and owner requirements before stopping
+              or removing it.
+            resource:
+              type: rds_instance
+              name: "{{ foreach.item.instance }}"
+            cloud:
+              region: "{{ foreach.item.region }}"
+              account:
+                id: "{{ foreach.item.account_id }}"

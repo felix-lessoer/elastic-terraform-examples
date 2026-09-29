@@ -82,3 +82,66 @@ steps:
               region: "{{ foreach.item.region }}"
               account:
                 id: "{{ foreach.item.account_id }}"
+
+  - name: query_potentially_unused_tables
+    type: elasticsearch.esql.query
+    with:
+      format: json
+      query: |
+        FROM metrics-aws.dynamodb*
+        | WHERE @timestamp > NOW() - 14 days
+        | STATS observations = COUNT(*),
+                reads = SUM(aws.dynamodb.metrics.ConsumedReadCapacityUnits.sum),
+                writes = SUM(aws.dynamodb.metrics.ConsumedWriteCapacityUnits.sum)
+            BY table = aws.dimensions.TableName,
+               cloud.region, cloud.account.id
+        | WHERE table IS NOT NULL
+            AND reads IS NOT NULL
+            AND writes IS NOT NULL
+            AND reads == 0
+            AND writes == 0
+        | LIMIT 200
+
+  - name: map_potentially_unused_tables
+    type: data.map
+    items: "${{ steps.query_potentially_unused_tables.output.values }}"
+    with:
+      fields:
+        observations: "{{ item[0] }}"
+        reads: "{{ item[1] }}"
+        writes: "{{ item[2] }}"
+        table: "{{ item[3] }}"
+        region: "{{ item[4] }}"
+        account_id: "{{ item[5] }}"
+
+  - name: publish_potentially_unused_tables
+    type: foreach
+    foreach: "${{ steps.map_potentially_unused_tables.output }}"
+    steps:
+      - name: index_potentially_unused_table
+        type: elasticsearch.index
+        with:
+          index: aws-cockpit-recommendations
+          id: "{{ foreach.item.table }}-potentially-unused"
+          document:
+            "@timestamp": "{{ now | date_to_xmlschema }}"
+            category: unused_resource
+            severity: medium
+            confidence: high
+            activity_status: potentially_unused
+            lookback_days: 14
+            metric_name: consumed_capacity_units_14d
+            metric_value: 0
+            threshold: 0
+            recommendation: >-
+              DynamoDB table {{ foreach.item.table }} consumed no read or write
+              capacity over 14 days across {{ foreach.item.observations }}
+              observed metric documents. Confirm application, backup, and
+              retention requirements before removing it.
+            resource:
+              type: dynamodb_table
+              name: "{{ foreach.item.table }}"
+            cloud:
+              region: "{{ foreach.item.region }}"
+              account:
+                id: "{{ foreach.item.account_id }}"

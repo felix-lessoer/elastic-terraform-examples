@@ -36,7 +36,7 @@ steps:
         | EVAL category = CASE(cpu > 0.8, "performance_risk", free_storage < 10737418240, "capacity_risk", "memory_pressure"),
                severity = CASE(free_storage < 5368709120 OR free_memory < 268435456, "high", "medium"),
                metric_name = CASE(cpu > 0.8, "cpu_utilization", free_storage < 10737418240, "free_storage_bytes", "free_memory_bytes"),
-               metric_value = CASE(cpu > 0.8, cpu, free_storage < 10737418240, free_storage, free_memory)
+               metric_value = CASE(cpu > 0.8, cpu, free_storage < 10737418240, TO_DOUBLE(free_storage), TO_DOUBLE(free_memory))
         | LIMIT 200
 
   - name: normalize_metrics

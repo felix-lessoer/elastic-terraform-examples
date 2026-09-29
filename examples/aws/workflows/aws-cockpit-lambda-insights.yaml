@@ -36,7 +36,7 @@ steps:
         | WHERE function IS NOT NULL AND (errors > 0 OR throttles > 0 OR duration > 3000)
         | EVAL severity = CASE(errors > 0 OR throttles > 0, "high", "medium"),
                metric_name = CASE(errors > 0, "errors", throttles > 0, "throttles", "duration_ms"),
-               metric_value = CASE(errors > 0, errors, throttles > 0, throttles, duration)
+               metric_value = CASE(errors > 0, TO_DOUBLE(errors), throttles > 0, TO_DOUBLE(throttles), duration)
         | LIMIT 200
 
   - name: normalize_metrics

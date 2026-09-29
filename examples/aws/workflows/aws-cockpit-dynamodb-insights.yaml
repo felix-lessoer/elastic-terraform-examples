@@ -35,7 +35,7 @@ steps:
         | WHERE table IS NOT NULL AND (throttles > 0 OR errors > 0 OR latency > 100)
         | EVAL severity = CASE(errors > 0 OR throttles > 100, "high", "medium"),
                metric_name = CASE(errors > 0, "system_errors", throttles > 0, "throttled_requests", "latency_ms"),
-               metric_value = CASE(errors > 0, errors, throttles > 0, throttles, latency)
+               metric_value = CASE(errors > 0, TO_DOUBLE(errors), throttles > 0, TO_DOUBLE(throttles), latency)
         | LIMIT 200
 
   - name: normalize_metrics

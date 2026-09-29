@@ -35,7 +35,7 @@ steps:
         | WHERE load_balancer IS NOT NULL AND (errors > 0 OR unhealthy > 0 OR latency > 2)
         | EVAL severity = CASE(unhealthy > 0 OR errors > 100, "high", "medium"),
                metric_name = CASE(unhealthy > 0, "unhealthy_hosts", errors > 0, "elb_5xx", "target_response_seconds"),
-               metric_value = CASE(unhealthy > 0, unhealthy, errors > 0, errors, latency)
+               metric_value = CASE(unhealthy > 0, TO_DOUBLE(unhealthy), errors > 0, TO_DOUBLE(errors), latency)
         | LIMIT 200
 
   - name: normalize_metrics

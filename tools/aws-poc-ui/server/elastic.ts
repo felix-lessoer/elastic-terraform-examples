@@ -123,7 +123,7 @@ export async function refreshElasticInsights(
       '--password',
       details.password,
       '--dashboard-id',
-      '752a1ac0-26e4-49d8-a2b4-5483068809b9',
+      '45f84000-d68b-4bb1-9df2-09223fba6b29',
     ],
     details,
     write,

@@ -6,7 +6,7 @@ Imports a pinned Kibana NDJSON export so Terraform owns the live cockpit layout
 | Cloud | NDJSON | Dashboard ID | Notes |
 | --- | --- | --- | --- |
 | GCP | `cockpit.ndjson` | `fcf1246c-6ee2-4c91-94f8-f034e8d345bc` | Latest Observability export |
-| AWS | `cockpit-aws.ndjson` | `752a1ac0-26e4-49d8-a2b4-5483068809b9` | Latest Observability export |
+| AWS | `cockpit-aws.ndjson` | `45f84000-d68b-4bb1-9df2-09223fba6b29` | Latest Observability export |
 | Azure | `cockpit-azure.ndjson` | `b8e4c2f1-9a7d-4e3b-8c5a-1d6f0e9b2a47` | Built from the GCP/AWS cockpit template |
 
 Data panels use Kibana `vis` (Lens attributes with ES|QL `textBased`
@@ -37,7 +37,7 @@ curl -u admin:"$GCP_OBS_PASSWORD" -H 'kbn-xsrf: true' -H 'content-type: applicat
 # AWS
 curl -u admin:"$AWS_OBS_PASSWORD" -H 'kbn-xsrf: true' -H 'content-type: application/json' \
   -X POST "$AWS_OBS_KIBANA/api/saved_objects/_export" \
-  -d '{"objects":[{"type":"dashboard","id":"752a1ac0-26e4-49d8-a2b4-5483068809b9"}],"includeReferencesDeep":true,"excludeExportDetails":true}' \
+  -d '{"objects":[{"type":"dashboard","id":"45f84000-d68b-4bb1-9df2-09223fba6b29"}],"includeReferencesDeep":true,"excludeExportDetails":true}' \
   -o modules/cockpit-dashboard/cockpit-aws.ndjson
 
 # Azure (rebuild from the GCP template)

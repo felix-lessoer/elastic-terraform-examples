@@ -977,7 +977,7 @@ module "cockpit" {
   elasticsearch_password = module.observability.password
   title                  = "AWS Observability Cockpit"
   description            = "AWS service health and metrics collected across all regions."
-  dashboard_id           = "752a1ac0-26e4-49d8-a2b4-5483068809b9"
+  dashboard_id           = "45f84000-d68b-4bb1-9df2-09223fba6b29"
   ndjson_path            = "${path.module}/../../modules/cockpit-dashboard/cockpit-aws.ndjson"
   ml_jobs                = module.observability_seed.ml_jobs
   ai_agents              = module.observability_seed.ai_agents

@@ -3,7 +3,7 @@ from pathlib import Path
 import unittest
 
 
-DASHBOARD_ID = "752a1ac0-26e4-49d8-a2b4-5483068809b9"
+DASHBOARD_ID = "45f84000-d68b-4bb1-9df2-09223fba6b29"
 NDJSON = Path(__file__).resolve().parents[1] / "cockpit-aws.ndjson"
 
 
@@ -26,7 +26,18 @@ class AwsCockpitSavedObjectContractTests(unittest.TestCase):
         )
 
     def test_export_contains_the_terraform_owned_dashboard(self):
-        self.assertEqual(len(self.objects), 1)
+        dashboards = [
+            item for item in self.objects if item.get("type") == "dashboard"
+        ]
+        self.assertEqual(len(dashboards), 1)
+        exported_references = {
+            (item.get("type"), item.get("id")) for item in self.objects
+        }
+        for reference in self.dashboard.get("references", []):
+            self.assertIn(
+                (reference["type"], reference["id"]),
+                exported_references,
+            )
         self.assertIn(
             "Insight Engine",
             self.dashboard["attributes"]["description"],
@@ -48,8 +59,10 @@ class AwsCockpitSavedObjectContractTests(unittest.TestCase):
         panel = next(
             panel
             for panel in self.panels
-            if panel.get("panelIndex")
-            == "c0ffee10-26e4-49d8-a2b4-548306880910"
+            if "FROM aws-cockpit-insight-summary"
+            in json.dumps(panel)
+            and "KEEP @timestamp, priority, headline"
+            in json.dumps(panel)
         )
         query = json.dumps(panel)
         self.assertIn("aws-cockpit-insight-summary", query)

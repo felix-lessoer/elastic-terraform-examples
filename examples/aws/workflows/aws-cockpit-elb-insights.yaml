@@ -78,6 +78,8 @@ steps:
             resource:
               type: load_balancer
               name: "{{ foreach.item.load_balancer }}"
+              id: "{{ foreach.item.load_balancer }}"
+              key: "{{ foreach.item.region }}:load_balancer:{{ foreach.item.load_balancer }}"
             cloud:
               region: "{{ foreach.item.region }}"
               account:
@@ -137,6 +139,8 @@ steps:
             resource:
               type: load_balancer
               name: "{{ foreach.item.load_balancer }}"
+              id: "{{ foreach.item.load_balancer }}"
+              key: "{{ foreach.item.region }}:load_balancer:{{ foreach.item.load_balancer }}"
             cloud:
               region: "{{ foreach.item.region }}"
               account:

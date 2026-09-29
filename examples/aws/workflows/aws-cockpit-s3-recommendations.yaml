@@ -68,6 +68,8 @@ steps:
             resource:
               type: s3_bucket
               name: "{{ foreach.item.bucket }}"
+              id: "{{ foreach.item.bucket }}"
+              key: "{{ foreach.item.region }}:s3_bucket:{{ foreach.item.bucket }}"
             cloud:
               region: "{{ foreach.item.region }}"
               account:

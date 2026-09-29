@@ -75,6 +75,8 @@ steps:
             resource:
               type: ebs_volume
               name: "{{ foreach.item.volume }}"
+              id: "{{ foreach.item.volume }}"
+              key: "{{ foreach.item.region }}:ebs_volume:{{ foreach.item.volume }}"
             cloud:
               region: "{{ foreach.item.region }}"
               account:
@@ -138,6 +140,8 @@ steps:
             resource:
               type: ebs_volume
               name: "{{ foreach.item.volume }}"
+              id: "{{ foreach.item.volume }}"
+              key: "{{ foreach.item.region }}:ebs_volume:{{ foreach.item.volume }}"
             cloud:
               region: "{{ foreach.item.region }}"
               account:

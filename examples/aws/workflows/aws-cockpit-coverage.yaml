@@ -50,3 +50,5 @@ steps:
             datasets:
               - "{{ foreach.item.dataset }}"
             detail: "{{ foreach.item.docs }} docs"
+            lookup:
+              key: "{{ foreach.item.dataset }}"

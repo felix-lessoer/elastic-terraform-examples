@@ -27,6 +27,10 @@ CPU_LOW = 5.0
 CPU_HIGH = 85.0
 
 
+def resource_key(region: object, resource_type: str, resource_id: object) -> str:
+    return f"{region or 'global'}:{resource_type}:{resource_id}"
+
+
 def req(method: str, url: str, user: str, password: str, body: dict | None = None):
     data = None if body is None else json.dumps(body).encode()
     headers = {
@@ -76,8 +80,10 @@ def ensure_index(es: str, user: str, password: str) -> None:
                 },
                 "resource": {
                     "properties": {
+                        "key": {"type": "keyword"},
                         "name": {"type": "keyword"},
                         "type": {"type": "keyword"},
+                        "id": {"type": "keyword"},
                     }
                 },
                 "cloud": {
@@ -146,6 +152,7 @@ FROM metrics-aws.ec2_metrics*
         status_fail = MAX(`aws.ec2.metrics.StatusCheckFailed.avg`),
         samples = COUNT(*)
   BY instance = COALESCE(cloud.instance.name, cloud.instance.id),
+     instance_id = cloud.instance.id,
      az = cloud.availability_zone,
      type = cloud.machine.type,
      account = cloud.account.id,
@@ -156,6 +163,7 @@ FROM metrics-aws.ec2_metrics*
 
     for row in ec2:
         name = row.get("instance") or "unknown"
+        instance_id = row.get("instance_id") or name
         avg = float(row.get("avg_cpu") or 0)
         fail = float(row.get("status_fail") or 0)
         cloud = {
@@ -180,7 +188,14 @@ FROM metrics-aws.ec2_metrics*
                             f"(StatusCheckFailed avg {fail} over 24h) — investigate "
                             "instance / system health before relying on this host."
                         ),
-                        "resource": {"type": "ec2_instance", "name": name},
+                        "resource": {
+                            "type": "ec2_instance",
+                            "name": name,
+                            "id": instance_id,
+                            "key": resource_key(
+                                row.get("region"), "ec2_instance", instance_id
+                            ),
+                        },
                         "cloud": cloud,
                     },
                 )
@@ -202,7 +217,14 @@ FROM metrics-aws.ec2_metrics*
                             f"(avg CPU {avg:.2f}% over 24h) — consider downsizing or stopping "
                             "this instance to save cost."
                         ),
-                        "resource": {"type": "ec2_instance", "name": name},
+                        "resource": {
+                            "type": "ec2_instance",
+                            "name": name,
+                            "id": instance_id,
+                            "key": resource_key(
+                                row.get("region"), "ec2_instance", instance_id
+                            ),
+                        },
                         "cloud": cloud,
                     },
                 )
@@ -223,7 +245,14 @@ FROM metrics-aws.ec2_metrics*
                             f"(avg CPU {avg:.2f}% over 24h) — consider resizing to a larger "
                             "instance type to avoid throttling or outages."
                         ),
-                        "resource": {"type": "ec2_instance", "name": name},
+                        "resource": {
+                            "type": "ec2_instance",
+                            "name": name,
+                            "id": instance_id,
+                            "key": resource_key(
+                                row.get("region"), "ec2_instance", instance_id
+                            ),
+                        },
                         "cloud": cloud,
                     },
                 )
@@ -268,7 +297,14 @@ FROM metrics-aws.s3_daily_storage*
                         + ") — confirm it is still needed or remove it to reduce clutter and "
                         "accidental exposure risk."
                     ),
-                    "resource": {"type": "s3_bucket", "name": name},
+                    "resource": {
+                        "type": "s3_bucket",
+                        "name": name,
+                        "id": name,
+                        "key": resource_key(
+                            row.get("region"), "s3_bucket", name
+                        ),
+                    },
                     "cloud": {
                         "region": row.get("region"),
                         "account": {"id": row.get("account")},
@@ -296,6 +332,10 @@ FROM metrics-aws.s3_daily_storage*
                     "resource": {
                         "type": "observability_input",
                         "name": "AWS metrics",
+                        "id": "AWS metrics",
+                        "key": resource_key(
+                            "global", "observability_input", "AWS metrics"
+                        ),
                     },
                     "cloud": {},
                 },

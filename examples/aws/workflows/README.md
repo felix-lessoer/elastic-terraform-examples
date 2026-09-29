@@ -45,6 +45,25 @@ Triggers: workflows = manual + scheduled every `1h`. Seeder = every apply
 Potentially unused findings require observed activity metrics throughout their
 lookback window. Missing telemetry is left unknown, not classified as unused.
 
+## Lookup enrichment
+
+Workflow-maintained reference snapshots use Elasticsearch `lookup` index mode:
+
+- `aws-cockpit-assets`
+- `aws-cockpit-recommendations`
+- `aws-cockpit-coverage`
+- `aws-cockpit-dataset-coverage`
+- `aws-cockpit-insight-summary`
+
+Asset and recommendation documents share a stable `resource.key`, so ES|QL can
+enrich assets with zero, one, or multiple current insight categories:
+
+```esql
+FROM aws-cockpit-assets
+| LOOKUP JOIN aws-cockpit-recommendations ON resource.key
+| KEEP resource.name, resource.type, cloud.region, category, severity, recommendation
+```
+
 ## Re-export / refresh from live Kibana
 
 ```bash

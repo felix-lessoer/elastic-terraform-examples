@@ -80,6 +80,8 @@ steps:
             resource:
               type: ecs_service
               name: "{{ foreach.item.service }}"
+              id: "{{ foreach.item.cluster }}/{{ foreach.item.service }}"
+              key: "{{ foreach.item.region }}:ecs_service:{{ foreach.item.cluster }}/{{ foreach.item.service }}"
             cloud:
               region: "{{ foreach.item.region }}"
               account:
@@ -146,6 +148,8 @@ steps:
             resource:
               type: ecs_service
               name: "{{ foreach.item.service }}"
+              id: "{{ foreach.item.cluster }}/{{ foreach.item.service }}"
+              key: "{{ foreach.item.region }}:ecs_service:{{ foreach.item.cluster }}/{{ foreach.item.service }}"
             cloud:
               region: "{{ foreach.item.region }}"
               account:

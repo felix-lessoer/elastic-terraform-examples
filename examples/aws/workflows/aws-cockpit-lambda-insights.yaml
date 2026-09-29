@@ -80,6 +80,8 @@ steps:
             resource:
               type: lambda_function
               name: "{{ foreach.item.function }}"
+              id: "{{ foreach.item.function }}"
+              key: "{{ foreach.item.region }}:lambda_function:{{ foreach.item.function }}"
             cloud:
               region: "{{ foreach.item.region }}"
               account:
@@ -139,6 +141,8 @@ steps:
             resource:
               type: lambda_function
               name: "{{ foreach.item.function }}"
+              id: "{{ foreach.item.function }}"
+              key: "{{ foreach.item.region }}:lambda_function:{{ foreach.item.function }}"
             cloud:
               region: "{{ foreach.item.region }}"
               account:

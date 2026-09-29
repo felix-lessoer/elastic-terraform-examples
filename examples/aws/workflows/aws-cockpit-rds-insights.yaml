@@ -79,6 +79,8 @@ steps:
             resource:
               type: rds_instance
               name: "{{ foreach.item.instance }}"
+              id: "{{ foreach.item.instance }}"
+              key: "{{ foreach.item.region }}:rds_instance:{{ foreach.item.instance }}"
             cloud:
               region: "{{ foreach.item.region }}"
               account:
@@ -147,6 +149,8 @@ steps:
             resource:
               type: rds_instance
               name: "{{ foreach.item.instance }}"
+              id: "{{ foreach.item.instance }}"
+              key: "{{ foreach.item.region }}:rds_instance:{{ foreach.item.instance }}"
             cloud:
               region: "{{ foreach.item.region }}"
               account:

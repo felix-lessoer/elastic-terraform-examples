@@ -64,14 +64,25 @@ class AwsWorkflowContractTests(unittest.TestCase):
             self.assertNotIn("%Y%m%dT%H%M", source)
 
     def test_ec2_fanout_is_limited_to_actionable_resources(self):
-        source = (
-            DIRECTORY / "aws-cockpit-ec2-recommendations.yaml"
-        ).read_text()
+        workflow = self.workflows["aws-cockpit-ec2-recommendations.yaml"]
+        source = (DIRECTORY / "aws-cockpit-ec2-recommendations.yaml").read_text()
         self.assertIn(
             "max_status_failed > 0 OR avg_cpu < 5 OR avg_cpu > 85",
             source,
         )
         self.assertIn("| LIMIT 200", source)
+        process = next(
+            step for step in workflow["steps"]
+            if step["name"] == "process_metrics"
+        )
+        self.assertEqual(
+            {step["name"] for step in process["steps"]},
+            {
+                "check_status_failed",
+                "check_underutilized_cpu",
+                "check_near_capacity_cpu",
+            },
+        )
 
     def test_unused_resource_detections_require_observed_activity_metrics(self):
         metric_workflows = (
@@ -97,6 +108,32 @@ class AwsWorkflowContractTests(unittest.TestCase):
         self.assertIn("category: unused_resource", s3_source)
         self.assertIn("activity_status: potentially_unused", s3_source)
         self.assertIn("lookback_days: 7", s3_source)
+
+    def test_reference_documents_expose_lookup_join_keys(self):
+        recommendation_workflows = (
+            "aws-cockpit-ec2-recommendations.yaml",
+            "aws-cockpit-s3-recommendations.yaml",
+            "aws-cockpit-lambda-insights.yaml",
+            "aws-cockpit-rds-insights.yaml",
+            "aws-cockpit-elb-insights.yaml",
+            "aws-cockpit-dynamodb-insights.yaml",
+            "aws-cockpit-ecs-insights.yaml",
+            "aws-cockpit-ebs-insights.yaml",
+        )
+        for name in recommendation_workflows:
+            with self.subTest(workflow=name):
+                source = (DIRECTORY / name).read_text()
+                self.assertIn("key: \"{{ foreach.item.region }}:", source)
+
+        assets = (DIRECTORY / "aws-cockpit-assets.yaml").read_text()
+        self.assertIn("resource.key", assets)
+        self.assertIn('key: "{{ foreach.item.resource_key }}"', assets)
+        coverage = (DIRECTORY / "aws-cockpit-coverage.yaml").read_text()
+        self.assertIn('key: "{{ foreach.item.dataset }}"', coverage)
+        summary = (
+            DIRECTORY / "aws-cockpit-insight-engine-summary.yaml"
+        ).read_text()
+        self.assertIn("key: latest", summary)
 
 
 if __name__ == "__main__":

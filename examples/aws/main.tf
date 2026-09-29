@@ -985,6 +985,35 @@ module "cockpit" {
   depends_on = [module.stack, module.observability_seed]
 }
 
+# Lookup mode must be selected when an index is created. Migrate the small,
+# workflow-maintained reference snapshots before workflows write to them.
+resource "terraform_data" "prepare_aws_lookup_indices" {
+  count = var.enable_cockpit_dashboard ? 1 : 0
+
+  triggers_replace = [
+    filesha256("${path.module}/../../modules/cockpit-dashboard/scripts/prepare_aws_lookup_indices.py"),
+    module.observability.elasticsearch_endpoint,
+  ]
+
+  provisioner "local-exec" {
+    interpreter = ["/bin/bash", "-c"]
+    environment = {
+      OBS_ES   = module.observability.elasticsearch_endpoint
+      OBS_USER = module.observability.username
+      OBS_PASS = module.observability.password
+    }
+    command = <<-EOT
+      set -euo pipefail
+      python3 "${path.module}/../../modules/cockpit-dashboard/scripts/prepare_aws_lookup_indices.py" \
+        --es-url "$OBS_ES" \
+        --user "$OBS_USER" \
+        --password "$OBS_PASS"
+    EOT
+  }
+
+  depends_on = [module.stack, module.observability_seed, module.cockpit]
+}
+
 # Deploy every pinned workflow definition in examples/aws/workflows into the
 # Observability project. The directory remains the source of truth.
 module "workflows" {
@@ -997,7 +1026,12 @@ module "workflows" {
   workflows_dir          = "${path.module}/workflows"
   execute_on_apply       = var.execute_workflows_on_apply
 
-  depends_on = [module.stack, module.observability_seed, module.cockpit]
+  depends_on = [
+    module.stack,
+    module.observability_seed,
+    module.cockpit,
+    terraform_data.prepare_aws_lookup_indices,
+  ]
 }
 
 # Seed the local Insight Engine after integrations,

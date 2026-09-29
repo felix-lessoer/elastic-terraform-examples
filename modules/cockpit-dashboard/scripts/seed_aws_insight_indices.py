@@ -68,6 +68,7 @@ INSIGHT_SUMMARY_MAPPINGS = {
     "action_1": {"type": "keyword", "ignore_above": 2048},
     "action_2": {"type": "keyword", "ignore_above": 2048},
     "action_3": {"type": "keyword", "ignore_above": 2048},
+    "lookup": {"properties": {"key": {"type": "keyword"}}},
 }
 
 # Canonical service tiles for the Datadog-style coverage matrix.
@@ -157,6 +158,11 @@ def bulk_index(es: str, user: str, password: str, index: str, docs: list[tuple[s
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+
+def resource_key(region: object, resource_type: str, resource_id: object) -> str:
+    """Return the key shared by asset and recommendation lookup indices."""
+    return f"{region or 'global'}:{resource_type}:{resource_id}"
 
 
 def scalar(rows: list[dict], key: str = "c", default: float | int = 0):
@@ -280,6 +286,7 @@ def seed_coverage(
             "datasets": {"type": "keyword"},
             "detail": {"type": "keyword"},
             "link": {"type": "keyword"},
+            "lookup": {"properties": {"key": {"type": "keyword"}}},
         },
     )
     # Merge OBS + SEC dataset stats (wildcard + explicit probes for sparse streams)
@@ -448,6 +455,7 @@ def seed_coverage(
                     "datasets": svc["datasets"],
                     "detail": detail,
                     "link": link,
+                    "lookup": {"key": svc["service"]},
                 },
             )
         )
@@ -479,6 +487,8 @@ def manifest_asset_docs(manifest_path: str, timestamp: str) -> list[tuple[str, d
         "aws.s3.bucket": "s3_bucket",
         "aws.lambda.function": "lambda_function",
         "aws.rds.instance": "rds_instance",
+        "aws.ecs.service": "ecs_service",
+        "aws.elbv2.load_balancer": "load_balancer",
         "aws.eks.cluster": "eks_cluster",
     }
     for resource in manifest.get("resources", []):
@@ -490,6 +500,20 @@ def manifest_asset_docs(manifest_path: str, timestamp: str) -> list[tuple[str, d
             or resource.get("name")
             or resource.get("arn")
         )
+        if resource.get("type") == "aws.ecs.service":
+            cluster = (
+                resource.get("configuration", {})
+                .get("cluster_arn", "")
+                .rsplit("/", 1)[-1]
+            )
+            resource_id = f"{cluster}/{resource.get('name') or resource_id}"
+        elif resource.get("type") == "aws.elbv2.load_balancer":
+            arn = resource.get("arn") or ""
+            resource_id = (
+                arn.split(":loadbalancer/", 1)[-1]
+                if ":loadbalancer/" in arn
+                else resource_id
+            )
         docs.append(
             (
                 f"{resource_type}-{resource_id}",
@@ -499,6 +523,9 @@ def manifest_asset_docs(manifest_path: str, timestamp: str) -> list[tuple[str, d
                         "type": resource_type,
                         "name": resource.get("name") or resource_id,
                         "id": resource_id,
+                        "key": resource_key(
+                            resource.get("region"), resource_type, resource_id
+                        ),
                     },
                     "cloud": {
                         "region": resource.get("region"),
@@ -541,6 +568,11 @@ def aws_s3_asset_docs(timestamp: str) -> list[tuple[str, dict]]:
                     "type": "s3_bucket",
                     "name": bucket["Name"],
                     "id": bucket["Name"],
+                    "key": resource_key(
+                        bucket.get("BucketRegion") or "global",
+                        "s3_bucket",
+                        bucket["Name"],
+                    ),
                 },
                 "cloud": {
                     "region": bucket.get("BucketRegion") or "global",
@@ -572,6 +604,7 @@ def seed_assets(
             "@timestamp": {"type": "date"},
             "resource": {
                 "properties": {
+                    "key": {"type": "keyword"},
                     "type": {"type": "keyword"},
                     "name": {"type": "keyword"},
                     "id": {"type": "keyword"},
@@ -611,7 +644,14 @@ def seed_assets(
                 f"ec2-{rid}",
                 {
                     "@timestamp": ts,
-                    "resource": {"type": "ec2_instance", "name": name, "id": rid},
+                    "resource": {
+                        "type": "ec2_instance",
+                        "name": name,
+                        "id": rid,
+                        "key": resource_key(
+                            row.get("cloud.region"), "ec2_instance", rid
+                        ),
+                    },
                     "cloud": {
                         "region": row.get("cloud.region"),
                         "availability_zone": row.get("cloud.availability_zone"),
@@ -642,7 +682,14 @@ def seed_assets(
                 f"s3-{name}",
                 {
                     "@timestamp": ts,
-                    "resource": {"type": "s3_bucket", "name": name, "id": name},
+                    "resource": {
+                        "type": "s3_bucket",
+                        "name": name,
+                        "id": name,
+                        "key": resource_key(
+                            row.get("cloud.region"), "s3_bucket", name
+                        ),
+                    },
                     "cloud": {
                         "region": row.get("cloud.region"),
                         "account": {"id": row.get("cloud.account.id")},

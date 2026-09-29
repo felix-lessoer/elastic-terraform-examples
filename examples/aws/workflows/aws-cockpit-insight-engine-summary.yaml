@@ -113,3 +113,5 @@ steps:
         action_1: "{{ steps.agent_summary.output.structured_output.action_1 }}"
         action_2: "{{ steps.agent_summary.output.structured_output.action_2 }}"
         action_3: "{{ steps.agent_summary.output.structured_output.action_3 }}"
+        lookup:
+          key: latest

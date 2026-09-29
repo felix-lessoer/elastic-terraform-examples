@@ -78,6 +78,8 @@ steps:
             resource:
               type: dynamodb_table
               name: "{{ foreach.item.table }}"
+              id: "{{ foreach.item.table }}"
+              key: "{{ foreach.item.region }}:dynamodb_table:{{ foreach.item.table }}"
             cloud:
               region: "{{ foreach.item.region }}"
               account:
@@ -141,6 +143,8 @@ steps:
             resource:
               type: dynamodb_table
               name: "{{ foreach.item.table }}"
+              id: "{{ foreach.item.table }}"
+              key: "{{ foreach.item.region }}:dynamodb_table:{{ foreach.item.table }}"
             cloud:
               region: "{{ foreach.item.region }}"
               account:

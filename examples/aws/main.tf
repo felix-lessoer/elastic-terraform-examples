@@ -907,6 +907,10 @@ module "elastic_agent" {
   enrollment_token     = module.stack.enrollment_token
   agent_version        = var.elastic_agent_version
   iam_instance_profile = module.aws_cloud.agent_instance_profile_name
+  # Some Elastic Agent AWS inputs cannot acquire IMDSv2 credentials. Limit
+  # the compatibility fallback to the local guided PoC; direct Terraform keeps
+  # the module's hardened IMDSv2-only default.
+  metadata_http_tokens = var.deployment_creator_mode ? "optional" : "required"
 }
 
 resource "terraform_data" "fleet_agent_reconciliation" {

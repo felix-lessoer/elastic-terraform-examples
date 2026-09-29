@@ -1,15 +1,21 @@
-# Pinned Kibana Workflow YAML — AWS cockpit insight fabric
+# Pinned Kibana Workflow YAML — AWS Insight Engine
 
-These workflows (plus the cross-project seeder) power Datadog-comparable
-insights on the Observability cockpit. Filenames are stable `workflow_id`s
-deployed by `module.workflows_obs`.
+These workflows turn raw AWS data into durable insights and an Agent Builder
+briefing on the Observability cockpit. Filenames are stable `workflow_id`s.
 
 | File | Writes to | Purpose |
 | --- | --- | --- |
-| `aws-cockpit-ec2-recommendations.yaml` | `aws-cockpit-recommendations` | EC2 underutilized / hot CPU + failed status checks |
-| `aws-cockpit-s3-recommendations.yaml` | `aws-cockpit-recommendations` | Empty / near-empty S3 buckets |
+| `aws-cockpit-ec2-recommendations.yaml` | `aws-cockpit-recommendations` | EC2 utilization, status checks, and potentially unused instances |
+| `aws-cockpit-s3-recommendations.yaml` | `aws-cockpit-recommendations` | Potentially unused empty S3 buckets |
+| `aws-cockpit-lambda-insights.yaml` | `aws-cockpit-recommendations` | Lambda reliability, latency, and potentially unused functions |
+| `aws-cockpit-rds-insights.yaml` | `aws-cockpit-recommendations` | RDS capacity pressure and potentially unused databases |
+| `aws-cockpit-elb-insights.yaml` | `aws-cockpit-recommendations` | ALB reliability and potentially unused load balancers |
+| `aws-cockpit-dynamodb-insights.yaml` | `aws-cockpit-recommendations` | DynamoDB reliability and potentially unused tables |
+| `aws-cockpit-ecs-insights.yaml` | `aws-cockpit-recommendations` | ECS utilization, memory pressure, and potentially unused services |
+| `aws-cockpit-ebs-insights.yaml` | `aws-cockpit-recommendations` | EBS performance and potentially unused volumes |
 | `aws-cockpit-assets.yaml` | `aws-cockpit-assets` | Live EC2/S3 inventory from metrics |
-| `aws-cockpit-coverage.yaml` | `aws-cockpit-coverage` | Per-dataset coverage rows (supplemental) |
+| `aws-cockpit-coverage.yaml` | `aws-cockpit-dataset-coverage` | Per-dataset coverage rows (supplemental) |
+| `aws-cockpit-insight-engine-summary.yaml` | `aws-cockpit-insight-summary` | Structured, prioritized summary from the `aws-recs-advisor` agent |
 
 ## Cross-project seeder (Security → Observability)
 
@@ -31,9 +37,32 @@ on apply (`terraform_data.seed_aws_insight_indices`). It mirrors:
 | `aws-cockpit-assets` | EC2 + S3 inventory |
 | `aws-cockpit-health` | mirrored AWS Health events (Security → Observability) |
 | `aws-cockpit-events` | AWS Health + CloudTrail highlights + recommendation churn |
+| `aws-cockpit-insight-summary` | Latest workflow-triggered Agent Builder briefing |
 
 Triggers: workflows = manual + scheduled every `1h`. Seeder = every apply
 (and safe to cron hourly).
+
+Potentially unused findings require observed activity metrics throughout their
+lookback window. Missing telemetry is left unknown, not classified as unused.
+
+## Lookup enrichment
+
+Workflow-maintained reference snapshots use Elasticsearch `lookup` index mode:
+
+- `aws-cockpit-assets`
+- `aws-cockpit-recommendations`
+- `aws-cockpit-coverage`
+- `aws-cockpit-dataset-coverage`
+- `aws-cockpit-insight-summary`
+
+Asset and recommendation documents share a stable `resource.key`, so ES|QL can
+enrich assets with zero, one, or multiple current insight categories:
+
+```esql
+FROM aws-cockpit-assets
+| LOOKUP JOIN aws-cockpit-recommendations ON resource.key
+| KEEP resource.name, resource.type, cloud.region, category, severity, recommendation
+```
 
 ## Re-export / refresh from live Kibana
 

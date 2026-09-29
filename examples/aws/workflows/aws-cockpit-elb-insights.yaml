@@ -1,0 +1,147 @@
+name: AWS Insight Engine — ELB
+id: aws-cockpit-elb-insights
+description: >-
+  Converts ALB target health, 5xx responses, and response latency into current
+  reliability insights in aws-cockpit-recommendations.
+
+triggers:
+  - type: manual
+  - type: scheduled
+    with:
+      every: "1h"
+
+steps:
+  - name: remove_previous_elb_insights
+    type: elasticsearch.request
+    with:
+      method: POST
+      path: /aws-cockpit-recommendations/_delete_by_query?conflicts=proceed&refresh=true
+      body:
+        query:
+          term:
+            resource.type: load_balancer
+
+  - name: query_metrics
+    type: elasticsearch.esql.query
+    with:
+      format: json
+      query: |
+        FROM metrics-aws.elb_metrics*
+        | WHERE @timestamp > NOW() - 24 hours
+        | STATS errors = SUM(aws.applicationelb.metrics.HTTPCode_ELB_5XX_Count.sum),
+                unhealthy = MAX(aws.applicationelb.metrics.UnHealthyHostCount.max),
+                latency = AVG(aws.applicationelb.metrics.TargetResponseTime.avg)
+            BY load_balancer = aws.dimensions.LoadBalancer, cloud.region, cloud.account.id
+        | WHERE load_balancer IS NOT NULL AND (errors > 0 OR unhealthy > 0 OR latency > 2)
+        | EVAL severity = CASE(unhealthy > 0 OR errors > 100, "high", "medium"),
+               metric_name = CASE(unhealthy > 0, "unhealthy_hosts", errors > 0, "elb_5xx", "target_response_seconds"),
+               metric_value = CASE(unhealthy > 0, TO_DOUBLE(unhealthy), errors > 0, TO_DOUBLE(errors), latency)
+        | LIMIT 200
+
+  - name: normalize_metrics
+    type: data.map
+    items: "${{ steps.query_metrics.output.values }}"
+    with:
+      fields:
+        errors: "{{ item[0] }}"
+        unhealthy: "{{ item[1] }}"
+        latency: "{{ item[2] }}"
+        load_balancer: "{{ item[3] }}"
+        region: "{{ item[4] }}"
+        account_id: "{{ item[5] }}"
+        severity: "{{ item[6] }}"
+        metric_name: "{{ item[7] }}"
+        metric_value: "{{ item[8] }}"
+
+  - name: publish_insights
+    type: foreach
+    foreach: "${{ steps.normalize_metrics.output }}"
+    steps:
+      - name: index_elb_insight
+        type: elasticsearch.index
+        with:
+          index: aws-cockpit-recommendations
+          id: "{{ foreach.item.load_balancer }}-elb-health"
+          document:
+            "@timestamp": "{{ now | date_to_xmlschema }}"
+            category: reliability_risk
+            severity: "{{ foreach.item.severity }}"
+            metric_name: "{{ foreach.item.metric_name }}"
+            metric_value: "{{ foreach.item.metric_value }}"
+            threshold: 0
+            recommendation: >-
+              Load balancer {{ foreach.item.load_balancer }} reports {{
+              foreach.item.errors }} ELB 5xx responses, {{
+              foreach.item.unhealthy }} unhealthy targets, and {{
+              foreach.item.latency }} seconds average target response time.
+              Review target health, application errors, and scaling.
+            resource:
+              type: load_balancer
+              name: "{{ foreach.item.load_balancer }}"
+              id: "{{ foreach.item.load_balancer }}"
+              key: "{{ foreach.item.region }}:load_balancer:{{ foreach.item.load_balancer }}"
+            cloud:
+              region: "{{ foreach.item.region }}"
+              account:
+                id: "{{ foreach.item.account_id }}"
+
+  - name: query_potentially_unused_load_balancers
+    type: elasticsearch.esql.query
+    with:
+      format: json
+      query: |
+        FROM metrics-aws.elb_metrics*
+        | WHERE @timestamp > NOW() - 14 days
+        | STATS observations = COUNT(*),
+                requests = SUM(aws.applicationelb.metrics.RequestCount.sum)
+            BY load_balancer = aws.dimensions.LoadBalancer,
+               cloud.region, cloud.account.id
+        | WHERE load_balancer IS NOT NULL
+            AND requests IS NOT NULL
+            AND requests == 0
+        | LIMIT 200
+
+  - name: map_potentially_unused_load_balancers
+    type: data.map
+    items: "${{ steps.query_potentially_unused_load_balancers.output.values }}"
+    with:
+      fields:
+        observations: "{{ item[0] }}"
+        requests: "{{ item[1] }}"
+        load_balancer: "{{ item[2] }}"
+        region: "{{ item[3] }}"
+        account_id: "{{ item[4] }}"
+
+  - name: publish_potentially_unused_load_balancers
+    type: foreach
+    foreach: "${{ steps.map_potentially_unused_load_balancers.output }}"
+    steps:
+      - name: index_potentially_unused_load_balancer
+        type: elasticsearch.index
+        with:
+          index: aws-cockpit-recommendations
+          id: "{{ foreach.item.load_balancer }}-potentially-unused"
+          document:
+            "@timestamp": "{{ now | date_to_xmlschema }}"
+            category: unused_resource
+            severity: medium
+            confidence: high
+            activity_status: potentially_unused
+            lookback_days: 14
+            metric_name: request_count_14d
+            metric_value: "{{ foreach.item.requests }}"
+            threshold: 0
+            recommendation: >-
+              Load balancer {{ foreach.item.load_balancer }} handled zero
+              requests over 14 days across {{ foreach.item.observations }}
+              observed metric documents. Confirm DNS, failover, and owner
+              requirements before removing it.
+            resource:
+              type: load_balancer
+              name: "{{ foreach.item.load_balancer }}"
+              id: "{{ foreach.item.load_balancer }}"
+              key: "{{ foreach.item.region }}:load_balancer:{{ foreach.item.load_balancer }}"
+            cloud:
+              region: "{{ foreach.item.region }}"
+              account:
+                id: "{{ foreach.item.account_id }}"

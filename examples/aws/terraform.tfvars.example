@@ -16,7 +16,7 @@ elastic_agent_instance_type = "t3.medium"
 # existing_cloudtrail_bucket_name = "existing-cloudtrail-bucket"
 # cloudfront_queue_url       = "https://sqs.eu-west-1.amazonaws.com/123456789012/cloudfront-logs"
 
-# Required: company-policy tags.
+# Required for direct Terraform deployments: company-policy tags.
 company_tags = {
   division    = "field"
   org         = "sa"

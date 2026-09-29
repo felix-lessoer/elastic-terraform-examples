@@ -27,6 +27,10 @@ CPU_LOW = 5.0
 CPU_HIGH = 85.0
 
 
+def resource_key(region: object, resource_type: str, resource_id: object) -> str:
+    return f"{region or 'global'}:{resource_type}:{resource_id}"
+
+
 def req(method: str, url: str, user: str, password: str, body: dict | None = None):
     data = None if body is None else json.dumps(body).encode()
     headers = {
@@ -43,7 +47,16 @@ def req(method: str, url: str, user: str, password: str, body: dict | None = Non
 
 
 def esql(es: str, user: str, password: str, query: str) -> list[dict]:
-    result = req("POST", f"{es}/_query", user, password, {"query": query})
+    try:
+        result = req("POST", f"{es}/_query", user, password, {"query": query})
+    except RuntimeError as exc:
+        # A newly deployed integration often has no metric data streams yet.
+        # Missing indices/columns mean "no recommendations yet", not a failed
+        # infrastructure deployment. Keep the warning for later diagnostics.
+        if "Unknown index" not in str(exc) and "Unknown column" not in str(exc):
+            raise
+        print(f"  esql warn: {exc}", file=sys.stderr)
+        return []
     cols = [c["name"] for c in result.get("columns", [])]
     rows = []
     for values in result.get("values", []):
@@ -67,8 +80,10 @@ def ensure_index(es: str, user: str, password: str) -> None:
                 },
                 "resource": {
                     "properties": {
+                        "key": {"type": "keyword"},
                         "name": {"type": "keyword"},
                         "type": {"type": "keyword"},
+                        "id": {"type": "keyword"},
                     }
                 },
                 "cloud": {
@@ -87,6 +102,17 @@ def ensure_index(es: str, user: str, password: str) -> None:
     except RuntimeError as e:
         if "resource_already_exists_exception" not in str(e):
             raise
+    # Existing indices may have been created dynamically by an older workflow
+    # before any timestamped document was written. Index creation is then a
+    # no-op, so explicitly reconcile the field required by every dashboard
+    # time-range query.
+    req(
+        "PUT",
+        f"{es}/{INDEX}/_mapping",
+        user,
+        password,
+        {"properties": {"@timestamp": {"type": "date"}}},
+    )
 
 
 def main() -> int:
@@ -98,6 +124,16 @@ def main() -> int:
     es = args.es_url.rstrip("/")
 
     ensure_index(es, args.user, args.password)
+    try:
+        req(
+            "POST",
+            f"{es}/{INDEX}/_delete_by_query?refresh=true",
+            args.user,
+            args.password,
+            {"query": {"match_all": {}}},
+        )
+    except RuntimeError as exc:
+        print(f"Recommendation snapshot cleanup warning: {exc}", file=sys.stderr)
 
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M")
@@ -109,13 +145,14 @@ def main() -> int:
         args.user,
         args.password,
         """
-FROM metrics-aws.ec2_metrics-default
+FROM metrics-aws.ec2_metrics*
 | WHERE @timestamp >= NOW() - 24 hours
 | STATS avg_cpu = AVG(`aws.ec2.metrics.CPUUtilization.avg`),
         max_cpu = MAX(`aws.ec2.metrics.CPUUtilization.avg`),
         status_fail = MAX(`aws.ec2.metrics.StatusCheckFailed.avg`),
         samples = COUNT(*)
   BY instance = COALESCE(cloud.instance.name, cloud.instance.id),
+     instance_id = cloud.instance.id,
      az = cloud.availability_zone,
      type = cloud.machine.type,
      account = cloud.account.id,
@@ -126,6 +163,7 @@ FROM metrics-aws.ec2_metrics-default
 
     for row in ec2:
         name = row.get("instance") or "unknown"
+        instance_id = row.get("instance_id") or name
         avg = float(row.get("avg_cpu") or 0)
         fail = float(row.get("status_fail") or 0)
         cloud = {
@@ -150,7 +188,14 @@ FROM metrics-aws.ec2_metrics-default
                             f"(StatusCheckFailed avg {fail} over 24h) — investigate "
                             "instance / system health before relying on this host."
                         ),
-                        "resource": {"type": "ec2_instance", "name": name},
+                        "resource": {
+                            "type": "ec2_instance",
+                            "name": name,
+                            "id": instance_id,
+                            "key": resource_key(
+                                row.get("region"), "ec2_instance", instance_id
+                            ),
+                        },
                         "cloud": cloud,
                     },
                 )
@@ -172,7 +217,14 @@ FROM metrics-aws.ec2_metrics-default
                             f"(avg CPU {avg:.2f}% over 24h) — consider downsizing or stopping "
                             "this instance to save cost."
                         ),
-                        "resource": {"type": "ec2_instance", "name": name},
+                        "resource": {
+                            "type": "ec2_instance",
+                            "name": name,
+                            "id": instance_id,
+                            "key": resource_key(
+                                row.get("region"), "ec2_instance", instance_id
+                            ),
+                        },
                         "cloud": cloud,
                     },
                 )
@@ -193,7 +245,14 @@ FROM metrics-aws.ec2_metrics-default
                             f"(avg CPU {avg:.2f}% over 24h) — consider resizing to a larger "
                             "instance type to avoid throttling or outages."
                         ),
-                        "resource": {"type": "ec2_instance", "name": name},
+                        "resource": {
+                            "type": "ec2_instance",
+                            "name": name,
+                            "id": instance_id,
+                            "key": resource_key(
+                                row.get("region"), "ec2_instance", instance_id
+                            ),
+                        },
                         "cloud": cloud,
                     },
                 )
@@ -205,7 +264,7 @@ FROM metrics-aws.ec2_metrics-default
         args.user,
         args.password,
         """
-FROM metrics-aws.s3_daily_storage-default
+FROM metrics-aws.s3_daily_storage*
 | WHERE @timestamp >= NOW() - 7 days
 | STATS size = MAX(`aws.s3_daily_storage.bucket.size.bytes`),
         objects = MAX(`aws.s3_daily_storage.number_of_objects`)
@@ -238,7 +297,14 @@ FROM metrics-aws.s3_daily_storage-default
                         + ") — confirm it is still needed or remove it to reduce clutter and "
                         "accidental exposure risk."
                     ),
-                    "resource": {"type": "s3_bucket", "name": name},
+                    "resource": {
+                        "type": "s3_bucket",
+                        "name": name,
+                        "id": name,
+                        "key": resource_key(
+                            row.get("region"), "s3_bucket", name
+                        ),
+                    },
                     "cloud": {
                         "region": row.get("region"),
                         "account": {"id": row.get("account")},
@@ -248,8 +314,33 @@ FROM metrics-aws.s3_daily_storage-default
         )
 
     if not docs:
-        print("No recommendations generated from current metrics.", file=sys.stderr)
-        return 0
+        docs.append(
+            (
+                f"telemetry-readiness-{stamp}",
+                {
+                    "@timestamp": now,
+                    "category": "telemetry_readiness",
+                    "severity": "low",
+                    "metric_name": "recommendation_inputs_available",
+                    "metric_value": 0,
+                    "threshold": 1,
+                    "recommendation": (
+                        "No EC2 or S3 optimization recommendation inputs are "
+                        "available yet. EC2 metrics arrive every few minutes; "
+                        "S3 daily storage metrics can take up to 24 hours."
+                    ),
+                    "resource": {
+                        "type": "observability_input",
+                        "name": "AWS metrics",
+                        "id": "AWS metrics",
+                        "key": resource_key(
+                            "global", "observability_input", "AWS metrics"
+                        ),
+                    },
+                    "cloud": {},
+                },
+            )
+        )
 
     # Bulk index
     bulk_lines = []

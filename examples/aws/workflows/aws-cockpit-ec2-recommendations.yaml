@@ -1,9 +1,8 @@
-name: AWS EC2 Recommendations
+name: AWS Insight Engine — EC2
 id: aws-cockpit-ec2-recommendations
 description: >-
-  Analyzes EC2 CloudWatch metrics over a 24h window and writes cost
-  optimization / performance risk recommendations into
-  aws-cockpit-recommendations.
+  Converts raw EC2 CloudWatch metrics into cost and performance insights in
+  aws-cockpit-recommendations for the AWS Insight Engine.
 
 triggers:
   - type: manual
@@ -12,6 +11,16 @@ triggers:
       every: "1h"
 
 steps:
+  - name: remove_previous_ec2_insights
+    type: elasticsearch.request
+    with:
+      method: POST
+      path: /aws-cockpit-recommendations/_delete_by_query?conflicts=proceed&refresh=true
+      body:
+        query:
+          term:
+            resource.type: ec2_instance
+
   - name: query_metrics
     type: elasticsearch.esql.query
     with:
@@ -19,10 +28,12 @@ steps:
         FROM metrics-aws.ec2_metrics-default
         | WHERE @timestamp > NOW() - 24 hours
         | STATS avg_cpu = AVG(aws.ec2.metrics.CPUUtilization.avg), max_status_failed = MAX(aws.ec2.metrics.StatusCheckFailed.avg) BY cloud.instance.name, cloud.instance.id, cloud.availability_zone, cloud.account.id, cloud.region, cloud.machine.type
+        | WHERE max_status_failed > 0 OR avg_cpu < 5 OR avg_cpu > 85
+        | LIMIT 200
 
   - name: normalize_metrics
     type: data.map
-    items: "{{ steps.query_metrics.output.values }}"
+    items: "${{ steps.query_metrics.output.values }}"
     with:
       fields:
         avg_cpu: "{{ item[0] }}"
@@ -36,7 +47,7 @@ steps:
 
   - name: process_metrics
     type: foreach
-    foreach: "{{ steps.normalize_metrics.output }}"
+    foreach: "${{ steps.normalize_metrics.output }}"
     steps:
       - name: check_status_failed
         type: if
@@ -46,7 +57,7 @@ steps:
             type: elasticsearch.index
             with:
               index: aws-cockpit-recommendations
-              id: "{{ foreach.item.instance_name }}-status_check-{{ now | date: '%Y%m%dT%H%M' }}"
+              id: "{{ foreach.item.instance_id }}-status_check"
               document:
                 "@timestamp": "{{ now | date_to_xmlschema }}"
                 category: performance_risk
@@ -61,6 +72,8 @@ steps:
                 resource:
                   type: ec2_instance
                   name: "{{ foreach.item.instance_name }}"
+                  id: "{{ foreach.item.instance_id }}"
+                  key: "{{ foreach.item.region }}:ec2_instance:{{ foreach.item.instance_id }}"
                 cloud:
                   availability_zone: "{{ foreach.item.availability_zone }}"
                   account:
@@ -75,7 +88,7 @@ steps:
             type: elasticsearch.index
             with:
               index: aws-cockpit-recommendations
-              id: "{{ foreach.item.instance_name }}-cost_optimization-{{ now | date: '%Y%m%dT%H%M' }}"
+              id: "{{ foreach.item.instance_id }}-cost_optimization"
               document:
                 "@timestamp": "{{ now | date_to_xmlschema }}"
                 category: cost_optimization
@@ -90,6 +103,8 @@ steps:
                 resource:
                   type: ec2_instance
                   name: "{{ foreach.item.instance_name }}"
+                  id: "{{ foreach.item.instance_id }}"
+                  key: "{{ foreach.item.region }}:ec2_instance:{{ foreach.item.instance_id }}"
                 cloud:
                   availability_zone: "{{ foreach.item.availability_zone }}"
                   account:
@@ -104,7 +119,7 @@ steps:
             type: elasticsearch.index
             with:
               index: aws-cockpit-recommendations
-              id: "{{ foreach.item.instance_name }}-performance_risk-{{ now | date: '%Y%m%dT%H%M' }}"
+              id: "{{ foreach.item.instance_id }}-performance_risk"
               document:
                 "@timestamp": "{{ now | date_to_xmlschema }}"
                 category: performance_risk
@@ -119,8 +134,81 @@ steps:
                 resource:
                   type: ec2_instance
                   name: "{{ foreach.item.instance_name }}"
+                  id: "{{ foreach.item.instance_id }}"
+                  key: "{{ foreach.item.region }}:ec2_instance:{{ foreach.item.instance_id }}"
                 cloud:
                   availability_zone: "{{ foreach.item.availability_zone }}"
                   account:
                     id: "{{ foreach.item.account_id }}"
                   region: "{{ foreach.item.region }}"
+
+  - name: query_potentially_unused_instances
+    type: elasticsearch.esql.query
+    with:
+      format: json
+      query: |
+        FROM metrics-aws.ec2_metrics*
+        | WHERE @timestamp > NOW() - 14 days
+        | STATS observations = COUNT(*),
+                avg_cpu = AVG(aws.ec2.metrics.CPUUtilization.avg),
+                network_in = SUM(aws.ec2.metrics.NetworkIn.sum),
+                network_out = SUM(aws.ec2.metrics.NetworkOut.sum)
+            BY instance_name = cloud.instance.name,
+               instance_id = cloud.instance.id,
+               cloud.region, cloud.account.id
+        | WHERE instance_id IS NOT NULL
+            AND avg_cpu < 1
+            AND network_in IS NOT NULL
+            AND network_out IS NOT NULL
+            AND network_in + network_out < 10485760
+        | EVAL network_bytes = TO_DOUBLE(network_in) + TO_DOUBLE(network_out)
+        | LIMIT 200
+
+  - name: map_potentially_unused_instances
+    type: data.map
+    items: "${{ steps.query_potentially_unused_instances.output.values }}"
+    with:
+      fields:
+        observations: "{{ item[0] }}"
+        avg_cpu: "{{ item[1] }}"
+        network_in: "{{ item[2] }}"
+        network_out: "{{ item[3] }}"
+        instance_name: "{{ item[4] }}"
+        instance_id: "{{ item[5] }}"
+        region: "{{ item[6] }}"
+        account_id: "{{ item[7] }}"
+        network_bytes: "{{ item[8] }}"
+
+  - name: publish_potentially_unused_instances
+    type: foreach
+    foreach: "${{ steps.map_potentially_unused_instances.output }}"
+    steps:
+      - name: index_potentially_unused_instance
+        type: elasticsearch.index
+        with:
+          index: aws-cockpit-recommendations
+          id: "{{ foreach.item.instance_id }}-potentially-unused"
+          document:
+            "@timestamp": "{{ now | date_to_xmlschema }}"
+            category: unused_resource
+            severity: medium
+            confidence: high
+            activity_status: potentially_unused
+            lookback_days: 14
+            metric_name: network_bytes_14d
+            metric_value: "{{ foreach.item.network_bytes }}"
+            threshold: 10485760
+            recommendation: >-
+              EC2 instance {{ foreach.item.instance_name }} averaged less than
+              1% CPU and transferred less than 10 MiB over 14 days across {{
+              foreach.item.observations }} observed metric documents. Confirm
+              owner and dependency requirements before stopping or removing it.
+            resource:
+              type: ec2_instance
+              name: "{{ foreach.item.instance_name }}"
+              id: "{{ foreach.item.instance_id }}"
+              key: "{{ foreach.item.region }}:ec2_instance:{{ foreach.item.instance_id }}"
+            cloud:
+              region: "{{ foreach.item.region }}"
+              account:
+                id: "{{ foreach.item.account_id }}"

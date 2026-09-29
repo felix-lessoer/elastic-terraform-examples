@@ -27,7 +27,7 @@ provider "aws" {
   region = var.aws_region
 
   default_tags {
-    tags = var.company_tags
+    tags = local.effective_company_tags
   }
 }
 
@@ -62,15 +62,17 @@ data "external" "existing_log_sources" {
 }
 
 locals {
+  effective_company_tags = var.deployment_creator_mode && !var.elastic_tags_required ? {} : var.company_tags
+
   elastic_tags = {
-    for k, v in var.company_tags :
+    for k, v in local.effective_company_tags :
     substr(lower(replace(replace(replace(replace(k, " ", "-"), "/", "-"), ".", "-"), ":", "-")), 0, 32) =>
     substr(lower(replace(replace(replace(replace(tostring(v), " ", "-"), "/", "-"), ".", "-"), ":", "-")), 0, 32)
   }
 
   required_aws_tag_keys_missing = [
-    for key in var.required_tag_keys : key
-    if !contains(keys(var.company_tags), key)
+    for key in(var.elastic_tags_required ? var.required_tag_keys : []) : key
+    if !contains(keys(local.effective_company_tags), key)
   ]
 
   # An empty regions list is the AWS integration's documented "all regions"
@@ -570,6 +572,11 @@ locals {
 
 check "required_company_tags" {
   assert {
+    condition     = (var.deployment_creator_mode && !var.elastic_tags_required) || length(var.company_tags) > 0
+    error_message = "Set company_tags according to your company tagging policy."
+  }
+
+  assert {
     condition     = length(local.required_aws_tag_keys_missing) == 0
     error_message = "company_tags is missing required keys: ${join(", ", local.required_aws_tag_keys_missing)}"
   }
@@ -592,13 +599,14 @@ module "observability" {
 module "aws_cloud" {
   source = "../../modules/aws-cloud"
 
-  name_prefix          = var.name_prefix
-  bucket_name          = var.bucket_name
-  enable_cloudtrail    = var.existing_cloudtrail_bucket_name == ""
-  enable_vpc_flow_logs = true
-  enable_sqs           = true
-  company_tags         = var.company_tags
-  required_tag_keys    = var.required_tag_keys
+  name_prefix           = var.name_prefix
+  bucket_name           = var.bucket_name
+  enable_cloudtrail     = var.existing_cloudtrail_bucket_name == ""
+  enable_vpc_flow_logs  = true
+  enable_sqs            = true
+  company_tags          = local.effective_company_tags
+  company_tags_required = !(var.deployment_creator_mode && !var.elastic_tags_required)
+  required_tag_keys     = var.required_tag_keys
   additional_read_bucket_arns = distinct(concat(
     var.existing_cloudtrail_bucket_name != "" ? [
       "arn:${data.aws_partition.current.partition}:s3:::${var.existing_cloudtrail_bucket_name}"
@@ -627,7 +635,7 @@ data "aws_iam_policy_document" "elastic_managed_trust" {
 resource "aws_iam_role" "elastic_managed" {
   name               = "${var.name_prefix}-managed-observability"
   assume_role_policy = data.aws_iam_policy_document.elastic_managed_trust.json
-  tags               = merge(var.company_tags, { Name = "${var.name_prefix}-managed-observability" })
+  tags               = merge(local.effective_company_tags, { Name = "${var.name_prefix}-managed-observability" })
 }
 
 data "aws_iam_policy_document" "elastic_managed" {
@@ -894,11 +902,46 @@ module "elastic_agent" {
 
   name                 = "${var.name_prefix}-agent"
   instance_type        = var.elastic_agent_instance_type
-  company_tags         = merge(var.company_tags, { Role = "elastic-agent-observability" })
+  company_tags         = merge(local.effective_company_tags, { Role = "elastic-agent-observability" })
   fleet_url            = module.observability.fleet_endpoint
   enrollment_token     = module.stack.enrollment_token
   agent_version        = var.elastic_agent_version
   iam_instance_profile = module.aws_cloud.agent_instance_profile_name
+  # Some Elastic Agent AWS inputs cannot acquire IMDSv2 credentials. Limit
+  # the compatibility fallback to the local guided PoC; direct Terraform keeps
+  # the module's hardened IMDSv2-only default.
+  metadata_http_tokens = var.deployment_creator_mode ? "optional" : "required"
+}
+
+resource "terraform_data" "fleet_agent_reconciliation" {
+  input = {
+    kibana_url      = module.observability.kibana_endpoint
+    kibana_username = module.observability.username
+    kibana_password = module.observability.password
+    agent_policy_id = module.stack.agent_policy_id
+    aws_instance_id = module.elastic_agent.instance_id
+    aws_private_ip  = module.elastic_agent.private_ip
+  }
+
+  triggers_replace = [
+    module.elastic_agent.instance_id,
+    filesha256("${path.module}/scripts/reconcile_fleet_agents.py"),
+  ]
+
+  provisioner "local-exec" {
+    interpreter = ["/bin/bash", "-c"]
+    command     = "python3 '${path.module}/scripts/reconcile_fleet_agents.py' reconcile"
+    environment = {
+      KIBANA_URL      = self.input.kibana_url
+      KIBANA_USERNAME = self.input.kibana_username
+      KIBANA_PASSWORD = self.input.kibana_password
+      AGENT_POLICY_ID = self.input.agent_policy_id
+      AWS_INSTANCE_ID = self.input.aws_instance_id
+      AWS_PRIVATE_IP  = self.input.aws_private_ip
+    }
+  }
+
+  depends_on = [module.elastic_agent, module.stack]
 }
 
 module "observability_seed" {
@@ -934,12 +977,44 @@ module "cockpit" {
   elasticsearch_password = module.observability.password
   title                  = "AWS Observability Cockpit"
   description            = "AWS service health and metrics collected across all regions."
-  dashboard_id           = "752a1ac0-26e4-49d8-a2b4-5483068809b9"
+  dashboard_id           = "45f84000-d68b-4bb1-9df2-09223fba6b29"
   ndjson_path            = "${path.module}/../../modules/cockpit-dashboard/cockpit-aws.ndjson"
-  ml_jobs                = module.observability_seed.ml_jobs
-  ai_agents              = module.observability_seed.ai_agents
+  additional_ndjson_paths = [
+    "${path.module}/../../modules/cockpit-dashboard/aws-security-observability-dashboards.ndjson",
+  ]
+  ml_jobs   = module.observability_seed.ml_jobs
+  ai_agents = module.observability_seed.ai_agents
 
   depends_on = [module.stack, module.observability_seed]
+}
+
+# Lookup mode must be selected when an index is created. Migrate the small,
+# workflow-maintained reference snapshots before workflows write to them.
+resource "terraform_data" "prepare_aws_lookup_indices" {
+  count = var.enable_cockpit_dashboard ? 1 : 0
+
+  triggers_replace = [
+    filesha256("${path.module}/../../modules/cockpit-dashboard/scripts/prepare_aws_lookup_indices.py"),
+    module.observability.elasticsearch_endpoint,
+  ]
+
+  provisioner "local-exec" {
+    interpreter = ["/bin/bash", "-c"]
+    environment = {
+      OBS_ES   = module.observability.elasticsearch_endpoint
+      OBS_USER = module.observability.username
+      OBS_PASS = module.observability.password
+    }
+    command = <<-EOT
+      set -euo pipefail
+      python3 "${path.module}/../../modules/cockpit-dashboard/scripts/prepare_aws_lookup_indices.py" \
+        --es-url "$OBS_ES" \
+        --user "$OBS_USER" \
+        --password "$OBS_PASS"
+    EOT
+  }
+
+  depends_on = [module.stack, module.observability_seed, module.cockpit]
 }
 
 # Deploy every pinned workflow definition in examples/aws/workflows into the
@@ -954,10 +1029,15 @@ module "workflows" {
   workflows_dir          = "${path.module}/workflows"
   execute_on_apply       = var.execute_workflows_on_apply
 
-  depends_on = [module.stack, module.observability_seed, module.cockpit]
+  depends_on = [
+    module.stack,
+    module.observability_seed,
+    module.cockpit,
+    terraform_data.prepare_aws_lookup_indices,
+  ]
 }
 
-# Seed the local insight fabric and initial recommendations after integrations,
+# Seed the local Insight Engine after integrations,
 # agents, dashboard, and workflows are available.
 resource "terraform_data" "seed_aws_insight_indices" {
   count = var.enable_cockpit_dashboard ? 1 : 0
@@ -965,6 +1045,7 @@ resource "terraform_data" "seed_aws_insight_indices" {
   triggers_replace = [
     filesha256("${path.module}/../../modules/cockpit-dashboard/scripts/seed_aws_insight_indices.py"),
     filesha256("${path.module}/../../modules/cockpit-dashboard/scripts/generate_aws_recommendations.py"),
+    filesha256("${path.module}/workflows/aws-cockpit-insight-engine-summary.yaml"),
     filesha256("${path.module}/../../modules/cockpit-dashboard/cockpit-aws.ndjson"),
     module.observability.elasticsearch_endpoint,
   ]
@@ -972,13 +1053,18 @@ resource "terraform_data" "seed_aws_insight_indices" {
   provisioner "local-exec" {
     interpreter = ["/bin/bash", "-c"]
     environment = {
-      OBS_ES     = module.observability.elasticsearch_endpoint
-      OBS_KIBANA = module.observability.kibana_endpoint
-      OBS_USER   = module.observability.username
-      OBS_PASS   = module.observability.password
+      OBS_ES            = module.observability.elasticsearch_endpoint
+      OBS_KIBANA        = module.observability.kibana_endpoint
+      OBS_USER          = module.observability.username
+      OBS_PASS          = module.observability.password
+      RUN_AGENT_SUMMARY = tostring(var.enable_workflows && var.enable_ai_agents)
     }
     command = <<-EOT
       set -euo pipefail
+      python3 "${path.module}/../../modules/cockpit-dashboard/scripts/generate_aws_recommendations.py" \
+        --es-url "$OBS_ES" \
+        --user "$OBS_USER" \
+        --password "$OBS_PASS"
       python3 "${path.module}/../../modules/cockpit-dashboard/scripts/seed_aws_insight_indices.py" \
         --obs-es "$OBS_ES" \
         --sec-es "$OBS_ES" \
@@ -987,10 +1073,13 @@ resource "terraform_data" "seed_aws_insight_indices" {
         --sec-user "$OBS_USER" \
         --obs-password "$OBS_PASS" \
         --sec-password "$OBS_PASS"
-      python3 "${path.module}/../../modules/cockpit-dashboard/scripts/generate_aws_recommendations.py" \
-        --es-url "$OBS_ES" \
-        --user "$OBS_USER" \
-        --password "$OBS_PASS"
+      if [[ "$RUN_AGENT_SUMMARY" == "true" ]]; then
+        curl -fsS -u "$OBS_USER:$OBS_PASS" \
+          -H 'kbn-xsrf: aws-insight-engine' \
+          -H 'Content-Type: application/json' \
+          -X POST "$OBS_KIBANA/api/workflows/workflow/aws-cockpit-insight-engine-summary/run" \
+          --data '{"inputs":{},"metadata":{"source":"terraform-insight-refresh"}}'
+      fi
     EOT
   }
 

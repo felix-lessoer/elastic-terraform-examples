@@ -593,9 +593,9 @@ def build(gcp_path: Path) -> dict:
         grid={"x": 0, "y": 0, "w": 48, "h": 7},
     )
 
-    ec2_idx = "metrics-aws.ec2_metrics-default"
-    s3_idx = "metrics-aws.s3_daily_storage-default"
-    bill_idx = "metrics-aws.billing-default"
+    ec2_idx = "aws-cockpit-assets"
+    s3_idx = "aws-cockpit-assets"
+    bill_idx = "aws-cockpit-coverage"
 
     live_kpis = [
         esql_metric_panel(
@@ -604,7 +604,8 @@ def build(gcp_path: Path) -> dict:
             esql=(
                 f"FROM {ec2_idx}\n"
                 "| WHERE @timestamp >= ?_tstart AND @timestamp < ?_tend\n"
-                "| STATS `Unique Instances` = COUNT_DISTINCT(COALESCE(cloud.instance.name, cloud.instance.id))"
+                '| WHERE resource.type == "ec2_instance"\n'
+                "| STATS `Unique Instances` = COUNT_DISTINCT(resource.id)"
             ),
             index=f"{ec2_idx}-@timestamp",
             grid={"x": 0, "y": 7, "w": 8, "h": 5},
@@ -616,6 +617,7 @@ def build(gcp_path: Path) -> dict:
             esql=(
                 f"FROM {ec2_idx}\n"
                 "| WHERE @timestamp >= ?_tstart AND @timestamp < ?_tend\n"
+                '| WHERE resource.type == "ec2_instance"\n'
                 "| STATS `AZ Count` = COUNT_DISTINCT(cloud.availability_zone)"
             ),
             index=f"{ec2_idx}-@timestamp",
@@ -628,38 +630,40 @@ def build(gcp_path: Path) -> dict:
             esql=(
                 f"FROM {s3_idx}\n"
                 "| WHERE @timestamp >= ?_tstart AND @timestamp < ?_tend\n"
-                "| STATS `Unique Buckets` = COUNT_DISTINCT(`aws.s3.bucket.name`)"
+                '| WHERE resource.type == "s3_bucket"\n'
+                "| STATS `Unique Buckets` = COUNT_DISTINCT(resource.id)"
             ),
             index=f"{s3_idx}-@timestamp",
             grid={"x": 16, "y": 7, "w": 8, "h": 5},
             section_id=live_section_id,
         ),
         esql_metric_panel(
-            title="Billing services",
-            metric_label="Service Count",
+            title="Billing telemetry",
+            metric_label="Billing Documents",
             esql=(
                 f"FROM {bill_idx}\n"
                 "| WHERE @timestamp >= ?_tstart AND @timestamp < ?_tend\n"
-                "| STATS `Service Count` = COUNT_DISTINCT(`aws.billing.ServiceName`)"
+                '| WHERE service == "billing"\n'
+                "| STATS `Billing Documents` = MAX(docs_24h)"
             ),
             index=f"{bill_idx}-@timestamp",
             grid={"x": 24, "y": 7, "w": 8, "h": 5},
             section_id=live_section_id,
         ),
         esql_metric_panel(
-            title="Open recommendations",
-            metric_label="Recommendations",
+            title="Open actionable insights",
+            metric_label="Insights",
             esql=(
                 "FROM aws-cockpit-recommendations\n"
                 "| WHERE @timestamp >= ?_tstart AND @timestamp < ?_tend\n"
-                "| STATS `Recommendations` = COUNT(*)"
+                "| STATS `Insights` = COUNT(*)"
             ),
             index="aws-cockpit-recommendations-@timestamp",
             grid={"x": 32, "y": 7, "w": 8, "h": 5},
             section_id=live_section_id,
         ),
         esql_metric_panel(
-            title="High severity recs",
+            title="High severity insights",
             metric_label="High severity",
             esql=(
                 "FROM aws-cockpit-recommendations\n"
@@ -680,7 +684,8 @@ def build(gcp_path: Path) -> dict:
             esql=(
                 f"FROM {ec2_idx}\n"
                 "| WHERE @timestamp >= ?_tstart AND @timestamp < ?_tend\n"
-                "| STATS `Instance Count` = COUNT_DISTINCT(COALESCE(cloud.instance.name, cloud.instance.id)) "
+                '| WHERE resource.type == "ec2_instance"\n'
+                "| STATS `Instance Count` = COUNT_DISTINCT(resource.id) "
                 "BY `Availability Zone` = cloud.availability_zone\n"
                 "| SORT `Instance Count` DESC\n"
                 "| LIMIT 15"
@@ -696,7 +701,8 @@ def build(gcp_path: Path) -> dict:
             esql=(
                 f"FROM {ec2_idx}\n"
                 "| WHERE @timestamp >= ?_tstart AND @timestamp < ?_tend\n"
-                "| STATS `Instances` = COUNT_DISTINCT(COALESCE(cloud.instance.name, cloud.instance.id)) "
+                '| WHERE resource.type == "ec2_instance"\n'
+                "| STATS `Instances` = COUNT_DISTINCT(resource.id) "
                 "BY `Region` = cloud.region\n"
                 "| SORT `Instances` DESC\n"
                 "| LIMIT 15"
@@ -706,18 +712,17 @@ def build(gcp_path: Path) -> dict:
             section_id=live_section_id,
         ),
         esql_xy_panel(
-            title="Estimated Charges by Service (Top 15)",
-            x_field="Service",
-            y_field="Estimated Charges",
+            title="Assets by resource type",
+            x_field="Resource Type",
+            y_field="Assets",
             esql=(
-                f"FROM {bill_idx}\n"
+                f"FROM {ec2_idx}\n"
                 "| WHERE @timestamp >= ?_tstart AND @timestamp < ?_tend\n"
-                "| STATS `Estimated Charges` = MAX(`aws.billing.EstimatedCharges`) "
-                "BY `Service` = `aws.billing.ServiceName`\n"
-                "| SORT `Estimated Charges` DESC\n"
+                "| STATS `Assets` = COUNT(*) BY `Resource Type` = resource.type\n"
+                "| SORT `Assets` DESC\n"
                 "| LIMIT 15"
             ),
-            index=f"{bill_idx}-@timestamp",
+            index=f"{ec2_idx}-@timestamp",
             grid={"x": 32, "y": 12, "w": 16, "h": 10},
             section_id=live_section_id,
         ),
@@ -726,9 +731,10 @@ def build(gcp_path: Path) -> dict:
             esql=(
                 f"FROM {s3_idx}\n"
                 "| WHERE @timestamp >= ?_tstart AND @timestamp < ?_tend\n"
-                "| STATS `bytes` = MAX(`aws.s3_daily_storage.bucket.size.bytes`), "
-                "`objects` = MAX(`aws.s3_daily_storage.number_of_objects`) "
-                "BY `bucket` = `aws.s3.bucket.name`, `region` = cloud.region\n"
+                '| WHERE resource.type == "s3_bucket"\n'
+                "| KEEP resource.name, cloud.region, metric_value\n"
+                "| RENAME resource.name AS bucket, cloud.region AS region, "
+                "metric_value AS bytes\n"
                 "| SORT `bytes` DESC\n"
                 "| LIMIT 50"
             ),
@@ -737,7 +743,6 @@ def build(gcp_path: Path) -> dict:
                 ("bucket", "string"),
                 ("region", "string"),
                 ("bytes", "number"),
-                ("objects", "number"),
             ],
             grid={"x": 0, "y": 22, "w": 48, "h": 14},
             section_id=live_section_id,
@@ -747,10 +752,12 @@ def build(gcp_path: Path) -> dict:
             esql=(
                 f"FROM {ec2_idx}\n"
                 "| WHERE @timestamp >= ?_tstart AND @timestamp < ?_tend\n"
-                "| STATS `avg_cpu` = AVG(`aws.ec2.metrics.CPUUtilization.avg`), "
-                "`max_cpu` = MAX(`aws.ec2.metrics.CPUUtilization.avg`) "
-                "BY `instance` = COALESCE(cloud.instance.name, cloud.instance.id), "
-                "`az` = cloud.availability_zone, `type` = cloud.machine.type\n"
+                '| WHERE resource.type == "ec2_instance"\n'
+                "| KEEP resource.name, cloud.availability_zone, "
+                "cloud.machine.type, metric_value\n"
+                "| RENAME resource.name AS instance, "
+                "cloud.availability_zone AS az, cloud.machine.type AS type, "
+                "metric_value AS avg_cpu\n"
                 "| SORT `avg_cpu` DESC\n"
                 "| LIMIT 50"
             ),
@@ -760,7 +767,6 @@ def build(gcp_path: Path) -> dict:
                 ("az", "string"),
                 ("type", "string"),
                 ("avg_cpu", "number"),
-                ("max_cpu", "number"),
             ],
             grid={"x": 0, "y": 36, "w": 48, "h": 14},
             section_id=live_section_id,
@@ -768,14 +774,15 @@ def build(gcp_path: Path) -> dict:
     ]
 
     rec_intro = markdown_panel(
-        title="AWS recommendations",
+        title="Insight Engine workflow details",
         section_id=rec_section_id,
         content=(
             '<a id="aws-recommendations"></a>\n'
-            "### Recommendations (from live AWS metrics)\n"
-            "Derived from EC2 CPU / status checks and S3 utilization, written to "
-            "`aws-cockpit-recommendations` (same concept as GCP's "
-            "`gcp-cockpit-recommendations`).\n\n"
+            "### Insight Engine — workflow-generated insights\n"
+            "Level 1 is raw AWS telemetry in `metrics-aws.*` and `logs-aws.*`. "
+            "Level 2 workflows derive compute, database, load-balancing, "
+            "storage, and serverless insights shown here. Level 3 is the Agent Builder "
+            "briefing displayed prominently at the top of this cockpit.\n\n"
             "| Category | Meaning |\n"
             "| --- | --- |\n"
             "| **cost_optimization** | Underutilized EC2 (avg CPU &lt; 5% / 24h) or empty S3 buckets |\n"
@@ -789,7 +796,7 @@ def build(gcp_path: Path) -> dict:
     rec_panels = [
         rec_intro,
         esql_xy_panel(
-            title="Recommendations by category",
+            title="Insights by category",
             x_field="Category",
             y_field="Count",
             esql=(
@@ -803,7 +810,7 @@ def build(gcp_path: Path) -> dict:
             section_id=rec_section_id,
         ),
         esql_xy_panel(
-            title="Recommendations by severity",
+            title="Insights by severity",
             x_field="Severity",
             y_field="Count",
             esql=(
@@ -817,7 +824,7 @@ def build(gcp_path: Path) -> dict:
             section_id=rec_section_id,
         ),
         esql_xy_panel(
-            title="Recommendations by resource type",
+            title="Insights by resource type",
             x_field="Resource Type",
             y_field="Count",
             esql=(
@@ -831,7 +838,7 @@ def build(gcp_path: Path) -> dict:
             section_id=rec_section_id,
         ),
         esql_table_panel(
-            title="Latest recommendations",
+            title="Latest actionable insights",
             esql=(
                 "FROM aws-cockpit-recommendations\n"
                 "| WHERE @timestamp >= ?_tstart AND @timestamp < ?_tend\n"
@@ -879,7 +886,8 @@ def build(gcp_path: Path) -> dict:
                 "config": {
                     "title": "EC2 instance",
                     "esql_query": (
-                        f"FROM {ec2_idx} | STATS BY COALESCE(cloud.instance.name, cloud.instance.id)"
+                        f'FROM {ec2_idx} | WHERE resource.type == "ec2_instance" '
+                        "| STATS BY resource.name"
                     ),
                     "values_source": "esql",
                     "selected_options": [],
@@ -900,7 +908,10 @@ def build(gcp_path: Path) -> dict:
                 "width": "medium",
                 "config": {
                     "title": "S3 bucket",
-                    "esql_query": f"FROM {s3_idx} | STATS BY `aws.s3.bucket.name`",
+                    "esql_query": (
+                        f'FROM {s3_idx} | WHERE resource.type == "s3_bucket" '
+                        "| STATS BY resource.name"
+                    ),
                     "values_source": "esql",
                     "selected_options": [],
                     "exclude": False,
@@ -919,8 +930,8 @@ def build(gcp_path: Path) -> dict:
                 "grow": True,
                 "width": "medium",
                 "config": {
-                    "title": "Billing service",
-                    "esql_query": f"FROM {bill_idx} | STATS BY `aws.billing.ServiceName`",
+                    "title": "Service coverage",
+                    "esql_query": f"FROM {bill_idx} | STATS BY service",
                     "values_source": "esql",
                     "selected_options": [],
                     "exclude": False,
@@ -945,7 +956,7 @@ def build(gcp_path: Path) -> dict:
         {
             "collapsed": False,
             "gridData": {"i": rec_section_id, "y": live_section_y + 55},
-            "title": "AWS Recommendations",
+            "title": "Insight Engine — Workflow Insights",
         },
     ]
 
@@ -953,7 +964,7 @@ def build(gcp_path: Path) -> dict:
         "attributes": {
             "description": (
                 "Aggregated security + observability posture across linked Elastic serverless AWS projects. "
-                "Includes CSPM asset inventory, live AWS metrics inventory, and cost/performance recommendations."
+                "Includes raw AWS telemetry, workflow-generated insights, and an Agent Builder summary."
             ),
             "esqlApproximation": False,
             "kibanaSavedObjectMeta": {"searchSourceJSON": json.dumps({"query": {"query": "", "language": "kuery"}})},

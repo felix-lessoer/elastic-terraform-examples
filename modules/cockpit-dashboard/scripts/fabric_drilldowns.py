@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Markdown drill-down panels for insight fabric.
+"""Markdown drill-down panels for the Insight Engine.
 
-Kibana ``custom_content`` strips ``<a>`` tags and sandboxes iframes with
-``default-src 'none'``, so aggregates rendered there cannot navigate.
-Markdown panels *do* allow links — use these beside the fabric visuals.
+ES|QL visualizations intentionally focus on data. Markdown panels provide
+portable relative links beside those visuals.
 """
 
 from __future__ import annotations
@@ -15,12 +14,6 @@ DRILLDOWN_IDS = {
     "aws": "c0ffee1d-26e4-49d8-a2b4-54830688091d",
     "gcp": "c0ffee1d-6ee2-4c91-94f8-f034e8d3451d",
     "azure": "c0ffee1d-9a7d-4e3b-8c5a-1d6f0e9b2a1d",
-}
-
-SEC_KIBANA = {
-    "aws": "https://aws-observe-and-protect-ad5bcf.kb.eu-west-1.aws.elastic.cloud",
-    "gcp": "",  # filled when known; relative links used as fallback
-    "azure": "",
 }
 
 AWS_COVERAGE_LINKS = [
@@ -57,8 +50,7 @@ def _md_link(label: str, href: str) -> str:
 
 
 def aws_drilldowns_markdown() -> str:
-    sec = SEC_KIBANA["aws"].rstrip("/")
-    ct_fail = sec + discover_esql_href(
+    ct_fail = discover_esql_href(
         "FROM logs-aws.cloudtrail*\n"
         '| WHERE @timestamp > NOW() - 24 hours AND event.outcome == "failure"\n'
         "| KEEP @timestamp, event.action, event.provider, user.name, source.ip, "
@@ -72,17 +64,17 @@ def aws_drilldowns_markdown() -> str:
     perf = recommendation_discover_href(
         "aws-cockpit-recommendations", category="performance_risk"
     )
-    health = f"{sec}/app/dashboards#/view/aws-9574244b-b538-4cc1-9666-8aac4ecf433e"
+    health = "/app/dashboards#/view/aws-9574244b-b538-4cc1-9666-8aac4ecf433e"
     cov_obs = " · ".join(_md_link(lbl, href) for lbl, href in AWS_COVERAGE_LINKS)
     cov_sec = " · ".join(
-        _md_link(lbl, f"{sec}{href}") for lbl, href in AWS_SEC_COVERAGE_LINKS
+        _md_link(lbl, href) for lbl, href in AWS_SEC_COVERAGE_LINKS
     )
     return "\n".join(
         [
-            "### Drill down from the insight fabric",
-            "Open the detail view for each aggregate above:",
+            "### Explore Insight Engine evidence",
+            "Open the raw telemetry or workflow insight behind each aggregate:",
             "",
-            "**Scoreboard** · "
+            "**Raw and security data** · "
             + " · ".join(
                 [
                     _md_link("Active alerts →", "/app/security/alerts"),
@@ -92,13 +84,13 @@ def aws_drilldowns_markdown() -> str:
                 ]
             ),
             "",
-            "**Recommendations** · "
+            "**Workflow insights** · "
             + " · ".join(
                 [
                     _md_link("Cost optimization details →", cost),
                     _md_link("Performance risk details →", perf),
                     _md_link(
-                        "All recommendations →",
+                        "All actionable insights →",
                         recommendation_discover_href("aws-cockpit-recommendations"),
                     ),
                 ]

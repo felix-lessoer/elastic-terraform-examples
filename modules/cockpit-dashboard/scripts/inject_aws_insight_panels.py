@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Inject Datadog-comparable insight panels into cockpit-aws.ndjson.
+"""Inject the three-level AWS Insight Engine into cockpit-aws.ndjson.
 
 - Top KPIs read aws-cockpit-security-kpi (seeded from Security project)
-- custom_content scoreboard / coverage matrix / events timeline (ES|QL + Liquid)
+- ES|QL panels show the agent summary, workflow insights, and event timeline
 - Inventory charts query aws-cockpit-assets
 - Scrub any remaining broken CPS qualifiers / alerts indices
 """
@@ -16,20 +16,18 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 NDJSON = ROOT / "cockpit-aws.ndjson"
 
-from build_aws_cockpit_ndjson import esql_metric_panel, esql_xy_panel  # noqa: E402
-from insight_fabric_common import (  # noqa: E402
-    MATRIX_TMPL,
-    TIMELINE_TMPL,
-    custom_panel,
-    scoreboard_template,
-    uid,
+from build_aws_cockpit_ndjson import (  # noqa: E402
+    esql_metric_panel,
+    esql_table_panel,
+    esql_xy_panel,
 )
+from insight_fabric_common import uid  # noqa: E402
 from fabric_drilldowns import DRILLDOWN_IDS, drilldowns_panel  # noqa: E402
 from ootb_nav import PANEL_IDS, NAV_HEIGHT, inject_ootb_nav  # noqa: E402
 
 DRILLDOWN_H = 5
 
-SCOREBOARD_ID = "c0ffee10-26e4-49d8-a2b4-548306880910"
+SUMMARY_ID = "c0ffee10-26e4-49d8-a2b4-548306880910"
 MATRIX_ID = "c0ffee11-26e4-49d8-a2b4-548306880911"
 TIMELINE_ID = "c0ffee12-26e4-49d8-a2b4-548306880912"
 
@@ -39,44 +37,6 @@ TOP_KPI_IDS = {
     "d170a127-afff-4154-b6c3-24a85a931382",
     "143696f7-f91e-41b2-9650-40b28c80a105",
 }
-
-AWS_SCOREBOARD_CARDS = [
-    {
-        "label": "Active alerts",
-        "field": "active_alerts",
-        "hint": "Open Security alerts →",
-        "href": "/app/security/alerts",
-        "sev": "sev-high",
-    },
-    {
-        "label": "High / critical",
-        "field": "high_critical_alerts",
-        "hint": "Prioritize these first →",
-        "href": "/app/security/alerts",
-        "sev": "sev-high",
-    },
-    {
-        "label": "CloudTrail failures (24h)",
-        "field": "cloudtrail_failures_24h",
-        "hint": "Open failed API activity →",
-        "href": 'https://aws-observe-and-protect-ad5bcf.kb.eu-west-1.aws.elastic.cloud/app/discover#/?_a=(dataSource:(type:esql),query:(esql:\'FROM logs-aws.cloudtrail* | WHERE @timestamp > NOW() - 24 hours AND event.outcome == "failure" | KEEP @timestamp, event.action, event.provider, user.name, source.ip, aws.cloudtrail.error_code, aws.cloudtrail.error_message, cloud.region | SORT @timestamp DESC | LIMIT 100\'))',
-        "sev": "sev-high",
-    },
-    {
-        "label": "AWS Health events",
-        "field": "health_events",
-        "hint": "Open AWS Health dashboard →",
-        "href": 'https://aws-observe-and-protect-ad5bcf.kb.eu-west-1.aws.elastic.cloud/app/dashboards#/view/aws-9574244b-b538-4cc1-9666-8aac4ecf433e',
-        "sev": "sev-ok",
-    },
-]
-
-SCOREBOARD_TMPL = scoreboard_template(
-    "AWS",
-    "Security KPIs mirrored from the Security project · coverage &amp; recommendations computed by workflows",
-    cards=AWS_SCOREBOARD_CARDS,
-)
-
 
 def build_top_kpis() -> list[dict]:
     return [
@@ -202,7 +162,7 @@ def rebuild_inventory_panels(y: int) -> list[dict]:
 
 def inject(panels: list[dict]) -> list[dict]:
     drop_ids = set(TOP_KPI_IDS) | {
-        SCOREBOARD_ID,
+        SUMMARY_ID,
         MATRIX_ID,
         TIMELINE_ID,
         PANEL_IDS["aws"],
@@ -217,6 +177,14 @@ def inject(panels: list[dict]) -> list[dict]:
     }
 
     kept = []
+    title_replacements = {
+        "AWS recommendations": "Insight Engine workflow details",
+        "Recommendations by category": "Insights by category",
+        "Recommendations by severity": "Insights by severity",
+        "Recommendations by resource type": "Insights by resource type",
+        "Open recommendations": "Open actionable insights",
+        "Latest recommendations": "Latest actionable insights",
+    }
     for p in panels:
         if p.get("panelIndex") in drop_ids:
             continue
@@ -228,51 +196,114 @@ def inject(panels: list[dict]) -> list[dict]:
             (p.get("embeddableConfig") or {}).get("content") or ""
         ):
             continue
-        kept.append(scrub(p))
+        serialized = json.dumps(p)
+        if any(
+            fragile_index in serialized
+            for fragile_index in (
+                "metrics-aws.ec2_metrics",
+                "metrics-aws.s3_daily_storage",
+                "metrics-aws.billing",
+            )
+        ):
+            continue
+        panel = scrub(p)
+        cfg = panel.get("embeddableConfig") or {}
+        title = cfg.get("title")
+        if title in title_replacements:
+            cfg["title"] = title_replacements[title]
+        attrs = cfg.get("attributes") or {}
+        attrs_title = attrs.get("title")
+        if attrs_title in title_replacements:
+            attrs["title"] = title_replacements[attrs_title]
+        content = cfg.get("content") or ""
+        if "### Recommendations (from live AWS metrics)" in content:
+            cfg["content"] = (
+                '<a id="aws-recommendations"></a>\n'
+                "### Insight Engine — workflow-generated insights\n"
+                "Level 1 is raw AWS telemetry in `metrics-aws.*` and "
+                "`logs-aws.*`. Level 2 workflows derive the EC2 CPU, "
+                "status-check, and S3 utilization insights shown here. "
+                "Level 3 is the Agent Builder briefing at the top of this "
+                "cockpit.\n\n"
+                "| Category | Meaning |\n"
+                "| --- | --- |\n"
+                "| **cost_optimization** | Underutilized compute or empty storage |\n"
+                "| **performance_risk** | Saturated compute, database, or storage resources |\n"
+                "| **reliability_risk** | Errors, throttles, unhealthy targets, or latency |\n"
+                "| **capacity_risk / memory_pressure** | RDS storage or memory constraints |"
+            )
+        kept.append(panel)
 
     # Ensure OOTB nav present / positioned at y=8
     kept = inject_ootb_nav(kept, "aws", y=8)
 
     insight_y = 8 + NAV_HEIGHT
-    scoreboard_h, matrix_h = 8, 14
-    # Scoreboard → markdown drill-downs (clickable) → matrix/timeline
-    drill_y = insight_y + scoreboard_h
+    summary_h, detail_h = 10, 14
+    # Agent summary → markdown drill-downs (clickable) → workflow insight details.
+    drill_y = insight_y + summary_h
     matrix_y = drill_y + DRILLDOWN_H
-    insight_end = matrix_y + matrix_h
+    insight_end = matrix_y + detail_h
 
-    scoreboard = custom_panel(
-        panel_id=SCOREBOARD_ID,
-        template=SCOREBOARD_TMPL,
-        esql_query="FROM aws-cockpit-security-kpi\n| SORT @timestamp DESC\n| LIMIT 1",
-        grid={"x": 0, "y": insight_y, "w": 48, "h": scoreboard_h},
+    summary = esql_table_panel(
+        panel_id=SUMMARY_ID,
+        title="Insight Engine — Agent summary",
+        esql=(
+            "FROM aws-cockpit-insight-summary\n"
+            "| SORT @timestamp DESC\n"
+            "| LIMIT 1\n"
+            "| KEEP @timestamp, priority, headline, summary, action_1, action_2, action_3"
+        ),
+        index="aws-cockpit-insight-summary-@timestamp",
+        columns=[
+            ("@timestamp", "date"),
+            ("priority", "string"),
+            ("headline", "string"),
+            ("summary", "string"),
+            ("action_1", "string"),
+            ("action_2", "string"),
+            ("action_3", "string"),
+        ],
+        grid={"x": 0, "y": insight_y, "w": 48, "h": summary_h},
     )
     drilldowns = drilldowns_panel("aws", y=drill_y, h=DRILLDOWN_H)
-    matrix = custom_panel(
+    matrix = esql_table_panel(
         panel_id=MATRIX_ID,
-        template=MATRIX_TMPL.replace(
-            "Service coverage",
-            "AWS service coverage",
-            1,
-        ),
-        esql_query=(
+        title="Insight Engine — Workflow coverage insights",
+        esql=(
             "FROM aws-cockpit-coverage\n"
             '| WHERE category IN ("compute", "storage", "cost", "network", "platform", "security", "data")\n'
-            "| SORT category ASC, label ASC\n"
+            "| KEEP label, category, status, docs_24h, detail\n"
+            "| SORT status ASC, category ASC, label ASC\n"
             "| LIMIT 20"
         ),
-        grid={"x": 0, "y": matrix_y, "w": 28, "h": matrix_h},
+        index="aws-cockpit-coverage-@timestamp",
+        columns=[
+            ("label", "string"),
+            ("category", "string"),
+            ("status", "string"),
+            ("docs_24h", "number"),
+            ("detail", "string"),
+        ],
+        grid={"x": 0, "y": matrix_y, "w": 28, "h": detail_h},
     )
-    # Prefer actionable events: recommendations + failures + open health
-    timeline = custom_panel(
+    timeline = esql_table_panel(
         panel_id=TIMELINE_ID,
-        template=TIMELINE_TMPL,
-        esql_query=(
+        title="Insight Engine — Latest workflow insights",
+        esql=(
             "FROM aws-cockpit-events\n"
             '| WHERE event.source IN ("cockpit.recommendations", "aws.cloudtrail", "aws.health")\n'
+            "| KEEP @timestamp, event.severity, title, detail\n"
             "| SORT @timestamp DESC\n"
             "| LIMIT 12"
         ),
-        grid={"x": 28, "y": matrix_y, "w": 20, "h": matrix_h},
+        index="aws-cockpit-events-@timestamp",
+        columns=[
+            ("@timestamp", "date"),
+            ("event.severity", "string"),
+            ("title", "string"),
+            ("detail", "string"),
+        ],
+        grid={"x": 28, "y": matrix_y, "w": 20, "h": detail_h},
     )
 
     # Idempotent re-pack: pin chrome panels, reflow the rest below insight_end.
@@ -354,7 +385,7 @@ def inject(panels: list[dict]) -> list[dict]:
         header_panels
         + top
         + [p for p in kept if p.get("panelIndex") == PANEL_IDS["aws"]]
-        + [scoreboard, drilldowns, matrix, timeline]
+        + [summary, drilldowns, matrix, timeline]
         + body_panels
         + section_panels
         + rebuild_inventory_panels(inv_y)
@@ -396,12 +427,30 @@ def main() -> int:
         assert ".alerts-security.alerts-default" not in text
         assert "metrics-aws.awshealth" not in text
         attrs["panelsJSON"] = json.dumps(panels, separators=(",", ":"))
-        # Prefer description calling out insight fabric
+        pinned = attrs.get("pinned_panels") or {}
+        pinned_panels = pinned.get("panels") or {}
+        pinned["panels"] = {
+            panel_id: panel
+            for panel_id, panel in pinned_panels.items()
+            if not any(
+                fragile_index in json.dumps(panel)
+                for fragile_index in (
+                    "metrics-aws.ec2_metrics",
+                    "metrics-aws.s3_daily_storage",
+                    "metrics-aws.billing",
+                )
+            )
+        }
+        attrs["pinned_panels"] = pinned
+        # Describe the three data levels represented by the dashboard.
         attrs["description"] = (
-            "AWS Observe & Protect cockpit with Datadog-comparable insight fabric: "
-            "mirrored Security KPIs, service coverage matrix, events timeline, "
-            "live asset inventory, OOTB integration nav, and recommendation workflows."
+            "AWS Observe & Protect cockpit powered by the Insight Engine: "
+            "raw AWS telemetry, workflow-generated insights, and a prominent "
+            "Agent Builder summary with prioritized actions."
         )
+        for section in attrs.get("sections") or []:
+            if section.get("title") == "AWS Recommendations":
+                section["title"] = "Insight Engine — Workflow Insights"
         obj["attributes"] = attrs
         out_lines.append(json.dumps(obj, separators=(",", ":")))
         print(f"panels={len(panels)} insight panels injected into {path.name}")

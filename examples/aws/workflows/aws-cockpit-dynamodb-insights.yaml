@@ -1,0 +1,151 @@
+name: AWS Insight Engine — DynamoDB
+id: aws-cockpit-dynamodb-insights
+description: >-
+  Converts DynamoDB throttling, system errors, and latency into current
+  reliability insights in aws-cockpit-recommendations.
+
+triggers:
+  - type: manual
+  - type: scheduled
+    with:
+      every: "1h"
+
+steps:
+  - name: remove_previous_dynamodb_insights
+    type: elasticsearch.request
+    with:
+      method: POST
+      path: /aws-cockpit-recommendations/_delete_by_query?conflicts=proceed&refresh=true
+      body:
+        query:
+          term:
+            resource.type: dynamodb_table
+
+  - name: query_metrics
+    type: elasticsearch.esql.query
+    with:
+      format: json
+      query: |
+        FROM metrics-aws.dynamodb*
+        | WHERE @timestamp > NOW() - 24 hours
+        | STATS throttles = SUM(aws.dynamodb.metrics.ThrottledRequests.sum),
+                errors = SUM(aws.dynamodb.metrics.SystemErrors.sum),
+                latency = AVG(aws.dynamodb.metrics.SuccessfulRequestLatency.avg)
+            BY table = aws.dimensions.TableName, cloud.region, cloud.account.id
+        | WHERE table IS NOT NULL AND (throttles > 0 OR errors > 0 OR latency > 100)
+        | EVAL severity = CASE(errors > 0 OR throttles > 100, "high", "medium"),
+               metric_name = CASE(errors > 0, "system_errors", throttles > 0, "throttled_requests", "latency_ms"),
+               metric_value = CASE(errors > 0, TO_DOUBLE(errors), throttles > 0, TO_DOUBLE(throttles), latency)
+        | LIMIT 200
+
+  - name: normalize_metrics
+    type: data.map
+    items: "${{ steps.query_metrics.output.values }}"
+    with:
+      fields:
+        throttles: "{{ item[0] }}"
+        errors: "{{ item[1] }}"
+        latency: "{{ item[2] }}"
+        table: "{{ item[3] }}"
+        region: "{{ item[4] }}"
+        account_id: "{{ item[5] }}"
+        severity: "{{ item[6] }}"
+        metric_name: "{{ item[7] }}"
+        metric_value: "{{ item[8] }}"
+
+  - name: publish_insights
+    type: foreach
+    foreach: "${{ steps.normalize_metrics.output }}"
+    steps:
+      - name: index_dynamodb_insight
+        type: elasticsearch.index
+        with:
+          index: aws-cockpit-recommendations
+          id: "{{ foreach.item.table }}-dynamodb-health"
+          document:
+            "@timestamp": "{{ now | date_to_xmlschema }}"
+            category: reliability_risk
+            severity: "{{ foreach.item.severity }}"
+            metric_name: "{{ foreach.item.metric_name }}"
+            metric_value: "{{ foreach.item.metric_value }}"
+            threshold: 0
+            recommendation: >-
+              DynamoDB table {{ foreach.item.table }} reports {{
+              foreach.item.throttles }} throttled requests, {{
+              foreach.item.errors }} system errors, and {{
+              foreach.item.latency }} ms average request latency. Review
+              capacity mode, hot keys, retry behavior, and autoscaling.
+            resource:
+              type: dynamodb_table
+              name: "{{ foreach.item.table }}"
+              id: "{{ foreach.item.table }}"
+              key: "{{ foreach.item.region }}:dynamodb_table:{{ foreach.item.table }}"
+            cloud:
+              region: "{{ foreach.item.region }}"
+              account:
+                id: "{{ foreach.item.account_id }}"
+
+  - name: query_potentially_unused_tables
+    type: elasticsearch.esql.query
+    with:
+      format: json
+      query: |
+        FROM metrics-aws.dynamodb*
+        | WHERE @timestamp > NOW() - 14 days
+        | STATS observations = COUNT(*),
+                reads = SUM(aws.dynamodb.metrics.ConsumedReadCapacityUnits.sum),
+                writes = SUM(aws.dynamodb.metrics.ConsumedWriteCapacityUnits.sum)
+            BY table = aws.dimensions.TableName,
+               cloud.region, cloud.account.id
+        | WHERE table IS NOT NULL
+            AND reads IS NOT NULL
+            AND writes IS NOT NULL
+            AND reads == 0
+            AND writes == 0
+        | LIMIT 200
+
+  - name: map_potentially_unused_tables
+    type: data.map
+    items: "${{ steps.query_potentially_unused_tables.output.values }}"
+    with:
+      fields:
+        observations: "{{ item[0] }}"
+        reads: "{{ item[1] }}"
+        writes: "{{ item[2] }}"
+        table: "{{ item[3] }}"
+        region: "{{ item[4] }}"
+        account_id: "{{ item[5] }}"
+
+  - name: publish_potentially_unused_tables
+    type: foreach
+    foreach: "${{ steps.map_potentially_unused_tables.output }}"
+    steps:
+      - name: index_potentially_unused_table
+        type: elasticsearch.index
+        with:
+          index: aws-cockpit-recommendations
+          id: "{{ foreach.item.table }}-potentially-unused"
+          document:
+            "@timestamp": "{{ now | date_to_xmlschema }}"
+            category: unused_resource
+            severity: medium
+            confidence: high
+            activity_status: potentially_unused
+            lookback_days: 14
+            metric_name: consumed_capacity_units_14d
+            metric_value: 0
+            threshold: 0
+            recommendation: >-
+              DynamoDB table {{ foreach.item.table }} consumed no read or write
+              capacity over 14 days across {{ foreach.item.observations }}
+              observed metric documents. Confirm application, backup, and
+              retention requirements before removing it.
+            resource:
+              type: dynamodb_table
+              name: "{{ foreach.item.table }}"
+              id: "{{ foreach.item.table }}"
+              key: "{{ foreach.item.region }}:dynamodb_table:{{ foreach.item.table }}"
+            cloud:
+              region: "{{ foreach.item.region }}"
+              account:
+                id: "{{ foreach.item.account_id }}"

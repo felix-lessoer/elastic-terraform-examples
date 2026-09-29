@@ -100,14 +100,21 @@ variable "execute_workflows_on_apply" {
   default     = true
 }
 
+variable "deployment_creator_mode" {
+  type        = bool
+  description = "Enables behavior used only by the local Elastic PoC Deployment Creator."
+  default     = false
+}
+
+variable "elastic_tags_required" {
+  type        = bool
+  description = "Whether organization-specific tags must be applied to the Elastic project and provisioned AWS resources."
+  default     = true
+}
+
 variable "company_tags" {
   type        = map(string)
   description = "Company-policy tags applied to AWS resources and sanitized onto the Elastic project."
-
-  validation {
-    condition     = length(var.company_tags) > 0
-    error_message = "Set company_tags according to your company tagging policy."
-  }
 }
 
 variable "required_tag_keys" {

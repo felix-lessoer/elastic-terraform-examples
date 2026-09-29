@@ -1,19 +1,20 @@
 # Cockpit dashboard (Observability hub)
 
 Imports a pinned Kibana NDJSON export so Terraform owns the live cockpit layout
-(KPIs, data-flow, ML/AI inventory, cloud asset inventory, recommendations).
+(KPIs, data-flow, ML/AI inventory, cloud asset inventory, and insights).
 
 | Cloud | NDJSON | Dashboard ID | Notes |
 | --- | --- | --- | --- |
 | GCP | `cockpit.ndjson` | `fcf1246c-6ee2-4c91-94f8-f034e8d345bc` | Latest Observability export |
-| AWS | `cockpit-aws.ndjson` | `752a1ac0-26e4-49d8-a2b4-5483068809b9` | Latest Observability export |
+| AWS | `cockpit-aws.ndjson` | `45f84000-d68b-4bb1-9df2-09223fba6b29` | Latest Observability export |
+| AWS | `aws-security-observability-dashboards.ndjson` | 18 `ecs-aws-*` dashboards | Supplemental security and observability views |
 | Azure | `cockpit-azure.ndjson` | `b8e4c2f1-9a7d-4e3b-8c5a-1d6f0e9b2a47` | Built from the GCP/AWS cockpit template |
 
-Panels use Kibana `vis` (Lens attributes with ES|QL `textBased` datasources),
-`markdown`, and `custom_content`.
+Data panels use Kibana `vis` (Lens attributes with ES|QL `textBased`
+datasources). Markdown is reserved for navigation and explanatory text.
 
-Each cockpit includes a `custom_content` **OOTB integration dashboard**
-navigation strip (same panel type as the header banner) with curated deep-links
+Each cockpit includes a markdown **OOTB integration dashboard** navigation strip
+with curated deep-links
 into the EPR dashboards that ship with the cloud integrations, plus primary
 jumps to Security alerts, ML anomaly explorer, and CSPM findings.
 
@@ -24,6 +25,10 @@ python3 modules/cockpit-dashboard/scripts/inject_ootb_nav.py
 
 Curated link catalogs live in `scripts/ootb_nav.py` (`OOTB` / `PRIMARY_LINKS`).
 AWS and Azure rebuild scripts call `inject_ootb_nav()` automatically.
+
+Callers can deploy supplemental saved-object bundles through
+`additional_ndjson_paths`; these imports do not change the configured cockpit
+default route.
 
 ## Refresh from a live Observability Kibana
 
@@ -37,7 +42,7 @@ curl -u admin:"$GCP_OBS_PASSWORD" -H 'kbn-xsrf: true' -H 'content-type: applicat
 # AWS
 curl -u admin:"$AWS_OBS_PASSWORD" -H 'kbn-xsrf: true' -H 'content-type: application/json' \
   -X POST "$AWS_OBS_KIBANA/api/saved_objects/_export" \
-  -d '{"objects":[{"type":"dashboard","id":"752a1ac0-26e4-49d8-a2b4-5483068809b9"}],"includeReferencesDeep":true,"excludeExportDetails":true}' \
+  -d '{"objects":[{"type":"dashboard","id":"45f84000-d68b-4bb1-9df2-09223fba6b29"}],"includeReferencesDeep":true,"excludeExportDetails":true}' \
   -o modules/cockpit-dashboard/cockpit-aws.ndjson
 
 # Azure (rebuild from the GCP template)
@@ -50,18 +55,18 @@ cd examples/<cloud> && terraform apply -target=module.cockpit
 
 CPS cross-cluster references in the NDJSON use the live Security project alias
 when ES|QL can resolve it (e.g. `gcp-observe-and-protect-…`). On AWS, the
-Observability cockpit uses an **insight fabric** of local indices so panels never
+Observability cockpit uses an **Insight Engine** of local indices so panels never
 depend on broken CPS qualifiers (`no_matching_project_exception` even when the
 Cloud link is `enabled`). Security deep-links remain in the OOTB nav.
 
-## Multi-cloud insight fabric (Datadog-comparable)
+## Multi-cloud Insight Engine
 
 Shared helpers live in `scripts/insight_fabric_common.py`. Each cloud has a
 seeder + panel injector + assets/coverage workflows.
 
 | Cloud | Seeder | Inject | Indices |
 | --- | --- | --- | --- |
-| AWS | `seed_aws_insight_indices.py` | `inject_aws_insight_panels.py` | `aws-cockpit-{security-kpi,coverage,assets,events,health,recommendations}` |
+| AWS | `seed_aws_insight_indices.py` | `inject_aws_insight_panels.py` | `aws-cockpit-{security-kpi,coverage,assets,events,health,recommendations,insight-summary}` |
 | GCP | `seed_gcp_insight_indices.py` | `inject_gcp_insight_panels.py` | `gcp-cockpit-{security-kpi,coverage,assets,events,recommendations}` |
 | Azure | `seed_azure_insight_indices.py` | `inject_azure_insight_panels.py` | `azure-cockpit-{security-kpi,coverage,assets,events,recommendations}` |
 
@@ -80,7 +85,7 @@ python3 modules/cockpit-dashboard/scripts/seed_<cloud>_insight_indices.py \
 Each `examples/{aws,gcp,azure}` wires the seeder as
 `terraform_data.seed_<cloud>_insight_indices` (runs after cockpit + workflows).
 
-## Recommendations index
+## Workflow insight details
 
 Recommendation documents are produced by pinned Kibana Workflows under
 `examples/{gcp,aws,azure}/workflows/` (see those READMEs), not by this module.
@@ -88,10 +93,26 @@ Recommendation documents are produced by pinned Kibana Workflows under
 | Cloud | Index | Seeded by workflows |
 | --- | --- | --- |
 | GCP | `gcp-cockpit-recommendations` | Cloud Run, Cloud SQL, GKE, Host |
-| AWS | `aws-cockpit-recommendations` | EC2, S3 |
+| AWS | `aws-cockpit-recommendations` | EC2, S3, Lambda, RDS, ELB, DynamoDB, ECS, EBS |
 | Azure | `azure-cockpit-recommendations` | VM, Storage |
 
 Optional Python seeds for offline backfill:
 `scripts/generate_aws_recommendations.py`,
 `scripts/generate_azure_recommendations.py`,
 `scripts/seed_aws_insight_indices.py`.
+
+### AWS data levels
+
+1. Raw AWS telemetry remains in `metrics-aws.*` and `logs-aws.*`.
+2. Elastic workflows turn that telemetry into stable `aws-cockpit-*` insight
+   indices. Cost and performance recommendations are detail records within this
+   level, not a separate dashboard concept.
+3. `AWS Insight Engine Summary` invokes the `aws-recs-advisor` Agent Builder
+   agent, persists its structured conversation result in
+   `aws-cockpit-insight-summary`, and the first ES|QL table in the cockpit shows
+   the latest briefing.
+
+The module exports the current versioned Kibana `config` saved object, updates
+only its space-scoped `defaultRoute`, and imports it again during apply. This
+preserves settings such as `defaultIndex` while making the cockpit the first
+screen when customers open the Elastic project.

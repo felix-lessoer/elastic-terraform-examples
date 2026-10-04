@@ -1,0 +1,101 @@
+id: gcp-cockpit-pubsub-recommendations
+name: GCP Pub/Sub Backlog Recommendations
+description: >-
+  Requires the pubsub-gcp/metrics input (opt in). Reports sustained subscription
+  backlog from observed backlog metrics and maintains a bounded current
+  snapshot.
+
+triggers:
+  - type: manual
+  - type: scheduled
+    with:
+      every: "1h"
+
+steps:
+  - name: remove_previous_pubsub_insights
+    type: elasticsearch.request
+    with:
+      method: POST
+      path: /gcp-cockpit-recommendations/_delete_by_query?conflicts=proceed&refresh=true
+      body: {query: {term: {resource.type: pubsub_subscription}}}
+
+  - name: query_subscription_backlog
+    type: elasticsearch.esql.query
+    with:
+      format: json
+      query: |
+        FROM metrics-gcp.pubsub-default
+        | WHERE @timestamp > NOW() - 1 hour
+            AND (gcp.pubsub.subscription.num_undelivered_messages.value IS NOT NULL
+              OR gcp.pubsub.subscription.oldest_unacked_message_age.sec IS NOT NULL)
+        | EVAL region = COALESCE(gcp.labels.resource.location, cloud.region, "global")
+        | STATS observations = COUNT(*),
+                backlog_observations = COUNT(gcp.pubsub.subscription.num_undelivered_messages.value),
+                age_observations = COUNT(gcp.pubsub.subscription.oldest_unacked_message_age.sec),
+                max_backlog_messages = MAX(gcp.pubsub.subscription.num_undelivered_messages.value),
+                max_oldest_unacked_sec = MAX(gcp.pubsub.subscription.oldest_unacked_message_age.sec)
+          BY subscription_id = gcp.labels.resource.subscription_id,
+             region, project_id = cloud.account.id
+        | WHERE subscription_id IS NOT NULL AND project_id IS NOT NULL
+            AND observations > 0 AND backlog_observations > 0 AND age_observations > 0
+            AND (max_backlog_messages > 1000 OR max_oldest_unacked_sec > 300)
+        | KEEP observations, backlog_observations, age_observations,
+               max_backlog_messages, max_oldest_unacked_sec,
+               subscription_id, region, project_id
+        | LIMIT 200
+
+  - name: map_subscriptions
+    type: data.map
+    items: "${{ steps.query_subscription_backlog.output.values }}"
+    with:
+      fields:
+        observations: "{{ item[0] }}"
+        backlog_observations: "{{ item[1] }}"
+        age_observations: "{{ item[2] }}"
+        max_backlog_messages: "{{ item[3] }}"
+        max_oldest_unacked_sec: "{{ item[4] }}"
+        subscription_id: "{{ item[5] }}"
+        region: "{{ item[6] }}"
+        project_id: "{{ item[7] }}"
+
+  - name: publish_subscription_backlog
+    type: foreach
+    foreach: "${{ steps.map_subscriptions.output }}"
+    steps:
+      - name: index_subscription_backlog
+        type: elasticsearch.index
+        with:
+          index: gcp-cockpit-recommendations
+          id: "{{ foreach.item.project_id }}-{{ foreach.item.region }}-{{ foreach.item.subscription_id }}-backlog"
+          document:
+            "@timestamp": "{{ now | date_to_xmlschema }}"
+            category: performance_risk
+            severity: high
+            confidence: high
+            activity_status: observed
+            lookback_days: 0.0417
+            evidence_refs:
+              - gcp.pubsub.subscription.num_undelivered_messages.value
+              - gcp.pubsub.subscription.oldest_unacked_message_age.sec
+            contradictory_evidence: []
+            missing_telemetry:
+              - subscriber_error_rate
+            expected_value: "Backlog at or below 1,000 messages and oldest unacknowledged message age at or below 300 seconds."
+            safe_next_action: "Inspect subscriber health, quotas, dead-letter policy, and recent publish rate before scaling consumers."
+            metric_name: pubsub_max_undelivered_messages_1h
+            metric_value: "{{ foreach.item.max_backlog_messages }}"
+            threshold: 1000
+            recommendation: >-
+              Pub/Sub subscription {{ foreach.item.subscription_id }} exceeded
+              the backlog threshold over the last hour (maximum
+              {{ foreach.item.max_backlog_messages }} messages; oldest
+              unacknowledged age {{ foreach.item.max_oldest_unacked_sec }}
+              seconds).
+            resource:
+              type: pubsub_subscription
+              name: "{{ foreach.item.subscription_id }}"
+              id: "{{ foreach.item.subscription_id }}"
+              key: "{{ foreach.item.project_id }}:{{ foreach.item.region }}:pubsub_subscription:{{ foreach.item.subscription_id }}"
+            cloud:
+              region: "{{ foreach.item.region }}"
+              project: {id: "{{ foreach.item.project_id }}"}

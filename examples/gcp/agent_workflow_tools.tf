@@ -5,20 +5,24 @@ locals {
   # Keeping the contract next to the tools makes a disabled metric stream
   # impossible to describe as supported without an explicit mapping update.
   gcp_workflow_telemetry_requirements = {
-    "gcp-cockpit-host-recommendations"     = ["compute-gcp/metrics"]
-    "gcp-cockpit-assets"                   = ["compute-gcp/metrics", "storage-gcp/metrics"]
-    "gcp-cockpit-gke-recommendations"      = ["gke-gcp/metrics"]
-    "gcp-cockpit-cloudrun-recommendations" = ["cloudrun-gcp/metrics"]
-    "gcp-cockpit-cloudsql-recommendations" = ["cloudsql-gcp/metrics"]
+    "gcp-cockpit-host-recommendations"          = ["compute-gcp/metrics"]
+    "gcp-cockpit-assets"                        = ["compute-gcp/metrics", "storage-gcp/metrics"]
+    "gcp-cockpit-storage-recommendations"       = ["storage-gcp/metrics"]
+    "gcp-cockpit-loadbalancing-recommendations" = ["loadbalancing-gcp/metrics"]
+    "gcp-cockpit-pubsub-recommendations"        = ["pubsub-gcp/metrics"]
+    "gcp-cockpit-gke-recommendations"           = ["gke-gcp/metrics"]
+    "gcp-cockpit-cloudrun-recommendations"      = ["cloudrun-gcp/metrics"]
+    "gcp-cockpit-cloudsql-recommendations"      = ["cloudsql-gcp/metrics"]
   }
 
   gcp_metric_input_enabled = {
-    "compute-gcp/metrics"  = true
-    "storage-gcp/metrics"  = true
-    "gke-gcp/metrics"      = var.enable_gke_metrics
-    "cloudrun-gcp/metrics" = var.enable_cloudrun_metrics
-    "cloudsql-gcp/metrics" = var.enable_cloudsql_metrics
-    "pubsub-gcp/metrics"   = var.enable_pubsub_metrics
+    "compute-gcp/metrics"       = true
+    "storage-gcp/metrics"       = true
+    "loadbalancing-gcp/metrics" = true
+    "gke-gcp/metrics"           = var.enable_gke_metrics
+    "cloudrun-gcp/metrics"      = var.enable_cloudrun_metrics
+    "cloudsql-gcp/metrics"      = var.enable_cloudsql_metrics
+    "pubsub-gcp/metrics"        = var.enable_pubsub_metrics
   }
 
   gcp_service_workflow_ids = setunion(

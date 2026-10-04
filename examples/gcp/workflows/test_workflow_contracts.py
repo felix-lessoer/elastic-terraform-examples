@@ -42,6 +42,9 @@ class GcpWorkflowContractTests(unittest.TestCase):
             "gcp-cockpit-gke-recommendations.yaml",
             "gcp-cockpit-cloudrun-recommendations.yaml",
             "gcp-cockpit-cloudsql-recommendations.yaml",
+            "gcp-cockpit-storage-recommendations.yaml",
+            "gcp-cockpit-loadbalancing-recommendations.yaml",
+            "gcp-cockpit-pubsub-recommendations.yaml",
         )
         for name in recommendation_files:
             with self.subTest(workflow=name):
@@ -69,6 +72,8 @@ class GcpWorkflowContractTests(unittest.TestCase):
             "gcp-cockpit-host-recommendations.yaml",
             "gcp-cockpit-gke-recommendations.yaml",
             "gcp-cockpit-cloudrun-recommendations.yaml",
+            "gcp-cockpit-storage-recommendations.yaml",
+            "gcp-cockpit-loadbalancing-recommendations.yaml",
         ):
             source = (DIRECTORY / name).read_text()
             with self.subTest(workflow=name):
@@ -97,9 +102,12 @@ class GcpWorkflowContractTests(unittest.TestCase):
             (DIRECTORY / "gcp-cockpit-host-recommendations.yaml").read_text(),
         )
 
-    def test_telemetry_requirements_are_explicit_for_optional_streams(self):
+    def test_telemetry_requirements_drive_automatic_gating(self):
         tools = (GCP_ROOT / "agent_workflow_tools.tf").read_text()
         expected = {
+            "gcp-cockpit-storage-recommendations": "storage-gcp/metrics",
+            "gcp-cockpit-loadbalancing-recommendations": "loadbalancing-gcp/metrics",
+            "gcp-cockpit-pubsub-recommendations": "pubsub-gcp/metrics",
             "gcp-cockpit-gke-recommendations": "gke-gcp/metrics",
             "gcp-cockpit-cloudrun-recommendations": "cloudrun-gcp/metrics",
             "gcp-cockpit-cloudsql-recommendations": "cloudsql-gcp/metrics",
@@ -112,6 +120,56 @@ class GcpWorkflowContractTests(unittest.TestCase):
             self.assertIn(f"Requires the {integration}", (
                 DIRECTORY / f"{workflow}.yaml"
             ).read_text())
+        self.assertRegex(
+            tools, r'"storage-gcp/metrics"\s*=\s*true'
+        )
+        self.assertRegex(
+            tools, r'"loadbalancing-gcp/metrics"\s*=\s*true'
+        )
+        self.assertRegex(
+            tools,
+            r'"pubsub-gcp/metrics"\s*=\s*var\.enable_pubsub_metrics',
+        )
+
+    def test_new_service_workflows_use_real_metric_contracts(self):
+        expected_fields = {
+            "gcp-cockpit-storage-recommendations.yaml": (
+                "gcp.storage.storage.total.bytes",
+                "gcp.storage.api.request.count",
+            ),
+            "gcp-cockpit-loadbalancing-recommendations.yaml": (
+                "gcp.loadbalancing_metrics.https.request.count",
+                "gcp.labels.resource.forwarding_rule_name",
+            ),
+            "gcp-cockpit-pubsub-recommendations.yaml": (
+                "gcp.pubsub.subscription.num_undelivered_messages.value",
+                "gcp.pubsub.subscription.oldest_unacked_message_age.sec",
+            ),
+        }
+        for name, fields in expected_fields.items():
+            source = (DIRECTORY / name).read_text()
+            with self.subTest(workflow=name):
+                self.assertIn("observations", source)
+                for field in fields:
+                    self.assertIn(field, source)
+                for contract_field in (
+                    "confidence:",
+                    "evidence_refs:",
+                    "contradictory_evidence:",
+                    "missing_telemetry:",
+                    "expected_value:",
+                    "safe_next_action:",
+                ):
+                    self.assertIn(contract_field, source)
+
+    def test_unknown_services_are_documented_without_workflows(self):
+        readme = (DIRECTORY / "README.md").read_text()
+        for service in ("BigQuery", "Service Health", "Cloud Functions"):
+            self.assertIn(service, readme)
+        self.assertIn("unsupported / unknown", readme)
+        workflow_names = {path.name.lower() for path in DIRECTORY.glob("*.yaml")}
+        for unsupported in ("bigquery", "service-health", "functions"):
+            self.assertFalse(any(unsupported in name for name in workflow_names))
 
     def test_summary_and_ml_keeper_contracts(self):
         summary = self.workflows["gcp-cockpit-insight-engine-summary.yaml"]

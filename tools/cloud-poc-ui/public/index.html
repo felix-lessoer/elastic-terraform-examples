@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Elastic Cloud PoC Builder</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header>
+      <div class="eyebrow">Elastic Cloud PoC Builder</div>
+      <h1>Move from GCP inventory to useful answers</h1>
+      <p>
+        Review every step locally. Discovery stays read-only, infrastructure
+        changes use a saved plan, and workload adapters require separate approval.
+      </p>
+    </header>
+    <main>
+      <section class="card setup">
+        <div>
+          <h2>1. Connect this local session</h2>
+          <div class="accent"></div>
+          <p class="muted">Credential values stay in an owner-only local file.</p>
+        </div>
+        <form id="credentials">
+          <label>
+            Elastic Cloud API key
+            <input name="elasticCloudApiKey" type="password" autocomplete="off" />
+          </label>
+          <label>
+            Application credentials path
+            <input name="applicationCredentialsPath" placeholder="/home/me/gcp-adc.json" />
+          </label>
+          <label>
+            Service account to impersonate (optional)
+            <input name="impersonateServiceAccount" placeholder="collector@project.iam.gserviceaccount.com" />
+          </label>
+          <button type="submit">Save local credentials</button>
+        </form>
+      </section>
+
+      <section class="card">
+        <h2>2. Choose the named project</h2>
+        <div class="accent"></div>
+        <label>
+          GCP project ID
+          <input id="projectId" placeholder="my-observability-project" />
+        </label>
+      </section>
+
+      <section class="card">
+        <h2>3. Follow the guided path</h2>
+        <div class="accent"></div>
+        <div id="steps" class="steps"></div>
+      </section>
+
+      <section class="card progress-card" aria-live="polite">
+        <div class="progress-heading">
+          <div>
+            <h2>Operation progress</h2>
+            <div class="accent"></div>
+          </div>
+          <span id="state" class="badge">Ready</span>
+        </div>
+        <progress id="progress" max="100" value="0"></progress>
+        <p id="message" class="muted">Select preflight to begin.</p>
+        <pre id="logs">No local command output yet.</pre>
+        <div id="result"></div>
+      </section>
+    </main>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

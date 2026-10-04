@@ -45,6 +45,54 @@ variable "fetch_project_number" {
   default     = false
 }
 
+variable "existing_topic_names" {
+  type        = map(string)
+  description = "Customer-owned Pub/Sub topic names to reuse by stream key (audit, firewall, vpcflow, dns, lb). The module will not manage these topics."
+  default     = {}
+
+  validation {
+    condition = alltrue([
+      for key, name in var.existing_topic_names :
+      contains(["audit", "firewall", "vpcflow", "dns", "lb"], key) && trimspace(name) != ""
+    ])
+    error_message = "existing_topic_names keys must be audit, firewall, vpcflow, dns, or lb and names must be non-empty."
+  }
+}
+
+variable "existing_sink_names" {
+  type        = map(string)
+  description = "Customer-owned Logging sink names to reuse by stream key. Reusing a sink also requires the matching existing_topic_names entry."
+  default     = {}
+
+  validation {
+    condition = alltrue([
+      for key, name in var.existing_sink_names :
+      contains(["audit", "firewall", "vpcflow", "dns", "lb"], key) && trimspace(name) != ""
+    ])
+    error_message = "existing_sink_names keys must be audit, firewall, vpcflow, dns, or lb and names must be non-empty."
+  }
+}
+
+variable "existing_subscription_names" {
+  type        = map(string)
+  description = "Customer-owned Pub/Sub subscription names to reuse by stream key. Reusing a subscription also requires the matching existing_topic_names entry."
+  default     = {}
+
+  validation {
+    condition = alltrue([
+      for key, name in var.existing_subscription_names :
+      contains(["audit", "firewall", "vpcflow", "dns", "lb"], key) && trimspace(name) != ""
+    ])
+    error_message = "existing_subscription_names keys must be audit, firewall, vpcflow, dns, or lb and names must be non-empty."
+  }
+}
+
+variable "grant_existing_subscription_access" {
+  type        = bool
+  description = "Grant the collector service account subscriber access on customer-owned subscriptions. False preserves customer IAM ownership."
+  default     = false
+}
+
 variable "audit_filter" {
   type    = string
   default = "logName:\"cloudaudit.googleapis.com\""

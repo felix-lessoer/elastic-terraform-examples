@@ -18,6 +18,11 @@ The server always listens on `127.0.0.1` (port `5603` by default). Mutating API
 requests require both a localhost `Origin` and the CSRF token returned by
 `GET /api/bootstrap`.
 
+`terraform`, `gcloud`, and Python 3 must be available on the `PATH` of the
+process that starts the UI. Live discovery also requires the `google-auth`
+Python package. Preflight checks Terraform and Google Cloud CLI before querying
+the selected project and reports an actionable missing-command error.
+
 The guided GCP operations are:
 
 1. `preflight`

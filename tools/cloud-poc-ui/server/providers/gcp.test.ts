@@ -61,6 +61,8 @@ class FixtureRunner implements CommandRunner {
       };
     }
     const output: Partial<Record<CommandId, unknown>> = {
+      'terraform.version': { terraform_version: '1.16.5' },
+      'gcloud.version': { 'Google Cloud SDK': '540.0.0' },
       'gcp.identity': {
         projectId: values.projectId,
         projectNumber: '123',
@@ -133,6 +135,8 @@ describe('GCP provider', () => {
       context,
     );
     expect(runner.calls).toEqual([
+      { id: 'terraform.version', values: {} },
+      { id: 'gcloud.version', values: {} },
       { id: 'gcp.identity', values: { projectId: 'sample-project1' } },
     ]);
     expect(result).toMatchObject({

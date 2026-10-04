@@ -81,23 +81,44 @@ export class GcpProvider implements CloudProvider {
     await context.progress({
       stage: 'credentials',
       message: 'Checking local credentials',
-      percent: 20,
+      percent: 15,
     });
     const credentials = await this.credentialStatus();
     if (!credentials.elasticConfigured || !credentials.cloudConfigured) {
       throw new Error('Save Elastic and Google Cloud credentials before preflight');
     }
     await context.progress({
+      stage: 'tools',
+      message: 'Checking Terraform and Google Cloud CLI',
+      percent: 35,
+    });
+    const terraform = await this.command('terraform.version', {}, context);
+    const gcloud = await this.command('gcloud.version', {}, context);
+    await context.progress({
       stage: 'identity',
       message: `Validating access to ${projectId}`,
-      percent: 60,
+      percent: 70,
     });
     const identity = await this.command(
       'gcp.identity',
       { projectId },
       context,
     );
-    return { credentials, identity: JSON.parse(identity.stdout) };
+    const terraformVersion = JSON.parse(terraform.stdout) as {
+      terraform_version?: string;
+    };
+    const gcloudVersion = JSON.parse(gcloud.stdout) as Record<string, string>;
+    return {
+      credentials,
+      tools: {
+        terraform: terraformVersion.terraform_version ?? 'available',
+        gcloud:
+          gcloudVersion['Google Cloud SDK'] ??
+          gcloudVersion.GoogleCloudSDK ??
+          'available',
+      },
+      identity: JSON.parse(identity.stdout),
+    };
   }
 
   private async discover(projectId: string, context: ProviderContext) {

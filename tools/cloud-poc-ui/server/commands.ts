@@ -3,6 +3,8 @@ import { execa } from 'execa';
 export type CommandId =
   | 'gcp.identity'
   | 'gcp.discover'
+  | 'gcloud.version'
+  | 'terraform.version'
   | 'terraform.init'
   | 'terraform.plan'
   | 'terraform.apply'
@@ -44,6 +46,11 @@ const commands: Record<
     args(values: Record<string, string>): string[];
   }
 > = {
+  'gcloud.version': {
+    executable: 'gcloud',
+    timeoutMs: 30_000,
+    args: () => ['version', '--format=json'],
+  },
   'gcp.identity': {
     executable: 'gcloud',
     timeoutMs: 30_000,
@@ -53,6 +60,11 @@ const commands: Record<
       required(values, 'projectId', identifier),
       '--format=json(projectId,projectNumber,name,lifecycleState)',
     ],
+  },
+  'terraform.version': {
+    executable: 'terraform',
+    timeoutMs: 30_000,
+    args: () => ['version', '-json'],
   },
   'gcp.discover': {
     executable: 'python3',
@@ -157,7 +169,25 @@ export class FixedCommandRunner implements CommandRunner {
     child.stderr?.on('data', (chunk) =>
       options.write(redact(String(chunk))),
     );
-    const result = await child;
+    let result;
+    try {
+      result = await child;
+    } catch (error) {
+      const code =
+        error && typeof error === 'object' && 'code' in error
+          ? String(error.code)
+          : '';
+      if (code === 'ENOENT') {
+        return {
+          exitCode: 127,
+          stdout: '',
+          stderr:
+            `Required command "${definition.executable}" is not installed or is not on PATH. ` +
+            `Install it, restart the PoC Builder, and run Preflight again.`,
+        };
+      }
+      throw error;
+    }
     return {
       exitCode: result.exitCode ?? 1,
       stdout: redact(result.stdout),

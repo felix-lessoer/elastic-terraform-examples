@@ -641,6 +641,11 @@ All URLs were accessed on 2026-09-27. Documentation is continuously updated. Som
 
 ## Handoff for follow-on agents
 
+For Azure and GCP implementation, start with
+[Azure and GCP PoC parity handoff](CLOUD_POC_PARITY_HANDOFF.md). It records the
+completed AWS reference commit, shared quality gates, cloud-specific work, and
+the required delivery order.
+
 Start from PR 12, not the legacy `AWS/` directory. Before implementation:
 
 1. confirm whether the product decision is one Observability project or an Observability + Security deployment;

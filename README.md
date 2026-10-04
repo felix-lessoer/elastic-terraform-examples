@@ -59,6 +59,14 @@ This example will install and configure:
 
 You can decide if you like to install the environment for all Cloud Providers at once or each once independently from each other. No matter what you prefer you need to deploy it within the [MultiCloud](MultiCloud) folder. Before you do that you need to prepare your environment. You will find the comprehensive Getting Started description also within the [MultiCloud](MultiCloud) folder.
 
+## Modern PoC implementation handoff
+
+The root-level cloud examples above are legacy implementations. Agents extending
+the modern AWS PoC to Azure or GCP must first read the
+[Azure and GCP PoC parity handoff](docs/CLOUD_POC_PARITY_HANDOFF.md). It points
+to the completed AWS reference branch and records the required implementation
+steps, quality guidelines, acceptance criteria, and deployment learnings.
+
 # More Elasticsearch terraform examples
 
 Other terraform + elastic examples can be found here:

@@ -384,14 +384,18 @@ describe('persisted operation state', () => {
     const directory = await temporaryDirectory();
     const filePath = path.join(directory, 'operations.json');
     const store = new OperationStore(filePath);
-    const record = await store.start('analysis', async (context) => {
-      await context.progress({
-        stage: 'validating',
-        message: 'Checking fixtures',
-        percent: 80,
-      });
-      return { findingCount: 2 };
-    });
+    const record = await store.start(
+      'analysis',
+      async (context) => {
+        await context.progress({
+          stage: 'validating',
+          message: 'Checking fixtures',
+          percent: 80,
+        });
+        return { findingCount: 2 };
+      },
+      'valid-project1',
+    );
     await new Promise<void>((resolve) => {
       if (store.get(record.id)?.state === 'succeeded') {
         resolve();
@@ -406,12 +410,14 @@ describe('persisted operation state', () => {
       store.events.on(record.id, listener);
     });
     expect(store.get(record.id)?.state).toBe('succeeded');
+    expect(store.get(record.id)?.projectId).toBe('valid-project1');
     expect(store.get(record.id)?.result).toEqual({ findingCount: 2 });
     expect((await fs.stat(filePath)).mode & 0o777).toBe(0o600);
 
     const restored = new OperationStore(filePath);
     await restored.load();
     expect(restored.get(record.id)?.state).toBe('succeeded');
+    expect(restored.get(record.id)?.projectId).toBe('valid-project1');
   });
 
   it('marks interrupted operations failed on restart', async () => {

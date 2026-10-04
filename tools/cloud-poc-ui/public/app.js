@@ -1,17 +1,56 @@
 const steps = [
-  ['preflight', 'Preflight'],
-  ['terraform-init', 'Initialize Terraform'],
-  ['terraform-plan', 'Review saved plan'],
-  ['terraform-apply', 'Apply saved plan'],
-  ['discovery', 'Discover GCP'],
-  ['analysis', 'Analyze coverage'],
-  ['workflows', 'Run workflows'],
-  ['final-links', 'Open final links'],
+  {
+    operation: 'preflight',
+    label: 'Preflight',
+    description: 'Validate credentials, required tools, and access to the named project.',
+  },
+  {
+    operation: 'terraform-init',
+    label: 'Initialize Terraform',
+    description: 'Download and initialize the pinned providers and local modules.',
+  },
+  {
+    operation: 'terraform-plan',
+    label: 'Review saved plan',
+    description: 'Create the exact plan and review its resource actions before applying.',
+  },
+  {
+    operation: 'terraform-apply',
+    label: 'Apply saved plan',
+    description: 'Apply only the reviewed plan after typing the explicit confirmation.',
+  },
+  {
+    operation: 'discovery',
+    label: 'Discover GCP',
+    description: 'Run bounded, read-only Cloud Asset Inventory discovery.',
+  },
+  {
+    operation: 'analysis',
+    label: 'Analyze coverage',
+    description: 'Build coverage gaps, findings, and named visibility candidates.',
+  },
+  {
+    operation: 'workflows',
+    label: 'Run workflows',
+    description: 'Run the allow-listed deterministic GCP insight workflows.',
+  },
+  {
+    operation: 'final-links',
+    label: 'Open final links',
+    description: 'Open the Elastic cockpit and the selected GCP project.',
+  },
 ];
 
 let csrfToken = '';
 let activeEvents;
+let credentialState = {
+  elasticConfigured: false,
+  cloudConfigured: false,
+};
+let operationHistory = [];
+let operationRunning = false;
 const stepContainer = document.querySelector('#steps');
+const guidedSummary = document.querySelector('#guided-summary');
 const state = document.querySelector('#state');
 const progress = document.querySelector('#progress');
 const message = document.querySelector('#message');
@@ -30,8 +69,148 @@ projectInput.value = localStorage.getItem('gcpProjectId') ?? '';
 let lastAnalysisLoaded;
 
 function setButtonsDisabled(disabled) {
-  document.querySelectorAll('#steps button').forEach((button) => {
-    button.disabled = disabled;
+  operationRunning = disabled;
+  renderGuidedPath();
+}
+
+function latestOperation(operation, projectId) {
+  return operationHistory
+    .filter(
+      (record) =>
+        record.operation === operation &&
+        record.projectId === projectId,
+    )
+    .sort((left, right) => right.startedAt.localeCompare(left.startedAt))[0];
+}
+
+function rememberOperation(operation) {
+  operationHistory = [
+    operation,
+    ...operationHistory.filter((record) => record.id !== operation.id),
+  ];
+}
+
+async function startGuidedOperation(operation) {
+  const projectId = projectInput.value.trim();
+  if (!projectId) {
+    message.textContent = 'Enter the named GCP project ID first.';
+    projectInput.focus();
+    return;
+  }
+  localStorage.setItem('gcpProjectId', projectId);
+  let confirmation;
+  if (operation === 'terraform-apply') {
+    confirmation = window.prompt('Type APPLY to apply the reviewed saved plan.');
+    if (confirmation !== 'APPLY') return;
+  }
+  setButtonsDisabled(true);
+  try {
+    watchOperation(
+      await api(`/api/providers/gcp/operations/${operation}`, {
+        method: 'POST',
+        body: JSON.stringify({ projectId, confirmation }),
+      }),
+    );
+  } catch (error) {
+    state.textContent = 'failed';
+    state.classList.add('failed');
+    message.textContent = error.message;
+    setButtonsDisabled(false);
+  }
+}
+
+function renderGuidedPath() {
+  const projectId = projectInput.value.trim();
+  const credentialsReady =
+    credentialState.cloudConfigured && credentialState.elasticConfigured;
+  const records = steps.map(({ operation }) =>
+    projectId ? latestOperation(operation, projectId) : undefined,
+  );
+  const nextIndex = records.findIndex(
+    (record) => record?.state !== 'succeeded',
+  );
+  const completed = records.filter(
+    (record) => record?.state === 'succeeded',
+  ).length;
+
+  if (!credentialsReady) {
+    guidedSummary.textContent =
+      'Next: save both Elastic and Google Cloud credentials in step 1.';
+  } else if (!projectId) {
+    guidedSummary.textContent =
+      'Credentials are saved. Next: enter the GCP project ID in step 2.';
+  } else if (nextIndex === -1) {
+    guidedSummary.textContent =
+      `All ${steps.length} guided steps are complete for ${projectId}. ` +
+      'You can reopen the final links or rerun any completed step.';
+  } else {
+    const next = steps[nextIndex];
+    const failed = records[nextIndex]?.state === 'failed';
+    guidedSummary.textContent =
+      `${completed} of ${steps.length} steps complete for ${projectId}. ` +
+      `${failed ? 'Needs attention' : 'Next'}: ${next.label}. ${next.description}`;
+  }
+
+  stepContainer.replaceChildren();
+  steps.forEach((step, index) => {
+    const record = records[index];
+    const complete = record?.state === 'succeeded';
+    const failed = record?.state === 'failed';
+    const running = ['queued', 'running', 'validating'].includes(record?.state);
+    const next = index === nextIndex;
+    const locked =
+      !credentialsReady ||
+      !projectId ||
+      (nextIndex !== -1 && index > nextIndex && !complete);
+    const card = document.createElement('article');
+    card.className = [
+      'guided-step',
+      complete ? 'complete' : '',
+      failed ? 'failed' : '',
+      next && !failed ? 'next' : '',
+    ]
+      .filter(Boolean)
+      .join(' ');
+
+    const number = document.createElement('span');
+    number.className = 'step-number';
+    number.textContent = String(index + 1);
+    const copy = document.createElement('div');
+    copy.className = 'step-copy';
+    const heading = document.createElement('h3');
+    heading.textContent = step.label;
+    const description = document.createElement('p');
+    description.textContent = step.description;
+    copy.append(heading, description);
+    if (record) {
+      const history = document.createElement('p');
+      history.className = 'step-history';
+      const when = new Date(record.finishedAt ?? record.updatedAt).toLocaleString();
+      history.textContent = complete
+        ? `Completed ${when}.`
+        : failed
+          ? `Last attempt failed ${when}. Review the operation log below, then retry.`
+          : `Started ${new Date(record.startedAt).toLocaleString()}.`;
+      copy.append(history);
+    }
+    const status = document.createElement('span');
+    status.className = 'step-status';
+    status.textContent = complete
+      ? 'Complete'
+      : failed
+        ? 'Needs attention'
+        : running
+          ? 'In progress'
+          : next && credentialsReady && projectId
+            ? 'Next'
+            : 'Locked';
+    const button = actionButton(
+      complete ? 'Run again' : failed ? 'Retry step' : `Start ${step.label}`,
+      () => void startGuidedOperation(step.operation),
+      operationRunning || running || locked,
+    );
+    card.append(number, copy, status, button);
+    stepContainer.append(card);
   });
 }
 
@@ -78,6 +257,7 @@ function renderResult(value) {
 }
 
 function renderOperation(operation) {
+  rememberOperation(operation);
   state.textContent = operation.state;
   state.classList.toggle('failed', operation.state === 'failed');
   progress.value = operation.percent ?? (operation.state === 'succeeded' ? 100 : 5);
@@ -236,39 +416,10 @@ async function loadVisibility() {
   }
 }
 
-for (const [operation, label] of steps) {
-  const button = document.createElement('button');
-  button.textContent = label;
-  button.classList.toggle('primary', operation === 'preflight');
-  button.addEventListener('click', async () => {
-    const projectId = projectInput.value.trim();
-    if (!projectId) {
-      message.textContent = 'Enter the named GCP project ID first.';
-      return;
-    }
-    localStorage.setItem('gcpProjectId', projectId);
-    let confirmation;
-    if (operation === 'terraform-apply') {
-      confirmation = window.prompt('Type APPLY to apply the reviewed saved plan.');
-      if (confirmation !== 'APPLY') return;
-    }
-    setButtonsDisabled(true);
-    try {
-      watchOperation(
-        await api(`/api/providers/gcp/operations/${operation}`, {
-          method: 'POST',
-          body: JSON.stringify({ projectId, confirmation }),
-        }),
-      );
-    } catch (error) {
-      state.textContent = 'failed';
-      state.classList.add('failed');
-      message.textContent = error.message;
-      setButtonsDisabled(false);
-    }
-  });
-  stepContainer.append(button);
-}
+projectInput.addEventListener('input', () => {
+  localStorage.setItem('gcpProjectId', projectInput.value.trim());
+  renderGuidedPath();
+});
 
 credentialsForm.addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -296,6 +447,8 @@ credentialsForm.addEventListener('submit', async (event) => {
       ? 'form-status success'
       : 'form-status warning';
     credentialsStatus.textContent = feedback;
+    credentialState = status;
+    renderGuidedPath();
     message.textContent = feedback;
     credentialsForm.reset();
   } catch (error) {
@@ -320,7 +473,17 @@ document.querySelector('#cleanup-orphans').addEventListener('click', async () =>
 try {
   const bootstrap = await api('/api/bootstrap');
   csrfToken = bootstrap.csrfToken;
-  const latest = bootstrap.operations[0];
+  credentialState = bootstrap.credentials;
+  operationHistory = bootstrap.operations;
+  if (credentialState.cloudConfigured && credentialState.elasticConfigured) {
+    credentialsStatus.className = 'form-status success';
+    credentialsStatus.textContent =
+      `Credentials are saved locally (${credentialState.method}). Run Preflight to validate them.`;
+  }
+  renderGuidedPath();
+  const latest = bootstrap.operations.find(
+    (operation) => operation.projectId === projectInput.value.trim(),
+  );
   if (latest) renderOperation(latest);
   await loadVisibility();
 } catch (error) {

@@ -163,8 +163,95 @@ button:disabled {
 
 .steps {
   display: grid;
-  grid-template-columns: repeat(4, minmax(150px, 1fr));
+  grid-template-columns: repeat(2, minmax(260px, 1fr));
   gap: 0.75rem;
+}
+
+.guided-summary {
+  margin-bottom: 1rem;
+  padding: 1rem;
+  border-left: 4px solid var(--elastic-blue);
+  border-radius: 0 6px 6px 0;
+  color: var(--dark-ink);
+  background: var(--light-grey);
+  line-height: 1.5;
+}
+
+.guided-step {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: start;
+  gap: 0.75rem;
+  min-height: 150px;
+  padding: 1rem;
+  border: 1px solid var(--developer-blue);
+  border-radius: 8px;
+  background: var(--white);
+}
+
+.guided-step.next {
+  border: 2px solid var(--elastic-blue);
+}
+
+.guided-step.complete {
+  border-color: var(--light-teal);
+  background: color-mix(in srgb, var(--light-teal), var(--white) 90%);
+}
+
+.guided-step.failed {
+  border-color: var(--light-poppy);
+  background: color-mix(in srgb, var(--light-poppy), var(--white) 88%);
+}
+
+.step-number {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--white);
+  background: var(--elastic-blue);
+  font-weight: 700;
+}
+
+.step-copy h3 {
+  margin: 0 0 0.35rem;
+  font-size: 1rem;
+}
+
+.step-copy p {
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.step-copy .step-history {
+  margin-top: 0.55rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.step-status {
+  padding: 0.25rem 0.5rem;
+  border-radius: 999px;
+  color: var(--dark-ink);
+  background: var(--light-grey);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.guided-step.complete .step-status {
+  background: var(--light-teal);
+}
+
+.guided-step.failed .step-status {
+  background: var(--light-poppy);
+}
+
+.guided-step button {
+  grid-column: 2 / 4;
+  justify-self: start;
 }
 
 .progress-heading {
@@ -273,12 +360,6 @@ td {
     grid-template-columns: 1fr;
   }
 
-  .steps {
-    grid-template-columns: 1fr 1fr;
-  }
-}
-
-@media (max-width: 480px) {
   .steps {
     grid-template-columns: 1fr;
   }

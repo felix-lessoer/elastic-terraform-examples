@@ -40,6 +40,11 @@ The guided GCP operations are:
 7. `workflows`
 8. `final-links`
 
+The guided path is persisted per GCP project. Each card shows whether the step
+is complete, needs attention, is running, is next, or is locked behind an
+earlier step. Completion timestamps survive reloads, and the summary names the
+next required action.
+
 Only fixed server-side command IDs can execute. Project IDs and saved-plan
 names are validated before command construction. Local credentials, discovery
 artifacts, operation history, snapshots, and rollback state are written under

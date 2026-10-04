@@ -181,8 +181,10 @@ export function createApp(options: {
       return;
     }
     try {
-      const record = await options.operationStore.start(operation, (context) =>
-        options.provider.execute(operation, input, context),
+      const record = await options.operationStore.start(
+        operation,
+        (context) => options.provider.execute(operation, input, context),
+        input.projectId,
       );
       response.status(202).json(record);
     } catch (error) {

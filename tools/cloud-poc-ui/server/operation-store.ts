@@ -13,6 +13,7 @@ export interface OperationRecord {
   id: string;
   provider: 'gcp';
   operation: GuidedOperation;
+  projectId?: string;
   state: ProgressState;
   stage: string;
   message: string;
@@ -59,7 +60,11 @@ export class OperationStore {
     return this.records.find((record) => record.id === id);
   }
 
-  async start(operation: GuidedOperation, task: Task): Promise<OperationRecord> {
+  async start(
+    operation: GuidedOperation,
+    task: Task,
+    projectId?: string,
+  ): Promise<OperationRecord> {
     await this.load();
     if (this.records.some((record) =>
       ['queued', 'running', 'validating'].includes(record.state),
@@ -71,6 +76,7 @@ export class OperationStore {
       id: randomUUID(),
       provider: 'gcp',
       operation,
+      projectId,
       state: 'queued',
       stage: 'queued',
       message: 'Waiting to start',

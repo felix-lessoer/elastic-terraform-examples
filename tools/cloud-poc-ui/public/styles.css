@@ -254,6 +254,50 @@ button:disabled {
   justify-self: start;
 }
 
+.step-output {
+  grid-column: 1 / -1;
+  padding-top: 0.85rem;
+  border-top: 1px solid #d3dae6;
+}
+
+.step-output h4 {
+  margin: 0 0 0.65rem;
+  font-size: 0.95rem;
+}
+
+.step-output p {
+  margin: 0.35rem 0;
+  line-height: 1.5;
+}
+
+.step-output ul {
+  margin: 0.65rem 0;
+  padding-left: 1.25rem;
+}
+
+.step-output a {
+  display: block;
+  width: fit-content;
+  margin-top: 0.5rem;
+  color: var(--elastic-blue);
+  font-weight: 600;
+}
+
+.advanced-output {
+  margin-top: 0.75rem;
+}
+
+.advanced-output summary {
+  width: fit-content;
+  color: var(--elastic-blue);
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.advanced-output pre {
+  margin-bottom: 0;
+}
+
 .progress-heading {
   display: flex;
   align-items: flex-start;

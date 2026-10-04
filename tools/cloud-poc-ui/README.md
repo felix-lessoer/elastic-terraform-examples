@@ -43,7 +43,13 @@ The guided GCP operations are:
 The guided path is persisted per GCP project. Each card shows whether the step
 is complete, needs attention, is running, is next, or is locked behind an
 earlier step. Completion timestamps survive reloads, and the summary names the
-next required action.
+next required action. Friendly results and failures stay on their owning step;
+full command logs and JSON are collapsed under **Advanced: raw output**.
+
+The saved Terraform plan receives the selected `google_cloud_project` and a
+minimal PoC `company_labels` map (`owner`, `environment`, and `project`) from
+the fixed server-side command contract. No free-form Terraform arguments are
+accepted from the browser.
 
 Only fixed server-side command IDs can execute. Project IDs and saved-plan
 names are validated before command construction. Local credentials, discovery

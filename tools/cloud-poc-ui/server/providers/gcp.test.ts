@@ -185,6 +185,10 @@ describe('GCP provider', () => {
       'terraform.plan',
       'terraform.show',
     ]);
+    expect(runner.calls[0].values).toEqual({
+      plan: '.cloud-poc-gcp.tfplan',
+      projectId: 'sample-project1',
+    });
     expect(result).toMatchObject({
       counts: { create: 1 },
       resources: [

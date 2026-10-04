@@ -210,6 +210,7 @@ function renderGuidedPath() {
       operationRunning || running || locked,
     );
     card.append(number, copy, status, button);
+    appendFriendlyResult(card, step, record);
     stepContainer.append(card);
   });
 }
@@ -320,6 +321,159 @@ function actionButton(label, handler, disabled = false) {
   button.disabled = disabled;
   button.addEventListener('click', handler);
   return button;
+}
+
+function appendText(container, label, value) {
+  const row = document.createElement('p');
+  const strong = document.createElement('strong');
+  strong.textContent = `${label}: `;
+  row.append(strong, document.createTextNode(String(value)));
+  container.append(row);
+}
+
+function friendlyFailure(record) {
+  const raw = record.logs?.join('\n') ?? '';
+  if (raw.includes('No value for required variable')) {
+    return (
+      'Terraform was missing required deployment inputs. The selected project ' +
+      'and PoC labels are now supplied automatically; retry this step.'
+    );
+  }
+  if (raw.includes('not installed or is not on PATH')) {
+    return 'A required local tool is unavailable. Follow the installation guidance in Advanced output, restart the UI, and retry.';
+  }
+  const errorLine = raw
+    .split('\n')
+    .map((line) => line.trim())
+    .find((line) => line.startsWith('Error:') || line.startsWith('ERROR:'));
+  return errorLine
+    ? `${errorLine} Open Advanced output for the complete diagnostic.`
+    : 'This step failed. Open Advanced output for the diagnostic, correct the issue, and retry.';
+}
+
+function appendFriendlyResult(container, step, record) {
+  if (!record) return;
+  const output = document.createElement('div');
+  output.className = 'step-output';
+  const heading = document.createElement('h4');
+  heading.textContent =
+    record.state === 'failed'
+      ? 'What happened'
+      : record.state === 'succeeded'
+        ? 'Result'
+        : 'Current activity';
+  output.append(heading);
+
+  if (record.state === 'failed') {
+    const explanation = document.createElement('p');
+    explanation.textContent = friendlyFailure(record);
+    output.append(explanation);
+  } else if (record.state !== 'succeeded') {
+    appendText(output, 'Status', `${record.stage}: ${record.message}`);
+    if (record.percent !== undefined) {
+      appendText(output, 'Progress', `${record.percent}%`);
+    }
+  } else {
+    const value = record.result ?? {};
+    switch (step.operation) {
+      case 'preflight':
+        appendText(
+          output,
+          'Validated project',
+          value.identity?.projectId ?? record.projectId,
+        );
+        appendText(
+          output,
+          'Tools',
+          `Terraform ${value.tools?.terraform ?? 'available'}, gcloud ${value.tools?.gcloud ?? 'available'}`,
+        );
+        break;
+      case 'terraform-init':
+        appendText(output, 'Terraform', 'Providers and modules initialized successfully');
+        break;
+      case 'terraform-plan': {
+        const counts = value.counts ?? {};
+        appendText(
+          output,
+          'Planned actions',
+          `${counts.create ?? 0} create, ${counts.update ?? 0} update, ` +
+            `${counts.replace ?? 0} replace, ${counts.delete ?? 0} delete, ` +
+            `${counts.read ?? 0} read`,
+        );
+        if (Array.isArray(value.resources) && value.resources.length) {
+          const list = document.createElement('ul');
+          for (const resource of value.resources.slice(0, 12)) {
+            const item = document.createElement('li');
+            item.textContent = resource.label ?? `${resource.action}: ${resource.address}`;
+            list.append(item);
+          }
+          if (value.resources.length > 12) {
+            const item = document.createElement('li');
+            item.textContent = `…and ${value.resources.length - 12} more actions`;
+            list.append(item);
+          }
+          output.append(list);
+        }
+        break;
+      }
+      case 'terraform-apply':
+        appendText(output, 'Deployment', 'The reviewed saved plan was applied');
+        break;
+      case 'discovery':
+        appendText(output, 'Resources discovered', value.resourceCount ?? 0);
+        appendText(output, 'Manifest', value.partial ? 'Partial results' : 'Complete');
+        break;
+      case 'analysis':
+        appendText(
+          output,
+          'Visibility candidates',
+          Array.isArray(value.candidates) ? value.candidates.length : 0,
+        );
+        appendText(output, 'Missing telemetry', value.missingTelemetryMeans ?? 'unknown');
+        break;
+      case 'workflows':
+        appendText(
+          output,
+          'Prepared workflows',
+          Array.isArray(value.workflowIds) ? value.workflowIds.length : 0,
+        );
+        if (value.note) appendText(output, 'Important', value.note);
+        break;
+      case 'final-links':
+        for (const [label, href] of [
+          ['Open the Elastic cockpit', value.cockpit],
+          ['Open the GCP project', value.cloudConsole],
+        ]) {
+          if (!href) continue;
+          const link = document.createElement('a');
+          link.href = href;
+          link.target = '_blank';
+          link.rel = 'noopener noreferrer';
+          link.textContent = label;
+          output.append(link);
+        }
+        break;
+      default:
+        appendText(output, 'Status', 'Completed successfully');
+    }
+  }
+
+  const advanced = document.createElement('details');
+  advanced.className = 'advanced-output';
+  const summary = document.createElement('summary');
+  summary.textContent = 'Advanced: raw output';
+  const raw = document.createElement('pre');
+  raw.textContent = [
+    ...(record.logs ?? []),
+    record.result
+      ? `Result JSON:\n${JSON.stringify(record.result, null, 2)}`
+      : '',
+  ]
+    .filter(Boolean)
+    .join('\n\n') || 'No raw command output was produced.';
+  advanced.append(summary, raw);
+  output.append(advanced);
+  container.append(output);
 }
 
 async function mutateVisibility(url, body) {

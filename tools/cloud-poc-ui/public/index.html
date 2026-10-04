@@ -92,8 +92,11 @@
         </div>
         <progress id="progress" max="100" value="0"></progress>
         <p id="message" class="muted">Select preflight to begin.</p>
-        <pre id="logs">No local command output yet.</pre>
-        <div id="result"></div>
+        <details class="advanced-output">
+          <summary>Advanced: current raw output</summary>
+          <pre id="logs">No local command output yet.</pre>
+          <div id="result"></div>
+        </details>
       </section>
 
       <section class="card" aria-labelledby="visibility-heading">

@@ -57,7 +57,7 @@ export class GcpProvider implements CloudProvider {
       case 'terraform-init':
         return this.command('terraform.init', {}, context);
       case 'terraform-plan':
-        return this.plan(context);
+        return this.plan(projectId, context);
       case 'terraform-apply':
         if (request.confirmation !== 'APPLY') {
           throw new Error('Applying the saved plan requires confirmation APPLY');
@@ -227,8 +227,12 @@ export class GcpProvider implements CloudProvider {
     };
   }
 
-  private async plan(context: ProviderContext) {
-    await this.command('terraform.plan', { plan: planName }, context);
+  private async plan(projectId: string, context: ProviderContext) {
+    await this.command(
+      'terraform.plan',
+      { plan: planName, projectId },
+      context,
+    );
     await context.progress({
       stage: 'validating',
       message: 'Rendering readable saved-plan actions',

@@ -1,7 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { FixedCommandRunner } from './commands.js';
+import {
+  commandArguments,
+  FixedCommandRunner,
+} from './commands.js';
 
 describe('fixed command preflight failures', () => {
+  it('plans the selected project with the required PoC labels', () => {
+    const args = commandArguments('terraform.plan', {
+      plan: '.cloud-poc-gcp.tfplan',
+      projectId: 'valid-project1',
+    });
+    expect(args).toContain('-var=google_cloud_project=valid-project1');
+    expect(args).toContain(
+      '-var=company_labels={"owner":"elastic-poc-ui","environment":"poc","project":"valid-project1"}',
+    );
+  });
+
   it('turns a missing executable into actionable feedback', async () => {
     const previousPath = process.env.PATH;
     process.env.PATH = '/definitely-missing';

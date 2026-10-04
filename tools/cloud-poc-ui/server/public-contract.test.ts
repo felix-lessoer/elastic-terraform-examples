@@ -16,6 +16,7 @@ describe('credential form feedback', () => {
     expect(html).toContain('id="applicationCredentialsFile"');
     expect(html).toContain('accept="application/json,.json"');
     expect(html).toContain('id="guided-summary"');
+    expect(html).toContain('Advanced: current raw output');
   });
 
   it('shows saving, success, and failure feedback and restores the button', async () => {
@@ -38,5 +39,8 @@ describe('credential form feedback', () => {
     expect(script).toContain("'Needs attention'");
     expect(script).toContain("'Complete'");
     expect(script).toContain("'Locked'");
+    expect(script).toContain("'Advanced: raw output'");
+    expect(script).toContain("'Planned actions'");
+    expect(script).toContain('appendFriendlyResult(card, step, record)');
   });
 });

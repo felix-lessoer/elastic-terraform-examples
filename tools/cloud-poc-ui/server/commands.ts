@@ -93,12 +93,21 @@ const commands: Record<
   'terraform.plan': {
     executable: 'terraform',
     timeoutMs: 900_000,
-    args: (values) => [
-      'plan',
-      '-input=false',
-      '-no-color',
-      `-out=${required(values, 'plan', planName)}`,
-    ],
+    args: (values) => {
+      const projectId = required(values, 'projectId', identifier);
+      return [
+        'plan',
+        '-input=false',
+        '-no-color',
+        `-out=${required(values, 'plan', planName)}`,
+        `-var=google_cloud_project=${projectId}`,
+        `-var=company_labels=${JSON.stringify({
+          owner: 'elastic-poc-ui',
+          environment: 'poc',
+          project: projectId,
+        })}`,
+      ];
+    },
   },
   'terraform.apply': {
     executable: 'terraform',
@@ -120,6 +129,13 @@ const commands: Record<
     ],
   },
 };
+
+export function commandArguments(
+  id: CommandId,
+  values: Record<string, string>,
+): string[] {
+  return commands[id].args(values);
+}
 
 const secretKeys = [
   'EC_API_KEY',
@@ -155,7 +171,7 @@ export class FixedCommandRunner implements CommandRunner {
   ): Promise<CommandResult> {
     const definition = commands[id];
     if (!definition) throw new Error('Command is not allow-listed');
-    const args = definition.args(values);
+    const args = commandArguments(id, values);
     options.write(redact(`$ ${definition.executable} ${args.join(' ')}`));
     const child = execa(definition.executable, args, {
       cwd: options.cwd,

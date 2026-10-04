@@ -116,3 +116,14 @@ export async function readCredentialStatus(
 ): Promise<CredentialStatus> {
   return credentialStatus(await readStored(filePath), environment);
 }
+
+export async function loadCredentialEnvironment(
+  filePath: string,
+  environment: NodeJS.ProcessEnv = process.env,
+): Promise<CredentialStatus> {
+  const stored = await readStored(filePath);
+  for (const [key, value] of Object.entries(stored)) {
+    if (value && !environment[key]) environment[key] = value;
+  }
+  return credentialStatus(stored, environment);
+}

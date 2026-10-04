@@ -3,7 +3,10 @@ import { promises as fs } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createApp } from './app.js';
 import { FixedCommandRunner } from './commands.js';
-import { readCredentialStatus } from './credentials.js';
+import {
+  loadCredentialEnvironment,
+  readCredentialStatus,
+} from './credentials.js';
 import { OperationStore } from './operation-store.js';
 import { GcpProvider } from './providers/gcp.js';
 import { GcpVisibilityBackend } from './gcp-visibility-backend.js';
@@ -16,6 +19,7 @@ const packageDirectory = path.resolve(
 const repoRoot = path.resolve(packageDirectory, '../..');
 const localDirectory = path.join(packageDirectory, '.cloud-poc');
 const credentialsPath = path.join(localDirectory, 'credentials.env');
+await loadCredentialEnvironment(credentialsPath);
 const terraformDirectory = path.join(repoRoot, 'examples/gcp');
 const operationStore = new OperationStore(
   path.join(localDirectory, 'operations.json'),

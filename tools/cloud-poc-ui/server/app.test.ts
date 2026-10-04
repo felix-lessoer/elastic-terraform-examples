@@ -11,7 +11,10 @@ import type {
 } from './cloud-provider.js';
 import { createApp } from './app.js';
 import { redact } from './commands.js';
-import { saveCredentials } from './credentials.js';
+import {
+  loadCredentialEnvironment,
+  saveCredentials,
+} from './credentials.js';
 import { OperationStore } from './operation-store.js';
 import {
   GcpVisibilityService,
@@ -294,6 +297,32 @@ describe('owner-only local files', () => {
       method: 'application-default',
     });
     expect(JSON.stringify(status)).not.toContain('elastic-test-secret');
+  });
+
+  it('restores saved credentials into a restarted server environment', async () => {
+    const directory = await temporaryDirectory();
+    const filePath = path.join(directory, 'credentials.env');
+    await saveCredentials(
+      filePath,
+      {
+        elasticCloudApiKey: 'elastic-test-secret',
+        applicationCredentialsPath: '/home/user/gcp-adc.json',
+        impersonateServiceAccount: '',
+      },
+      {},
+    );
+    const restartedEnvironment: NodeJS.ProcessEnv = {};
+    expect(
+      await loadCredentialEnvironment(filePath, restartedEnvironment),
+    ).toMatchObject({
+      elasticConfigured: true,
+      cloudConfigured: true,
+      method: 'application-default',
+    });
+    expect(restartedEnvironment).toMatchObject({
+      EC_API_KEY: 'elastic-test-secret',
+      GOOGLE_APPLICATION_CREDENTIALS: '/home/user/gcp-adc.json',
+    });
   });
 });
 

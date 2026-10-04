@@ -269,7 +269,7 @@ for (const [operation, label] of steps) {
 
 credentialsForm.addEventListener('submit', async (event) => {
   event.preventDefault();
-  const values = Object.fromEntries(new FormData(event.currentTarget));
+  const values = Object.fromEntries(new FormData(credentialsForm));
   credentialsButton.disabled = true;
   credentialsButton.textContent = 'Saving…';
   credentialsStatus.className = 'form-status muted';
@@ -287,7 +287,7 @@ credentialsForm.addEventListener('submit', async (event) => {
       : 'form-status warning';
     credentialsStatus.textContent = feedback;
     message.textContent = feedback;
-    event.currentTarget.reset();
+    credentialsForm.reset();
   } catch (error) {
     credentialsStatus.className = 'form-status failed';
     credentialsStatus.textContent = `Credentials were not saved: ${error.message}`;

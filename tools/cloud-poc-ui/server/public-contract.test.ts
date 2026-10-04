@@ -26,5 +26,7 @@ describe('credential form feedback', () => {
     expect(script).toContain(
       "credentialsButton.textContent = 'Save local credentials'",
     );
+    expect(script).toContain('credentialsForm.reset()');
+    expect(script).not.toContain('event.currentTarget.reset()');
   });
 });

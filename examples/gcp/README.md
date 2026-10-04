@@ -22,9 +22,15 @@ Creates:
 | Observability | Compute/storage/LB metrics, vpcflow, DNS, load-balancing logs |
 | Cockpit (Obs + CPS) | Unified aggregated view of both |
 
-## Company labels (required)
+## Company labels
 
 Every labelable GCP resource gets your policy labels via `company_labels`. Values are normalized to GCP rules (lowercase, `[a-z0-9_-]`). Compute instances require a valid `division` label for org-policy constrained projects.
+
+For internal Elastic accounts, keep `elastic_labels_required = true` and set
+all keys in `required_label_keys`. Customer accounts can set it to `false`;
+their `company_labels` map must still be non-empty, but Elastic-specific keys
+are not enforced. The guided UI exposes this as an opt-in checklist and keeps
+it off by default.
 
 ```hcl
 company_labels = {

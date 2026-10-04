@@ -124,6 +124,27 @@ form {
   line-height: 1.45;
 }
 
+.checkbox-label {
+  display: flex;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  font-weight: 600;
+}
+
+.checkbox-label input {
+  width: auto;
+}
+
+.label-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(160px, 1fr));
+  gap: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--developer-blue);
+  border-radius: 8px;
+  background: var(--light-grey);
+}
+
 input {
   width: 100%;
   padding: 0.75rem;
@@ -434,6 +455,10 @@ td {
   }
 
   .steps {
+    grid-template-columns: 1fr;
+  }
+
+  .label-fields {
     grid-template-columns: 1fr;
   }
 }

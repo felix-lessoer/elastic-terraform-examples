@@ -101,7 +101,7 @@ afterEach(async () => {
   );
 });
 
-async function fixture() {
+async function fixture(elasticLabelsRequired = true) {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'gcp-provider-'));
   directories.push(directory);
   const runner = new FixtureRunner();
@@ -120,6 +120,15 @@ async function fixture() {
       elasticConfigured: true,
       cloudConfigured: true,
       method: 'impersonation',
+    }),
+    async () => ({
+      elasticLabelsRequired,
+      companyLabels: {
+        division: 'field',
+        org: 'sa',
+        environment: 'poc',
+      },
+      requiredLabelKeys: ['division', 'org'],
     }),
     { GCP_POC_COCKPIT_URL: 'https://kibana.example/app/dashboards' },
   );
@@ -188,6 +197,10 @@ describe('GCP provider', () => {
     expect(runner.calls[0].values).toEqual({
       plan: '.cloud-poc-gcp.tfplan',
       projectId: 'sample-project1',
+      companyLabels:
+        '{"division":"field","org":"sa","environment":"poc"}',
+      requiredLabelKeys: '["division","org"]',
+      elasticLabelsRequired: 'true',
     });
     expect(result).toMatchObject({
       counts: { create: 1 },
@@ -197,8 +210,34 @@ describe('GCP provider', () => {
           label: 'Create google_project_service.asset',
         },
       ],
+      labels: {
+        elasticInternalRequired: true,
+        keys: ['division', 'environment', 'org'],
+        requiredKeys: ['division', 'org'],
+      },
     });
     expect(JSON.stringify(result)).not.toContain('must-not-leak');
+  });
+
+  it('uses generic labels when the internal checklist is disabled', async () => {
+    const { provider, runner, context } = await fixture(false);
+    const result = await provider.execute(
+      'terraform-plan',
+      { projectId: 'sample-project1' },
+      context,
+    );
+    expect(runner.calls[0].values).toMatchObject({
+      companyLabels:
+        '{"owner":"elastic-poc-ui","environment":"poc","project":"sample-project1"}',
+      requiredLabelKeys: '[]',
+      elasticLabelsRequired: 'false',
+    });
+    expect(result).toMatchObject({
+      labels: {
+        elasticInternalRequired: false,
+        requiredKeys: [],
+      },
+    });
   });
 
   it('allow-lists workflow IDs and emits safe final links', async () => {

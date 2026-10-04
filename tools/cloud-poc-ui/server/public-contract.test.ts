@@ -16,6 +16,10 @@ describe('credential form feedback', () => {
     expect(html).toContain('id="applicationCredentialsFile"');
     expect(html).toContain('accept="application/json,.json"');
     expect(html).toContain('id="guided-summary"');
+    expect(html).toContain('id="configuration"');
+    expect(html).toContain('id="elasticLabelsRequired"');
+    expect(html).toContain('Elastic internal labels required');
+    expect(html).toContain('id="configuration-status"');
     expect(html).toContain('Advanced: current raw output');
   });
 
@@ -47,6 +51,10 @@ describe('credential form feedback', () => {
     expect(script).toContain("'Replan required'");
     expect(script).toContain("'Regenerate saved plan'");
     expect(script).toContain('The previous plan is stale after a failed apply');
+    expect(script).toContain("api('/api/configuration'");
+    expect(script).toContain('Save them before creating a Terraform plan');
+    expect(script).toContain("'Account labels'");
+    expect(script).toContain('Elastic internal labels enabled');
     expect(script).not.toContain(
       "window.prompt('Type APPLY to apply the reviewed saved plan.')",
     );

@@ -73,6 +73,7 @@ async function appFixture() {
       provider: fakeProvider(),
       operationStore: new OperationStore(path.join(directory, 'operations.json')),
       credentialsPath: path.join(directory, 'credentials.env'),
+      configurationPath: path.join(directory, 'gcp-config.json'),
       csrfToken: 'csrf-test',
       environment: {},
     }),
@@ -138,6 +139,7 @@ async function visibilityAppFixture() {
       provider: fakeProvider(),
       operationStore: new OperationStore(path.join(directory, 'operations.json')),
       credentialsPath: path.join(directory, 'credentials.env'),
+      configurationPath: path.join(directory, 'gcp-config.json'),
       csrfToken: 'csrf-test',
       environment: {},
       visibility: {
@@ -277,6 +279,63 @@ describe('visibility lifecycle API', () => {
 });
 
 describe('owner-only local files', () => {
+  it('persists validated GCP label settings with mode 0600', async () => {
+    const { app, directory } = await appFixture();
+    const response = await request(app)
+      .put('/api/configuration')
+      .set({
+        Origin: 'http://localhost:5603',
+        'x-cloud-poc-csrf': 'csrf-test',
+      })
+      .send({
+        elasticLabelsRequired: true,
+        companyLabels: {
+          division: 'field',
+          org: 'sa',
+          'keep-until': '2026-10-31',
+          team: 'search',
+          project: 'gcp-observability',
+          environment: 'poc',
+        },
+        requiredLabelKeys: [
+          'division',
+          'org',
+          'keep-until',
+          'team',
+          'project',
+          'environment',
+        ],
+      })
+      .expect(200);
+    expect(response.body.elasticLabelsRequired).toBe(true);
+    expect(
+      (await fs.stat(path.join(directory, 'gcp-config.json'))).mode &
+        0o777,
+    ).toBe(0o600);
+  });
+
+  it('requires internal keys only when the Elastic label checklist is enabled', async () => {
+    const { app } = await appFixture();
+    const headers = {
+      Origin: 'http://localhost:5603',
+      'x-cloud-poc-csrf': 'csrf-test',
+    };
+    const base = {
+      companyLabels: {},
+      requiredLabelKeys: ['division'],
+    };
+    await request(app)
+      .put('/api/configuration')
+      .set(headers)
+      .send({ ...base, elasticLabelsRequired: true })
+      .expect(400);
+    await request(app)
+      .put('/api/configuration')
+      .set(headers)
+      .send({ ...base, elasticLabelsRequired: false })
+      .expect(200);
+  });
+
   it('persists credentials with mode 0600 and returns status only', async () => {
     const directory = await temporaryDirectory();
     const filePath = path.join(directory, 'credentials.env');

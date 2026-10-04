@@ -5,16 +5,29 @@ google_cloud_project = "my-gcp-project"
 google_cloud_region  = "europe-west3"
 # google_cloud_credentials_file = "/path/to/sa.json"
 
-# Required: company policy labels (applied to every labelable GCP resource)
+# Internal Elastic accounts keep this enabled. Customer accounts can disable it
+# while still supplying their own non-empty company_labels map.
+elastic_labels_required = true
+
+# Company policy labels (applied to every labelable GCP resource)
 company_labels = {
-  cost-center = "platform"
-  owner       = "sre-team"
+  division    = "field"
+  org         = "sa"
+  keep-until  = "2026-10-31"
+  team        = "change-me"
+  project     = "gcp-observability"
   environment = "poc"
-  # data-classification = "internal"
 }
 
-# Optional: fail plan if these keys are missing from company_labels
-# required_label_keys = ["cost-center", "owner", "environment"]
+# When elastic_labels_required is true, fail the plan if any key is missing.
+required_label_keys = [
+  "division",
+  "org",
+  "keep-until",
+  "team",
+  "project",
+  "environment",
+]
 
 enable_cspm            = true
 enable_detection_rules = true

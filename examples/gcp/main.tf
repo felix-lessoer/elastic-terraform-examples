@@ -267,7 +267,7 @@ module "gcp_cloud" {
   name_prefix                        = var.name_prefix
   region                             = var.google_cloud_region
   company_labels                     = var.company_labels
-  required_label_keys                = var.required_label_keys
+  required_label_keys                = var.elastic_labels_required ? var.required_label_keys : []
   existing_topic_names               = var.existing_topic_names
   existing_sink_names                = var.existing_sink_names
   existing_subscription_names        = var.existing_subscription_names

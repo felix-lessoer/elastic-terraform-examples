@@ -10,6 +10,10 @@ import type {
 import { readCredentialStatus, saveCredentials } from './credentials.js';
 import { OperationStore } from './operation-store.js';
 import {
+  readGcpDeploymentConfig,
+  writeGcpDeploymentConfig,
+} from './gcp-config.js';
+import {
   type GcpVisibilityService,
   type VisibilityCandidate,
   visibilityCandidateId,
@@ -85,6 +89,7 @@ export function createApp(options: {
   provider: CloudProvider;
   operationStore: OperationStore;
   credentialsPath: string;
+  configurationPath: string;
   csrfToken?: string;
   environment?: NodeJS.ProcessEnv;
   staticDirectory?: string;
@@ -114,6 +119,9 @@ export function createApp(options: {
         displayName: options.provider.displayName,
       },
       credentials: await options.provider.credentialStatus(),
+      configuration: await readGcpDeploymentConfig(
+        options.configurationPath,
+      ),
       operations: options.operationStore.list(),
     });
   });
@@ -121,6 +129,12 @@ export function createApp(options: {
   app.get('/api/credentials', async (_request, response) => {
     response.json(
       await readCredentialStatus(options.credentialsPath, environment),
+    );
+  });
+
+  app.get('/api/configuration', async (_request, response) => {
+    response.json(
+      await readGcpDeploymentConfig(options.configurationPath),
     );
   });
 
@@ -166,6 +180,15 @@ export function createApp(options: {
   app.put('/api/credentials', async (request, response) => {
     response.json(
       await saveCredentials(options.credentialsPath, request.body, environment),
+    );
+  });
+
+  app.put('/api/configuration', async (request, response) => {
+    response.json(
+      await writeGcpDeploymentConfig(
+        options.configurationPath,
+        request.body,
+      ),
     );
   });
 

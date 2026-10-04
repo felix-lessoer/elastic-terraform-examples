@@ -7,6 +7,7 @@ import {
   loadCredentialEnvironment,
   readCredentialStatus,
 } from './credentials.js';
+import { readGcpDeploymentConfig } from './gcp-config.js';
 import { OperationStore } from './operation-store.js';
 import { GcpProvider } from './providers/gcp.js';
 import { GcpVisibilityBackend } from './gcp-visibility-backend.js';
@@ -19,6 +20,7 @@ const packageDirectory = path.resolve(
 const repoRoot = path.resolve(packageDirectory, '../..');
 const localDirectory = path.join(packageDirectory, '.cloud-poc');
 const credentialsPath = path.join(localDirectory, 'credentials.env');
+const configurationPath = path.join(localDirectory, 'gcp-config.json');
 await loadCredentialEnvironment(credentialsPath);
 const terraformDirectory = path.join(repoRoot, 'examples/gcp');
 const operationStore = new OperationStore(
@@ -29,6 +31,7 @@ const provider = new GcpProvider(
   path.join(localDirectory, 'artifacts'),
   new FixedCommandRunner(),
   () => readCredentialStatus(credentialsPath),
+  async () => (await readGcpDeploymentConfig(configurationPath)).config,
 );
 const visibilityBackend = GcpVisibilityBackend.fromEnvironment(
   path.join(localDirectory, 'visibility-managed.json'),
@@ -46,6 +49,7 @@ const { app } = createApp({
   provider,
   operationStore,
   credentialsPath,
+  configurationPath,
   staticDirectory: path.join(packageDirectory, 'public'),
   visibility: {
     service: visibilityService,

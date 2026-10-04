@@ -68,8 +68,61 @@
         </label>
       </section>
 
+      <section class="card setup">
+        <div>
+          <h2>3. Set account policy labels</h2>
+          <div class="accent"></div>
+          <p class="muted">
+            Customer accounts use the standard PoC labels automatically.
+            Enable the checklist only for internal Elastic cloud accounts whose
+            organization policies require the full label set.
+          </p>
+        </div>
+        <form id="configuration">
+          <label class="checkbox-label">
+            <input id="elasticLabelsRequired" type="checkbox" />
+            Elastic internal labels required
+          </label>
+          <div id="internal-label-fields" class="label-fields" hidden>
+            <label>
+              Division
+              <input name="division" autocomplete="off" />
+            </label>
+            <label>
+              Organization
+              <input name="org" autocomplete="off" />
+            </label>
+            <label>
+              Keep until
+              <input name="keep-until" placeholder="YYYY-MM-DD" autocomplete="off" />
+            </label>
+            <label>
+              Team
+              <input name="team" autocomplete="off" />
+            </label>
+            <label>
+              Project label
+              <input name="project" autocomplete="off" />
+            </label>
+            <label>
+              Environment
+              <input name="environment" autocomplete="off" />
+            </label>
+          </div>
+          <button id="save-configuration" type="submit">Save label settings</button>
+          <p
+            id="configuration-status"
+            class="form-status muted"
+            role="status"
+            aria-live="polite"
+          >
+            Label settings have not been saved in this session.
+          </p>
+        </form>
+      </section>
+
       <section class="card">
-        <h2>3. Follow the guided path</h2>
+        <h2>4. Follow the guided path</h2>
         <div class="accent"></div>
         <div
           id="guided-summary"
@@ -102,7 +155,7 @@
       <section class="card" aria-labelledby="visibility-heading">
         <div class="progress-heading">
           <div>
-            <h2 id="visibility-heading">4. Optional visibility adapters</h2>
+            <h2 id="visibility-heading">5. Optional visibility adapters</h2>
             <div class="accent"></div>
           </div>
           <button id="cleanup-orphans" type="button">Clean orphaned adapters</button>

@@ -27,6 +27,8 @@ export interface CommandRunner {
 const identifier = /^[a-z][a-z0-9-]{4,61}[a-z0-9]$/;
 const planName = /^\.cloud-poc-[a-z-]+\.tfplan$/;
 const manifestPath = /^\/[A-Za-z0-9_./-]+\/gcp-manifest\.json$/;
+const labelKey = /^[a-z][a-z0-9_-]{0,62}$/;
+const labelValue = /^[a-z0-9_-]{1,63}$/;
 
 function required(
   values: Record<string, string>,
@@ -35,6 +37,58 @@ function required(
 ): string {
   const value = values[key] ?? '';
   if (!pattern.test(value)) throw new Error(`Invalid command value: ${key}`);
+  return value;
+}
+
+function encodedLabels(values: Record<string, string>): string {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(values.companyLabels ?? '');
+  } catch {
+    throw new Error('Invalid command value: companyLabels');
+  }
+  if (
+    !parsed ||
+    Array.isArray(parsed) ||
+    typeof parsed !== 'object' ||
+    Object.entries(parsed).some(
+      ([key, value]) =>
+        !labelKey.test(key) ||
+        typeof value !== 'string' ||
+        !labelValue.test(value),
+    )
+  ) {
+    throw new Error('Invalid command value: companyLabels');
+  }
+  return JSON.stringify(parsed);
+}
+
+function encodedRequiredLabelKeys(
+  values: Record<string, string>,
+): string {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(values.requiredLabelKeys ?? '');
+  } catch {
+    throw new Error('Invalid command value: requiredLabelKeys');
+  }
+  if (
+    !Array.isArray(parsed) ||
+    parsed.some((key) => typeof key !== 'string' || !labelKey.test(key))
+  ) {
+    throw new Error('Invalid command value: requiredLabelKeys');
+  }
+  return JSON.stringify(parsed);
+}
+
+function requiredBoolean(
+  values: Record<string, string>,
+  key: string,
+): string {
+  const value = values[key];
+  if (value !== 'true' && value !== 'false') {
+    throw new Error(`Invalid command value: ${key}`);
+  }
   return value;
 }
 
@@ -101,11 +155,12 @@ const commands: Record<
         '-no-color',
         `-out=${required(values, 'plan', planName)}`,
         `-var=google_cloud_project=${projectId}`,
-        `-var=company_labels=${JSON.stringify({
-          owner: 'elastic-poc-ui',
-          environment: 'poc',
-          project: projectId,
-        })}`,
+        `-var=company_labels=${encodedLabels(values)}`,
+        `-var=required_label_keys=${encodedRequiredLabelKeys(values)}`,
+        `-var=elastic_labels_required=${requiredBoolean(
+          values,
+          'elasticLabelsRequired',
+        )}`,
       ];
     },
   },

@@ -47,6 +47,23 @@ let credentialState = {
   elasticConfigured: false,
   cloudConfigured: false,
 };
+const internalLabelKeys = [
+  'division',
+  'org',
+  'keep-until',
+  'team',
+  'project',
+  'environment',
+];
+let configurationState = {
+  config: {
+    elasticLabelsRequired: false,
+    companyLabels: {},
+    requiredLabelKeys: internalLabelKeys,
+  },
+  saved: false,
+};
+let configurationDirty = false;
 let operationHistory = [];
 let operationRunning = false;
 let applyConfirmationVisible = false;
@@ -61,6 +78,15 @@ const projectInput = document.querySelector('#projectId');
 const credentialsForm = document.querySelector('#credentials');
 const credentialsButton = document.querySelector('#save-credentials');
 const credentialsStatus = document.querySelector('#credentials-status');
+const configurationForm = document.querySelector('#configuration');
+const configurationButton = document.querySelector('#save-configuration');
+const configurationStatus = document.querySelector('#configuration-status');
+const elasticLabelsRequired = document.querySelector(
+  '#elasticLabelsRequired',
+);
+const internalLabelFields = document.querySelector(
+  '#internal-label-fields',
+);
 const applicationCredentialsFile = document.querySelector(
   '#applicationCredentialsFile',
 );
@@ -161,6 +187,9 @@ function renderGuidedPath() {
   const projectId = projectInput.value.trim();
   const credentialsReady =
     credentialState.cloudConfigured && credentialState.elasticConfigured;
+  const configurationNeedsSave =
+    configurationDirty ||
+    (elasticLabelsRequired.checked && !configurationState.saved);
   const records = steps.map(({ operation }) =>
     projectId ? latestOperation(operation, projectId) : undefined,
   );
@@ -185,6 +214,9 @@ function renderGuidedPath() {
   } else if (!projectId) {
     guidedSummary.textContent =
       'Credentials are saved. Next: enter the GCP project ID in step 2.';
+  } else if (configurationNeedsSave) {
+    guidedSummary.textContent =
+      'Next: save the account policy label settings before creating a Terraform plan.';
   } else if (replanRequired) {
     guidedSummary.textContent =
       `${completed} of ${steps.length} steps complete for ${projectId}. ` +
@@ -216,6 +248,7 @@ function renderGuidedPath() {
     const locked =
       !credentialsReady ||
       !projectId ||
+      (configurationNeedsSave && index >= 2) ||
       (nextIndex !== -1 && index > nextIndex && !complete);
     const card = document.createElement('article');
     card.className = [
@@ -262,6 +295,8 @@ function renderGuidedPath() {
           ? 'In progress'
           : next && credentialsReady && projectId
             ? 'Next'
+            : configurationNeedsSave && index >= 2
+              ? 'Save labels first'
             : 'Locked';
     const button = actionButton(
       stepNeedsReplan
@@ -477,6 +512,13 @@ function appendFriendlyResult(container, step, record) {
             `${counts.replace ?? 0} replace, ${counts.delete ?? 0} delete, ` +
             `${counts.read ?? 0} read`,
         );
+        appendText(
+          output,
+          'Account labels',
+          value.labels?.elasticInternalRequired
+            ? `Elastic internal labels enabled (${(value.labels.requiredKeys ?? []).join(', ')})`
+            : `Customer mode (${(value.labels?.keys ?? []).join(', ')})`,
+        );
         if (Array.isArray(value.resources) && value.resources.length) {
           const list = document.createElement('ul');
           for (const resource of value.resources.slice(0, 12)) {
@@ -647,6 +689,100 @@ async function loadVisibility() {
   }
 }
 
+function renderConfigurationFields() {
+  const enabled = elasticLabelsRequired.checked;
+  internalLabelFields.hidden = !enabled;
+  for (const input of internalLabelFields.querySelectorAll('input')) {
+    input.required = enabled;
+  }
+}
+
+function populateConfiguration(configuration) {
+  configurationState = configuration;
+  configurationDirty = false;
+  elasticLabelsRequired.checked =
+    configuration.config.elasticLabelsRequired;
+  for (const key of internalLabelKeys) {
+    configurationForm.elements.namedItem(key).value =
+      configuration.config.companyLabels[key] ?? '';
+  }
+  renderConfigurationFields();
+  configurationStatus.className = configuration.saved
+    ? 'form-status success'
+    : 'form-status muted';
+  configurationStatus.textContent = configuration.saved
+    ? configuration.config.elasticLabelsRequired
+      ? 'Saved. Terraform plans will include and enforce the Elastic internal label set.'
+      : 'Saved. Customer mode will use standard PoC labels without Elastic-specific enforcement.'
+    : 'Customer mode is active by default. Save only if you change these settings.';
+}
+
+elasticLabelsRequired.addEventListener('change', () => {
+  configurationDirty = true;
+  renderConfigurationFields();
+  configurationStatus.className = 'form-status warning';
+  configurationStatus.textContent =
+    'Label settings changed. Save them before creating a Terraform plan.';
+  renderGuidedPath();
+});
+
+for (const input of internalLabelFields.querySelectorAll('input')) {
+  input.addEventListener('input', () => {
+    configurationDirty = true;
+    configurationStatus.className = 'form-status warning';
+    configurationStatus.textContent =
+      'Label settings changed. Save them before creating a Terraform plan.';
+    renderGuidedPath();
+  });
+}
+
+configurationForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  configurationButton.disabled = true;
+  configurationButton.textContent = 'Saving…';
+  configurationStatus.className = 'form-status muted';
+  configurationStatus.textContent = 'Saving owner-only label settings…';
+  try {
+    const enteredLabels = Object.fromEntries(
+      internalLabelKeys.map((key) => [
+        key,
+        configurationForm.elements.namedItem(key).value.trim(),
+      ]),
+    );
+    const enabled = elasticLabelsRequired.checked;
+    if (
+      enabled &&
+      Object.entries(enteredLabels).some(
+        ([, value]) => !/^[a-z0-9_-]{1,63}$/.test(value),
+      )
+    ) {
+      throw new Error(
+        'Every internal label needs a lowercase GCP value using letters, numbers, underscores, or hyphens.',
+      );
+    }
+    const config = await api('/api/configuration', {
+      method: 'PUT',
+      body: JSON.stringify({
+        elasticLabelsRequired: enabled,
+        companyLabels: enabled ? enteredLabels : {},
+        requiredLabelKeys: internalLabelKeys,
+      }),
+    });
+    populateConfiguration({ config, saved: true });
+    message.textContent = enabled
+      ? 'Elastic internal labels saved. Regenerate the Terraform plan before applying.'
+      : 'Customer label mode saved. Regenerate the Terraform plan before applying.';
+  } catch (error) {
+    configurationStatus.className = 'form-status failed';
+    configurationStatus.textContent =
+      `Label settings were not saved: ${error.message}`;
+  } finally {
+    configurationButton.disabled = false;
+    configurationButton.textContent = 'Save label settings';
+    renderGuidedPath();
+  }
+});
+
 projectInput.addEventListener('input', () => {
   localStorage.setItem('gcpProjectId', projectInput.value.trim());
   renderGuidedPath();
@@ -705,6 +841,7 @@ try {
   const bootstrap = await api('/api/bootstrap');
   csrfToken = bootstrap.csrfToken;
   credentialState = bootstrap.credentials;
+  populateConfiguration(bootstrap.configuration);
   operationHistory = bootstrap.operations;
   if (credentialState.cloudConfigured && credentialState.elasticConfigured) {
     credentialsStatus.className = 'form-status success';

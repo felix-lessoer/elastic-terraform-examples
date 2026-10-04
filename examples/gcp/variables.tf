@@ -74,6 +74,12 @@ variable "name_prefix" {
   default = "elastic-poc"
 }
 
+variable "elastic_labels_required" {
+  type        = bool
+  description = "Whether organization-specific Elastic labels must be applied to provisioned GCP resources."
+  default     = true
+}
+
 variable "company_labels" {
   type        = map(string)
   description = "Company-policy labels applied to all GCP resources (and sanitized onto the Elastic project)."

@@ -9,6 +9,7 @@ import type {
   ProviderContext,
 } from '../cloud-provider.js';
 import type { CommandRunner } from '../commands.js';
+import type { GcpDeploymentConfig } from '../gcp-config.js';
 import { writeOwnerOnly } from '../local-files.js';
 import { summarizeTerraformPlan } from '../terraform-plan.js';
 import {
@@ -38,6 +39,7 @@ export class GcpProvider implements CloudProvider {
     private readonly artifactDirectory: string,
     private readonly runner: CommandRunner,
     private readonly credentials: () => Promise<CredentialStatus>,
+    private readonly configuration: () => Promise<GcpDeploymentConfig>,
     private readonly environment: NodeJS.ProcessEnv = process.env,
   ) {}
 
@@ -228,9 +230,28 @@ export class GcpProvider implements CloudProvider {
   }
 
   private async plan(projectId: string, context: ProviderContext) {
+    const configuration = await this.configuration();
+    const companyLabels = configuration.elasticLabelsRequired
+      ? configuration.companyLabels
+      : {
+          owner: 'elastic-poc-ui',
+          environment: 'poc',
+          project: projectId,
+        };
+    const requiredLabelKeys = configuration.elasticLabelsRequired
+      ? configuration.requiredLabelKeys
+      : [];
     await this.command(
       'terraform.plan',
-      { plan: planName, projectId },
+      {
+        plan: planName,
+        projectId,
+        companyLabels: JSON.stringify(companyLabels),
+        requiredLabelKeys: JSON.stringify(requiredLabelKeys),
+        elasticLabelsRequired: String(
+          configuration.elasticLabelsRequired,
+        ),
+      },
       context,
     );
     await context.progress({
@@ -243,7 +264,15 @@ export class GcpProvider implements CloudProvider {
       { plan: planName },
       context,
     );
-    return summarizeTerraformPlan(JSON.parse(shown.stdout));
+    return {
+      ...summarizeTerraformPlan(JSON.parse(shown.stdout)),
+      labels: {
+        elasticInternalRequired:
+          configuration.elasticLabelsRequired,
+        keys: Object.keys(companyLabels).sort(),
+        requiredKeys: [...requiredLabelKeys].sort(),
+      },
+    };
   }
 
   private async command(

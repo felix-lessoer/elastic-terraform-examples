@@ -35,7 +35,15 @@
             Service account to impersonate (optional)
             <input name="impersonateServiceAccount" placeholder="collector@project.iam.gserviceaccount.com" />
           </label>
-          <button type="submit">Save local credentials</button>
+          <button id="save-credentials" type="submit">Save local credentials</button>
+          <p
+            id="credentials-status"
+            class="form-status muted"
+            role="status"
+            aria-live="polite"
+          >
+            Credentials have not been saved in this session.
+          </p>
         </form>
       </section>
 

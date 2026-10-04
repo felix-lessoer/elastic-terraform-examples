@@ -18,6 +18,9 @@ const message = document.querySelector('#message');
 const logs = document.querySelector('#logs');
 const result = document.querySelector('#result');
 const projectInput = document.querySelector('#projectId');
+const credentialsForm = document.querySelector('#credentials');
+const credentialsButton = document.querySelector('#save-credentials');
+const credentialsStatus = document.querySelector('#credentials-status');
 const visibilityCandidates = document.querySelector('#visibility-candidates');
 const visibilityMessage = document.querySelector('#visibility-message');
 projectInput.value = localStorage.getItem('gcpProjectId') ?? '';
@@ -264,22 +267,33 @@ for (const [operation, label] of steps) {
   stepContainer.append(button);
 }
 
-document.querySelector('#credentials').addEventListener('submit', async (event) => {
+credentialsForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   const values = Object.fromEntries(new FormData(event.currentTarget));
+  credentialsButton.disabled = true;
+  credentialsButton.textContent = 'Saving…';
+  credentialsStatus.className = 'form-status muted';
+  credentialsStatus.textContent = 'Saving credentials to the owner-only local file…';
   try {
     const status = await api('/api/credentials', {
       method: 'PUT',
       body: JSON.stringify(values),
     });
-    message.textContent = status.cloudConfigured && status.elasticConfigured
-      ? `Local credentials saved (${status.method}).`
-      : 'Credential setup is incomplete.';
+    const feedback = status.cloudConfigured && status.elasticConfigured
+      ? `Credentials saved locally (${status.method}). Run Preflight to validate them.`
+      : 'Credentials were saved, but setup is incomplete.';
+    credentialsStatus.className = status.cloudConfigured && status.elasticConfigured
+      ? 'form-status success'
+      : 'form-status warning';
+    credentialsStatus.textContent = feedback;
+    message.textContent = feedback;
     event.currentTarget.reset();
   } catch (error) {
-    state.textContent = 'failed';
-    state.classList.add('failed');
-    message.textContent = error.message;
+    credentialsStatus.className = 'form-status failed';
+    credentialsStatus.textContent = `Credentials were not saved: ${error.message}`;
+  } finally {
+    credentialsButton.disabled = false;
+    credentialsButton.textContent = 'Save local credentials';
   }
 });
 

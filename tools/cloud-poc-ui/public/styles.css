@@ -95,6 +95,28 @@ form {
   gap: 1rem;
 }
 
+.form-status {
+  min-height: 1.5rem;
+  margin: 0;
+  padding: 0.65rem 0.75rem;
+  border-radius: 6px;
+}
+
+.form-status.success {
+  color: var(--dark-ink);
+  background: color-mix(in srgb, var(--light-teal), var(--white) 45%);
+}
+
+.form-status.warning {
+  color: var(--dark-ink);
+  background: #fff3c4;
+}
+
+.form-status.failed {
+  color: var(--dark-ink);
+  background: var(--light-poppy);
+}
+
 input {
   width: 100%;
   padding: 0.75rem;

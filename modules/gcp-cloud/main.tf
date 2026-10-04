@@ -77,9 +77,13 @@ locals {
     { for key, subscription in data.google_pubsub_subscription.existing : key => subscription.name }
   )
   subscription_access = merge(
-    { for key, subscription in google_pubsub_subscription.logs : key => subscription.name },
+    {
+      for key in keys(local.managed_subscriptions) :
+      key => google_pubsub_subscription.logs[key].name
+    },
     var.grant_existing_subscription_access ? {
-      for key, subscription in data.google_pubsub_subscription.existing : key => subscription.name
+      for key in keys(var.existing_subscription_names) :
+      key => data.google_pubsub_subscription.existing[key].name
     } : {}
   )
 }

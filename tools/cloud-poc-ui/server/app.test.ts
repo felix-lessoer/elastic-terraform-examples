@@ -307,7 +307,11 @@ describe('owner-only local files', () => {
         ],
       })
       .expect(200);
-    expect(response.body.elasticLabelsRequired).toBe(true);
+    expect(response.body).toMatchObject({
+      config: { elasticLabelsRequired: true },
+      saved: true,
+      updatedAt: expect.any(String),
+    });
     expect(
       (await fs.stat(path.join(directory, 'gcp-config.json'))).mode &
         0o777,

@@ -55,6 +55,9 @@ describe('credential form feedback', () => {
     expect(script).toContain('Save them before creating a Terraform plan');
     expect(script).toContain("'Account labels'");
     expect(script).toContain('Elastic internal labels enabled');
+    expect(script).toContain(
+      'The previous plan is stale because the account label settings changed.',
+    );
     expect(script).not.toContain(
       "window.prompt('Type APPLY to apply the reviewed saved plan.')",
     );

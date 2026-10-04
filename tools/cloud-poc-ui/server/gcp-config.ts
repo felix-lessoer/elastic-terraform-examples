@@ -1,3 +1,4 @@
+import { promises as fs } from 'node:fs';
 import { z } from 'zod';
 import { readJson, writeOwnerOnly } from './local-files.js';
 
@@ -58,14 +59,20 @@ export const defaultGcpDeploymentConfig: GcpDeploymentConfig = {
 
 export async function readGcpDeploymentConfig(
   filePath: string,
-): Promise<{ config: GcpDeploymentConfig; saved: boolean }> {
+): Promise<{
+  config: GcpDeploymentConfig;
+  saved: boolean;
+  updatedAt?: string;
+}> {
   const value = await readJson<unknown | undefined>(filePath, undefined);
   if (value === undefined) {
     return { config: defaultGcpDeploymentConfig, saved: false };
   }
+  const metadata = await fs.stat(filePath);
   return {
     config: gcpDeploymentConfigSchema.parse(value),
     saved: true,
+    updatedAt: metadata.mtime.toISOString(),
   };
 }
 

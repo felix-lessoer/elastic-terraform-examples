@@ -199,13 +199,18 @@ function renderGuidedPath() {
     failedApply?.state === 'failed' &&
     latestPlan?.state === 'succeeded' &&
     latestPlan.startedAt <= (failedApply.finishedAt ?? failedApply.updatedAt);
+  const labelsChangedAfterPlan =
+    latestPlan?.state === 'succeeded' &&
+    configurationState.updatedAt &&
+    latestPlan.startedAt <= configurationState.updatedAt;
+  const planNeedsRefresh = replanRequired || labelsChangedAfterPlan;
   let nextIndex = records.findIndex(
     (record) => record?.state !== 'succeeded',
   );
-  if (replanRequired) nextIndex = 2;
+  if (planNeedsRefresh) nextIndex = 2;
   const completed = records.filter(
     (record, index) =>
-      record?.state === 'succeeded' && !(replanRequired && index === 2),
+      record?.state === 'succeeded' && !(planNeedsRefresh && index === 2),
   ).length;
 
   if (!credentialsReady) {
@@ -217,6 +222,10 @@ function renderGuidedPath() {
   } else if (configurationNeedsSave) {
     guidedSummary.textContent =
       'Next: save the account policy label settings before creating a Terraform plan.';
+  } else if (labelsChangedAfterPlan) {
+    guidedSummary.textContent =
+      `${completed} of ${steps.length} steps complete for ${projectId}. ` +
+      'The account label settings changed. Regenerate and review Step 3 before applying.';
   } else if (replanRequired) {
     guidedSummary.textContent =
       `${completed} of ${steps.length} steps complete for ${projectId}. ` +
@@ -240,7 +249,7 @@ function renderGuidedPath() {
   stepContainer.replaceChildren();
   steps.forEach((step, index) => {
     const record = records[index];
-    const stepNeedsReplan = replanRequired && index === 2;
+    const stepNeedsReplan = planNeedsRefresh && index === 2;
     const complete = record?.state === 'succeeded' && !stepNeedsReplan;
     const failed = record?.state === 'failed';
     const running = ['queued', 'running', 'validating'].includes(record?.state);
@@ -275,7 +284,9 @@ function renderGuidedPath() {
       history.className = 'step-history';
       const when = new Date(record.finishedAt ?? record.updatedAt).toLocaleString();
       history.textContent = stepNeedsReplan
-        ? 'The previous plan is stale after a failed apply and must be regenerated.'
+        ? labelsChangedAfterPlan
+          ? 'The previous plan is stale because the account label settings changed.'
+          : 'The previous plan is stale after a failed apply and must be regenerated.'
         : complete
           ? `Completed ${when}.`
           : failed
@@ -760,7 +771,7 @@ configurationForm.addEventListener('submit', async (event) => {
         'Every internal label needs a lowercase GCP value using letters, numbers, underscores, or hyphens.',
       );
     }
-    const config = await api('/api/configuration', {
+    const configuration = await api('/api/configuration', {
       method: 'PUT',
       body: JSON.stringify({
         elasticLabelsRequired: enabled,
@@ -768,7 +779,7 @@ configurationForm.addEventListener('submit', async (event) => {
         requiredLabelKeys: internalLabelKeys,
       }),
     });
-    populateConfiguration({ config, saved: true });
+    populateConfiguration(configuration);
     message.textContent = enabled
       ? 'Elastic internal labels saved. Regenerate the Terraform plan before applying.'
       : 'Customer label mode saved. Regenerate the Terraform plan before applying.';

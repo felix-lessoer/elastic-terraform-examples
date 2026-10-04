@@ -184,11 +184,12 @@ export function createApp(options: {
   });
 
   app.put('/api/configuration', async (request, response) => {
+    await writeGcpDeploymentConfig(
+      options.configurationPath,
+      request.body,
+    );
     response.json(
-      await writeGcpDeploymentConfig(
-        options.configurationPath,
-        request.body,
-      ),
+      await readGcpDeploymentConfig(options.configurationPath),
     );
   });
 

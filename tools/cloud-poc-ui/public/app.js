@@ -49,6 +49,7 @@ let credentialState = {
 };
 let operationHistory = [];
 let operationRunning = false;
+let applyConfirmationVisible = false;
 const stepContainer = document.querySelector('#steps');
 const guidedSummary = document.querySelector('#guided-summary');
 const state = document.querySelector('#state');
@@ -90,7 +91,7 @@ function rememberOperation(operation) {
   ];
 }
 
-async function startGuidedOperation(operation) {
+async function startGuidedOperation(operation, confirmation) {
   const projectId = projectInput.value.trim();
   if (!projectId) {
     message.textContent = 'Enter the named GCP project ID first.';
@@ -98,11 +99,12 @@ async function startGuidedOperation(operation) {
     return;
   }
   localStorage.setItem('gcpProjectId', projectId);
-  let confirmation;
-  if (operation === 'terraform-apply') {
-    confirmation = window.prompt('Type APPLY to apply the reviewed saved plan.');
-    if (confirmation !== 'APPLY') return;
+  if (operation === 'terraform-apply' && confirmation !== 'APPLY') {
+    applyConfirmationVisible = true;
+    renderGuidedPath();
+    return;
   }
+  applyConfirmationVisible = false;
   setButtonsDisabled(true);
   try {
     watchOperation(
@@ -117,6 +119,42 @@ async function startGuidedOperation(operation) {
     message.textContent = error.message;
     setButtonsDisabled(false);
   }
+}
+
+function appendApplyConfirmation(card) {
+  const confirmation = document.createElement('div');
+  confirmation.className = 'apply-confirmation';
+  const heading = document.createElement('h4');
+  heading.textContent = 'Approval required';
+  const explanation = document.createElement('p');
+  explanation.textContent =
+    'This applies the exact saved plan shown in Step 3. Review its attached resource actions, then type APPLY to continue.';
+  const label = document.createElement('label');
+  label.textContent = 'Type APPLY';
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.autocomplete = 'off';
+  input.placeholder = 'APPLY';
+  label.append(input);
+  const actions = document.createElement('div');
+  actions.className = 'confirmation-actions';
+  const confirm = actionButton(
+    'Apply reviewed plan',
+    () => void startGuidedOperation('terraform-apply', 'APPLY'),
+    true,
+  );
+  confirm.classList.add('primary');
+  input.addEventListener('input', () => {
+    confirm.disabled = input.value !== 'APPLY';
+  });
+  const cancel = actionButton('Cancel', () => {
+    applyConfirmationVisible = false;
+    renderGuidedPath();
+  });
+  actions.append(confirm, cancel);
+  confirmation.append(heading, explanation, label, actions);
+  card.append(confirmation);
+  queueMicrotask(() => input.focus());
 }
 
 function renderGuidedPath() {
@@ -149,6 +187,10 @@ function renderGuidedPath() {
     guidedSummary.textContent =
       `${completed} of ${steps.length} steps complete for ${projectId}. ` +
       `${failed ? 'Needs attention' : 'Next'}: ${next.label}. ${next.description}`;
+  }
+  if (applyConfirmationVisible) {
+    guidedSummary.textContent =
+      'Step 4 is waiting for approval. Review the Step 3 plan, then type APPLY in the confirmation panel.';
   }
 
   stepContainer.replaceChildren();
@@ -205,12 +247,28 @@ function renderGuidedPath() {
             ? 'Next'
             : 'Locked';
     const button = actionButton(
-      complete ? 'Run again' : failed ? 'Retry step' : `Start ${step.label}`,
+      complete
+        ? 'Run again'
+        : failed
+          ? 'Retry step'
+          : step.operation === 'terraform-apply'
+            ? 'Review and apply saved plan'
+            : `Start ${step.label}`,
       () => void startGuidedOperation(step.operation),
-      operationRunning || running || locked,
+      operationRunning ||
+        running ||
+        locked ||
+        (step.operation === 'terraform-apply' && applyConfirmationVisible),
     );
     card.append(number, copy, status, button);
     appendFriendlyResult(card, step, record);
+    if (
+      step.operation === 'terraform-apply' &&
+      applyConfirmationVisible &&
+      !locked
+    ) {
+      appendApplyConfirmation(card);
+    }
     stepContainer.append(card);
   });
 }

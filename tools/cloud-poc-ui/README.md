@@ -45,6 +45,8 @@ is complete, needs attention, is running, is next, or is locked behind an
 earlier step. Completion timestamps survive reloads, and the summary names the
 next required action. Friendly results and failures stay on their owning step;
 full command logs and JSON are collapsed under **Advanced: raw output**.
+Applying does not rely on a browser prompt: Step 4 opens an inline approval
+panel beside the plan result and requires the operator to type `APPLY`.
 
 The saved Terraform plan receives the selected `google_cloud_project` and a
 minimal PoC `company_labels` map (`owner`, `environment`, and `project`) from

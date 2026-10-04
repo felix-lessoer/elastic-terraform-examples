@@ -42,5 +42,10 @@ describe('credential form feedback', () => {
     expect(script).toContain("'Advanced: raw output'");
     expect(script).toContain("'Planned actions'");
     expect(script).toContain('appendFriendlyResult(card, step, record)');
+    expect(script).toContain("'Approval required'");
+    expect(script).toContain("'Apply reviewed plan'");
+    expect(script).not.toContain(
+      "window.prompt('Type APPLY to apply the reviewed saved plan.')",
+    );
   });
 });

@@ -2,6 +2,7 @@
   --elastic-blue: #0b64dd;
   --light-teal: #48efcf;
   --light-poppy: #ff957d;
+  --yellow: #fec514;
   --developer-blue: #101c3f;
   --dark-ink: #1c1e23;
   --ink: #343741;
@@ -296,6 +297,34 @@ button:disabled {
 
 .advanced-output pre {
   margin-bottom: 0;
+}
+
+.apply-confirmation {
+  grid-column: 1 / -1;
+  padding: 1rem;
+  border-left: 4px solid var(--yellow);
+  border-radius: 0 6px 6px 0;
+  color: var(--dark-ink);
+  background: color-mix(in srgb, var(--yellow), var(--white) 75%);
+}
+
+.apply-confirmation h4 {
+  margin: 0 0 0.5rem;
+}
+
+.apply-confirmation p {
+  line-height: 1.5;
+}
+
+.apply-confirmation label {
+  max-width: 18rem;
+  font-weight: 600;
+}
+
+.confirmation-actions {
+  display: flex;
+  gap: 0.65rem;
+  margin-top: 0.75rem;
 }
 
 .progress-heading {

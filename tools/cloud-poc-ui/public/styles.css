@@ -184,6 +184,55 @@ table {
   font-size: 0.88rem;
 }
 
+.candidate-grid {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.candidate {
+  padding: 1rem;
+  border: 1px solid #98a2b3;
+  border-radius: 8px;
+}
+
+.candidate h3 {
+  margin: 0 0 0.35rem;
+}
+
+.candidate dl {
+  display: grid;
+  grid-template-columns: minmax(130px, 0.25fr) 1fr;
+  gap: 0.5rem 1rem;
+}
+
+.candidate dt {
+  font-weight: 700;
+}
+
+.candidate dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.candidate-actions,
+.approvals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.approvals label {
+  display: flex;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+}
+
+.approvals input {
+  width: auto;
+}
+
 th,
 td {
   padding: 0.65rem;

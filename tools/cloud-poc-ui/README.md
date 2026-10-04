@@ -41,14 +41,37 @@ Cloud Asset Inventory for a bounded local manifest and generates deterministic,
 named Cloud Run, GKE, and Cloud SQL visibility candidates. The manifest stays
 local; operation results contain only its hash and summary.
 
-`VisibilityBackend` is intentionally narrow. A production implementation must
-use resource-specific credentials and implement snapshot, deploy, signal
-validation, rollback, managed-deployment listing, and orphan cleanup. The
-shared orchestrator enforces explicit GCP/Elastic cost and workload-impact
-acknowledgement, persists rollback state, auto-rolls back failed validation,
-and skips inactive/unsupported candidates without mutation.
+The optional adapter lifecycle is available after `analysis`. Its API and UI
+only accept deterministic candidate IDs from the owner-only local
+`gcp-analysis.json`; callers cannot supply resource IDs. Every mutation has the
+same localhost-origin and CSRF controls as the guided operations. Snapshots,
+managed-adapter ownership, and rollback state stay under `.cloud-poc/` in
+owner-only files. Deployment requires explicit GCP/Elastic cost and workload
+impact acknowledgement. Failed named-resource signal validation automatically
+restores the snapshot. Explicit rollback, skip, and confirmed orphan cleanup
+are exposed in the UI.
+
+The only concrete mutation currently supported is Cloud SQL Query Insights. It
+uses fixed `gcloud sql instances describe/patch` operations against the exact
+project and instance parsed from the analyzed canonical resource name. Before
+it is eligible, configure all three environment variables:
+
+```bash
+export CLOUD_POC_VISIBILITY_ELASTICSEARCH_URL=https://example.es.region.gcp.elastic-cloud.com
+export CLOUD_POC_VISIBILITY_ELASTICSEARCH_API_KEY=... # Elasticsearch API key, not an Elastic Cloud API key
+export CLOUD_POC_VISIBILITY_ELASTICSEARCH_INDEX='metrics-*'
+```
+
+The API key needs read access to the existing Google Cloud integration data.
+Validation queries the configured index for a recent signal naming the exact
+Cloud SQL resource or instance. It does not infer success from the patch.
+Cloud Run remains unsupported because this repository has no safe application
+instrumentation and revision-traffic restoration contract. GKE remains
+unsupported because there is no reviewed collector manifest, narrow RBAC
+contract, and rollback implementation. Both still appear in the candidate UI
+with those reasons and cannot be deployed.
 
 The workflow operation currently validates the fixed GCP workflow allow-list
 and exposes the executor seam. Wiring an authenticated Elastic workflow
-executor and a concrete GCP visibility backend are deployment integration
-steps; neither is faked by this local contract.
+executor remains a deployment integration step and is not faked by this local
+contract.

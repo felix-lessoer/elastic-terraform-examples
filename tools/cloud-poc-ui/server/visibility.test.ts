@@ -12,7 +12,12 @@ import {
 class FixtureBackend implements VisibilityBackend {
   calls: string[] = [];
   valid = true;
+  validationError = false;
   managed = ['managed-1'];
+
+  availability(): { supported: boolean } {
+    return { supported: true };
+  }
 
   async snapshot(): Promise<VisibilitySnapshot> {
     this.calls.push('snapshot');
@@ -26,6 +31,7 @@ class FixtureBackend implements VisibilityBackend {
 
   async validate(): Promise<boolean> {
     this.calls.push('validate');
+    if (this.validationError) throw new Error('signal query unavailable');
     return this.valid;
   }
 
@@ -109,6 +115,23 @@ describe('GCP optional visibility adapter contract', () => {
     });
     expect(record.state).toBe('rolled-back');
     expect(record.reason).toContain('validation failed');
+    expect(backend.calls).toEqual([
+      'snapshot',
+      'deploy',
+      'validate',
+      'rollback',
+    ]);
+  });
+
+  it('restores the snapshot when the named signal query errors', async () => {
+    const { service, candidate, backend } = await fixture();
+    backend.validationError = true;
+    const record = await service.deploy(candidate, {
+      costAccepted: true,
+      impactAccepted: true,
+    });
+    expect(record.state).toBe('rolled-back');
+    expect(record.reason).toContain('signal query unavailable');
     expect(backend.calls).toEqual([
       'snapshot',
       'deploy',

@@ -9,6 +9,11 @@ import type {
 } from './cloud-provider.js';
 import { readCredentialStatus, saveCredentials } from './credentials.js';
 import { OperationStore } from './operation-store.js';
+import {
+  type GcpVisibilityService,
+  type VisibilityCandidate,
+  visibilityCandidateId,
+} from './visibility.js';
 
 const operations = new Set<GuidedOperation>([
   'preflight',
@@ -29,6 +34,36 @@ const operationSchema = z
       .max(20)
       .optional(),
   })
+  .strict();
+const visibilityCandidateSchema = z
+  .object({
+    id: z.string().min(1).max(128),
+    name: z.string().min(1).max(1024),
+    resourceId: z.string().min(1).max(4096),
+    resourceType: z.string().min(1).max(256),
+    kind: z.enum(['cloud-run-traces', 'gke-metrics', 'cloud-sql-insights']),
+    eligibility: z.enum(['eligible', 'inactive', 'unsupported']),
+    reason: z.string().max(4096).optional(),
+    cost: z.object({
+      gcp: z.string().min(1).max(4096),
+      elastic: z.string().min(1).max(4096),
+    }),
+    workloadImpact: z.string().min(1).max(4096),
+    validation: z.string().min(1).max(4096),
+    rollback: z.string().min(1).max(4096),
+  })
+  .strict();
+const deploySchema = z
+  .object({
+    costAccepted: z.literal(true),
+    impactAccepted: z.literal(true),
+  })
+  .strict();
+const skipSchema = z
+  .object({ reason: z.string().trim().min(1).max(1000) })
+  .strict();
+const cleanupSchema = z
+  .object({ confirmation: z.literal('CLEANUP ORPHANS') })
   .strict();
 
 export function isLocalOrigin(origin: string | undefined): boolean {
@@ -53,6 +88,10 @@ export function createApp(options: {
   csrfToken?: string;
   environment?: NodeJS.ProcessEnv;
   staticDirectory?: string;
+  visibility?: {
+    service: GcpVisibilityService;
+    loadAnalysis: () => Promise<unknown>;
+  };
 }) {
   const app = express();
   const csrfToken = options.csrfToken ?? crypto.randomBytes(32).toString('hex');
@@ -152,6 +191,125 @@ export function createApp(options: {
       });
     }
   });
+
+  const loadCandidates = async (): Promise<VisibilityCandidate[]> => {
+    if (!options.visibility) throw new Error('Visibility lifecycle is not configured');
+    const analysis = z
+      .object({ candidates: z.array(visibilityCandidateSchema).max(5000) })
+      .parse(await options.visibility.loadAnalysis());
+    return analysis.candidates.map((candidate) => {
+      if (candidate.id !== visibilityCandidateId(candidate.resourceId, candidate.kind)) {
+        throw new Error('Persisted analysis contains an invalid candidate binding');
+      }
+      return options.visibility!.service.prepare(candidate);
+    });
+  };
+  const requireCandidate = async (candidateId: string) => {
+    const candidate = (await loadCandidates()).find(
+      (item) => item.id === candidateId,
+    );
+    if (!candidate) throw new Error('Candidate is not present in the local analysis');
+    return candidate;
+  };
+  const visibilityMutation = (
+    handler: (request: Request, response: Response) => Promise<void>,
+  ) => async (request: Request, response: Response, next: NextFunction) => {
+    try {
+      await handler(request, response);
+    } catch (error) {
+      if (error instanceof ZodError) return next(error);
+      response.status(409).json({
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
+
+  app.get('/api/providers/gcp/visibility', async (_request, response, next) => {
+    try {
+      if (!options.visibility) {
+        response.status(404).json({ message: 'Visibility lifecycle is not configured' });
+        return;
+      }
+      const candidates = await loadCandidates();
+      const records = (await options.visibility.service.records()).map(
+        ({ candidate, snapshot: _snapshot, ...record }) => ({
+          ...record,
+          candidateId: candidate.id,
+        }),
+      );
+      response.json({ candidates, records });
+    } catch (error) {
+      if (error instanceof ZodError) return next(error);
+      response.status(409).json({
+        message:
+          error instanceof Error && 'code' in error && error.code === 'ENOENT'
+            ? 'Run GCP analysis before loading visibility candidates'
+            : error instanceof Error
+              ? error.message
+              : String(error),
+      });
+    }
+  });
+
+  app.post(
+    '/api/providers/gcp/visibility/candidates/:candidateId/deploy',
+    visibilityMutation(async (request, response) => {
+      const candidate = await requireCandidate(
+        z.string().parse(request.params.candidateId),
+      );
+      if (candidate.eligibility !== 'eligible') {
+        throw new Error(candidate.reason ?? `Candidate is ${candidate.eligibility}`);
+      }
+      const approval = deploySchema.parse(request.body);
+      const record = await options.visibility!.service.deploy(candidate, approval);
+      response.json({ ...record, snapshot: undefined });
+    }),
+  );
+
+  app.post(
+    '/api/providers/gcp/visibility/candidates/:candidateId/rollback',
+    visibilityMutation(async (request, response) => {
+      z.object({}).strict().parse(request.body);
+      const candidate = await requireCandidate(
+        z.string().parse(request.params.candidateId),
+      );
+      const existing = (await options.visibility!.service.records()).find(
+        (record) => record.candidate.id === candidate.id,
+      );
+      if (
+        existing &&
+        (existing.candidate.resourceId !== candidate.resourceId ||
+          existing.candidate.kind !== candidate.kind)
+      ) {
+        throw new Error('Persisted rollback target no longer matches the analysis');
+      }
+      const record = await options.visibility!.service.rollback(candidate.id);
+      response.json({ ...record, snapshot: undefined });
+    }),
+  );
+
+  app.post(
+    '/api/providers/gcp/visibility/candidates/:candidateId/skip',
+    visibilityMutation(async (request, response) => {
+      const candidate = await requireCandidate(
+        z.string().parse(request.params.candidateId),
+      );
+      const { reason } = skipSchema.parse(request.body);
+      const record = await options.visibility!.service.skip(candidate, reason);
+      response.json(record);
+    }),
+  );
+
+  app.post(
+    '/api/providers/gcp/visibility/orphans/cleanup',
+    visibilityMutation(async (request, response) => {
+      cleanupSchema.parse(request.body);
+      response.json({
+        cleanedDeploymentIds:
+          await options.visibility!.service.cleanupOrphans(),
+      });
+    }),
+  );
 
   if (options.staticDirectory) {
     app.use(express.static(options.staticDirectory, { index: 'index.html' }));

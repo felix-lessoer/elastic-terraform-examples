@@ -13,6 +13,13 @@ import { createApp } from './app.js';
 import { redact } from './commands.js';
 import { saveCredentials } from './credentials.js';
 import { OperationStore } from './operation-store.js';
+import {
+  GcpVisibilityService,
+  type VisibilityBackend,
+  type VisibilityCandidate,
+  type VisibilitySnapshot,
+  visibilityCandidateId,
+} from './visibility.js';
 
 const temporaryDirectories: string[] = [];
 
@@ -67,6 +74,76 @@ async function appFixture() {
       environment: {},
     }),
     directory,
+  };
+}
+
+class ApiVisibilityBackend implements VisibilityBackend {
+  calls: string[] = [];
+  managed: string[] = [];
+
+  availability(): { supported: boolean } {
+    return { supported: true };
+  }
+  async snapshot(): Promise<VisibilitySnapshot> {
+    this.calls.push('snapshot');
+    return { version: '1.0', values: { queryInsightsEnabled: false } };
+  }
+  async deploy(candidate: VisibilityCandidate) {
+    this.calls.push(`deploy:${candidate.resourceId}`);
+    this.managed = [candidate.id];
+    return { deploymentId: candidate.id };
+  }
+  async validate(candidate: VisibilityCandidate): Promise<boolean> {
+    this.calls.push(`validate:${candidate.resourceId}`);
+    return true;
+  }
+  async rollback(candidate: VisibilityCandidate): Promise<void> {
+    this.calls.push(`rollback:${candidate.resourceId}`);
+    this.managed = [];
+  }
+  async listManagedDeployments(): Promise<string[]> {
+    return this.managed;
+  }
+  async cleanupOrphan(id: string): Promise<void> {
+    this.calls.push(`cleanup:${id}`);
+  }
+}
+
+async function visibilityAppFixture() {
+  const directory = await temporaryDirectory();
+  const resourceId =
+    '//sqladmin.googleapis.com/projects/valid-project1/instances/orders';
+  const candidate: VisibilityCandidate = {
+    id: visibilityCandidateId(resourceId, 'cloud-sql-insights'),
+    name: 'orders',
+    resourceId,
+    resourceType: 'sqladmin.googleapis.com/Instance',
+    kind: 'cloud-sql-insights',
+    eligibility: 'eligible',
+    cost: { gcp: 'Database overhead', elastic: 'Ingest cost' },
+    workloadImpact: 'Enables Query Insights',
+    validation: 'Queries the named resource signal',
+    rollback: 'Restores Query Insights setting',
+  };
+  const backend = new ApiVisibilityBackend();
+  const service = new GcpVisibilityService(
+    path.join(directory, 'visibility.json'),
+    backend,
+  );
+  return {
+    ...createApp({
+      provider: fakeProvider(),
+      operationStore: new OperationStore(path.join(directory, 'operations.json')),
+      credentialsPath: path.join(directory, 'credentials.env'),
+      csrfToken: 'csrf-test',
+      environment: {},
+      visibility: {
+        service,
+        loadAnalysis: async () => ({ candidates: [candidate] }),
+      },
+    }),
+    candidate,
+    backend,
   };
 }
 
@@ -127,6 +204,72 @@ describe('local server security', () => {
         { EC_API_KEY: value },
       ),
     ).toBe('Authorization: Bearer [REDACTED] {"token":"[REDACTED]"} [REDACTED]');
+  });
+});
+
+describe('visibility lifecycle API', () => {
+  const headers = {
+    Origin: 'http://localhost:5603',
+    'x-cloud-poc-csrf': 'csrf-test',
+  };
+
+  it('binds mutations to exact local candidate IDs and requires approvals', async () => {
+    const { app, candidate, backend } = await visibilityAppFixture();
+    await request(app)
+      .post('/api/providers/gcp/visibility/candidates/arbitrary/deploy')
+      .set(headers)
+      .send({ costAccepted: true, impactAccepted: true })
+      .expect(409);
+    await request(app)
+      .post(`/api/providers/gcp/visibility/candidates/${candidate.id}/deploy`)
+      .set(headers)
+      .send({ costAccepted: false, impactAccepted: true })
+      .expect(400);
+    expect(backend.calls).toEqual([]);
+  });
+
+  it('deploys, validates, rolls back, and skips only the selected candidate', async () => {
+    const { app, candidate, backend } = await visibilityAppFixture();
+    const endpoint = `/api/providers/gcp/visibility/candidates/${candidate.id}`;
+    await request(app)
+      .post(`${endpoint}/deploy`)
+      .set(headers)
+      .send({ costAccepted: true, impactAccepted: true })
+      .expect(200);
+    expect(backend.calls).toEqual([
+      'snapshot',
+      `deploy:${candidate.resourceId}`,
+      `validate:${candidate.resourceId}`,
+    ]);
+    await request(app).post(`${endpoint}/rollback`).set(headers).send({}).expect(200);
+    await request(app)
+      .post(`${endpoint}/skip`)
+      .set(headers)
+      .send({ reason: 'Change window closed' })
+      .expect(200);
+    expect(backend.calls).toContain(`rollback:${candidate.resourceId}`);
+  });
+
+  it('protects adapter mutations with origin and CSRF and confirms cleanup', async () => {
+    const { app, candidate, backend } = await visibilityAppFixture();
+    const endpoint = `/api/providers/gcp/visibility/candidates/${candidate.id}/skip`;
+    await request(app)
+      .post(endpoint)
+      .set('x-cloud-poc-csrf', 'csrf-test')
+      .send({ reason: 'Later' })
+      .expect(403);
+    backend.managed = ['orphan'];
+    await request(app)
+      .post('/api/providers/gcp/visibility/orphans/cleanup')
+      .set(headers)
+      .send({ confirmation: 'wrong' })
+      .expect(400);
+    await request(app)
+      .post('/api/providers/gcp/visibility/orphans/cleanup')
+      .set(headers)
+      .send({ confirmation: 'CLEANUP ORPHANS' })
+      .expect(200);
+    expect(backend.calls).toContain('cleanup:orphan');
   });
 });
 

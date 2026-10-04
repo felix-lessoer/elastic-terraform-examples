@@ -67,6 +67,25 @@
         <pre id="logs">No local command output yet.</pre>
         <div id="result"></div>
       </section>
+
+      <section class="card" aria-labelledby="visibility-heading">
+        <div class="progress-heading">
+          <div>
+            <h2 id="visibility-heading">4. Optional visibility adapters</h2>
+            <div class="accent"></div>
+          </div>
+          <button id="cleanup-orphans" type="button">Clean orphaned adapters</button>
+        </div>
+        <p class="muted">
+          Candidates come only from the latest local analysis. Deployment requires
+          both acknowledgements and named-signal validation; failed validation
+          automatically restores the snapshot.
+        </p>
+        <div id="visibility-message" class="muted">
+          Run discovery and analysis to load candidates.
+        </div>
+        <div id="visibility-candidates" class="candidate-grid"></div>
+      </section>
     </main>
     <script type="module" src="/app.js"></script>
   </body>

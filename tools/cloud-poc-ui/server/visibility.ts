@@ -29,6 +29,10 @@ export interface VisibilitySnapshot {
 }
 
 export interface VisibilityBackend {
+  availability(candidate: VisibilityCandidate): {
+    supported: boolean;
+    reason?: string;
+  };
   snapshot(candidate: VisibilityCandidate): Promise<VisibilitySnapshot>;
   deploy(
     candidate: VisibilityCandidate,
@@ -100,7 +104,10 @@ const mapping: Record<
   },
 };
 
-function stableId(resourceId: string, kind: VisibilityKind): string {
+export function visibilityCandidateId(
+  resourceId: string,
+  kind: VisibilityKind,
+): string {
   return `${kind}:${createHash('sha256').update(resourceId).digest('hex').slice(0, 24)}`;
 }
 
@@ -117,7 +124,7 @@ export function candidatesFromResources(
       );
     return [
       {
-        id: stableId(resource.id, definition.kind),
+        id: visibilityCandidateId(resource.id, definition.kind),
         name: resource.name,
         resourceId: resource.id,
         resourceType: resource.type,
@@ -137,6 +144,24 @@ export class GcpVisibilityService {
     private readonly statePath: string,
     private readonly backend: VisibilityBackend,
   ) {}
+
+  prepare(candidate: VisibilityCandidate): VisibilityCandidate {
+    if (candidate.eligibility !== 'eligible') return candidate;
+    const availability = this.backend.availability(candidate);
+    return availability.supported
+      ? candidate
+      : {
+          ...candidate,
+          eligibility: 'unsupported',
+          reason:
+            availability.reason ?? 'No safe adapter is available for this candidate',
+        };
+  }
+
+  async records(): Promise<VisibilityRecord[]> {
+    await this.load();
+    return Object.values(this.state.records);
+  }
 
   async deploy(
     candidate: VisibilityCandidate,
@@ -165,12 +190,21 @@ export class GcpVisibilityService {
       deploymentId: deployed.deploymentId,
       updatedAt: new Date().toISOString(),
     });
-    if (!(await this.backend.validate(candidate, deployed.deploymentId))) {
+    let validated = false;
+    let validationError: string | undefined;
+    try {
+      validated = await this.backend.validate(candidate, deployed.deploymentId);
+    } catch (error) {
+      validationError = error instanceof Error ? error.message : String(error);
+    }
+    if (!validated) {
       await this.backend.rollback(candidate, snapshot, deployed.deploymentId);
       return this.save({
         ...record,
         state: 'rolled-back',
-        reason: 'Signal validation failed; the snapshot was restored',
+        reason: validationError
+          ? `Signal validation could not complete (${validationError}); the snapshot was restored`
+          : 'Signal validation failed; the snapshot was restored',
         updatedAt: new Date().toISOString(),
       });
     }

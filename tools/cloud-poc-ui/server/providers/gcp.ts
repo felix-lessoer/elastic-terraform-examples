@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
@@ -29,15 +28,6 @@ const workflowIds = new Set([
   'gcp-cockpit-cloudsql-recommendations',
 ]);
 const planName = '.cloud-poc-gcp.tfplan';
-
-interface AssetResource {
-  name?: string;
-  displayName?: string;
-  assetType?: string;
-  location?: string;
-  state?: string;
-  labels?: Record<string, string>;
-}
 
 export class GcpProvider implements CloudProvider {
   readonly slug = 'gcp' as const;
@@ -116,44 +106,39 @@ export class GcpProvider implements CloudProvider {
       message: `Reading Cloud Asset Inventory for ${projectId}`,
       percent: 10,
     });
+    const manifestPath = path.resolve(
+      this.artifactDirectory,
+      'gcp-manifest.json',
+    );
+    await fs.mkdir(this.artifactDirectory, { recursive: true, mode: 0o700 });
     const result = await this.command(
       'gcp.discover',
-      { projectId },
+      { projectId, manifestPath },
       context,
     );
-    const raw = JSON.parse(result.stdout) as unknown;
-    if (!Array.isArray(raw)) throw new Error('Cloud Asset Inventory returned invalid JSON');
-    const bounded = raw.slice(0, 5_000) as AssetResource[];
-    const manifest = {
-      schemaVersion: '1.0',
-      provider: 'gcp',
-      projectId,
-      discoveredAt: new Date().toISOString(),
-      partial: raw.length > bounded.length,
-      resources: bounded.map((resource) => ({
-        id: resource.name ?? '',
-        name: resource.displayName ?? resource.name ?? 'unnamed',
-        type: resource.assetType ?? 'unknown',
-        location: resource.location ?? 'global',
-        state: resource.state ?? 'unknown',
-        labels: resource.labels ?? {},
-      })),
+    const output = JSON.parse(result.stdout) as {
+      manifest_sha256: string;
+      summary: {
+        complete: boolean;
+        resources: number;
+        statuses: Record<string, number>;
+      };
     };
-    const serialized = `${JSON.stringify(manifest, null, 2)}\n`;
-    const hash = createHash('sha256').update(serialized).digest('hex');
-    await writeOwnerOnly(path.join(this.artifactDirectory, 'gcp-manifest.json'), serialized);
+    if (!/^[a-f0-9]{64}$/.test(output.manifest_sha256)) {
+      throw new Error('Discovery returned an invalid manifest hash');
+    }
     await context.progress({
       stage: 'validating',
       message: 'Validating and hashing the local manifest',
       percent: 90,
     });
     return {
-      manifestVersion: manifest.schemaVersion,
-      manifestHash: hash,
-      resourceCount: manifest.resources.length,
-      partial: manifest.partial,
-      warnings: manifest.partial
-        ? ['The 5,000-resource safety limit was reached; results are partial']
+      manifestVersion: '1.0',
+      manifestHash: output.manifest_sha256,
+      resourceCount: output.summary.resources,
+      partial: !output.summary.complete,
+      warnings: !output.summary.complete
+        ? [`Discovery returned partial results: ${JSON.stringify(output.summary.statuses)}`]
         : [],
     };
   }
@@ -167,14 +152,29 @@ export class GcpProvider implements CloudProvider {
     const manifest = JSON.parse(
       await fs.readFile(path.join(this.artifactDirectory, 'gcp-manifest.json'), 'utf8'),
     ) as {
-      projectId: string;
-      resources: Array<{ id: string; name: string; type: string; state: string }>;
+      approved_projects: string[];
+      resources: Array<{
+        resource_id?: string;
+        display_name?: string;
+        asset_type?: string;
+        state?: string;
+      }>;
     };
-    if (manifest.projectId !== projectId) {
+    if (!manifest.approved_projects.includes(projectId)) {
       throw new Error('Run discovery for the selected project before analysis');
     }
     const candidates: VisibilityCandidate[] = candidatesFromResources(
-      manifest.resources,
+      manifest.resources
+        .filter((resource) => Boolean(resource.asset_type))
+        .map((resource) => ({
+          id: resource.resource_id ?? '',
+          name:
+            resource.display_name ??
+            resource.resource_id ??
+            'unnamed',
+          type: resource.asset_type ?? 'unknown',
+          state: resource.state ?? 'unknown',
+        })),
     );
     const analysis = {
       schemaVersion: '1.0',

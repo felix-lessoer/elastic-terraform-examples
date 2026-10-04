@@ -18,21 +18,54 @@ class FixtureRunner implements CommandRunner {
     values: Record<string, string>,
   ): Promise<CommandResult> {
     this.calls.push({ id, values });
+    if (id === 'gcp.discover') {
+      const manifest = {
+        schema_version: '1.0',
+        generated_at: '2026-10-04T12:00:00Z',
+        approved_projects: [values.projectId],
+        limits: {},
+        operation_results: [],
+        summary: {
+          complete: true,
+          resources: 1,
+          statuses: { success: 1 },
+        },
+        resources: [
+          {
+            project_id: values.projectId,
+            kind: 'asset',
+            resource_id:
+              '//run.googleapis.com/projects/test/locations/europe/services/api',
+            display_name: 'checkout-api',
+            asset_type: 'run.googleapis.com/Service',
+            state: 'READY',
+          },
+        ],
+      };
+      await fs.mkdir(path.dirname(values.manifestPath), {
+        recursive: true,
+        mode: 0o700,
+      });
+      await fs.writeFile(
+        values.manifestPath,
+        `${JSON.stringify(manifest)}\n`,
+        { mode: 0o600 },
+      );
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          manifest_sha256: 'a'.repeat(64),
+          summary: manifest.summary,
+        }),
+        stderr: '',
+      };
+    }
     const output: Partial<Record<CommandId, unknown>> = {
       'gcp.identity': {
         projectId: values.projectId,
         projectNumber: '123',
         lifecycleState: 'ACTIVE',
       },
-      'gcp.discover': [
-        {
-          name: '//run.googleapis.com/projects/test/locations/europe/services/api',
-          displayName: 'checkout-api',
-          assetType: 'run.googleapis.com/Service',
-          location: 'europe-west1',
-          state: 'READY',
-        },
-      ],
       'terraform.show': {
         timestamp: '2026-10-04T12:00:00Z',
         resource_changes: [

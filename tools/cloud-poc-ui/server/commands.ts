@@ -24,6 +24,7 @@ export interface CommandRunner {
 
 const identifier = /^[a-z][a-z0-9-]{4,61}[a-z0-9]$/;
 const planName = /^\.cloud-poc-[a-z-]+\.tfplan$/;
+const manifestPath = /^\/[A-Za-z0-9_./-]+\/gcp-manifest\.json$/;
 
 function required(
   values: Record<string, string>,
@@ -38,7 +39,7 @@ function required(
 const commands: Record<
   CommandId,
   {
-    executable: 'gcloud' | 'terraform';
+    executable: 'gcloud' | 'terraform' | 'python3';
     timeoutMs: number;
     args(values: Record<string, string>): string[];
   }
@@ -54,14 +55,22 @@ const commands: Record<
     ],
   },
   'gcp.discover': {
-    executable: 'gcloud',
-    timeoutMs: 120_000,
+    executable: 'python3',
+    timeoutMs: 300_000,
     args: (values) => [
-      'asset',
-      'search-all-resources',
-      `--scope=projects/${required(values, 'projectId', identifier)}`,
-      '--format=json',
-      '--limit=5000',
+      'scripts/gcp_brownfield_discovery.py',
+      '--project',
+      required(values, 'projectId', identifier),
+      '--output',
+      required(values, 'manifestPath', manifestPath),
+      '--max-api-calls',
+      '100',
+      '--max-resources',
+      '5000',
+      '--max-concurrency',
+      '4',
+      '--per-call-timeout',
+      '15',
     ],
   },
   'terraform.init': {

@@ -188,6 +188,15 @@ export class FixedCommandRunner implements CommandRunner {
       }
       throw error;
     }
+    if (result.code === 'ENOENT') {
+      return {
+        exitCode: 127,
+        stdout: '',
+        stderr:
+          `Required command "${definition.executable}" is not installed or is not on PATH. ` +
+          `Install it, restart the PoC Builder, and run Preflight again.`,
+      };
+    }
     return {
       exitCode: result.exitCode ?? 1,
       stdout: redact(result.stdout),

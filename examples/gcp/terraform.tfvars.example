@@ -22,5 +22,22 @@ enable_detection_rules = true
 enable_elastic_agent   = true
 # Second serverless project + CPS + cockpit dashboard
 enable_observability_project = true
+# Optional service metrics. Matching workflows are skipped until enabled.
+# These can increase Cloud Monitoring and Elastic ingest costs.
+# enable_gke_metrics      = true
+# enable_cloudrun_metrics = true
+# enable_cloudsql_metrics = true
+# enable_pubsub_metrics   = true
+
+# Optional brownfield reuse. A reused sink/subscription must reference a reused
+# topic with the same stream key. Customer IAM is preserved unless explicitly
+# granted below.
+# existing_topic_names        = { audit = "existing-audit-topic" }
+# existing_sink_names         = { audit = "existing-audit-sink" }
+# existing_subscription_names = { audit = "existing-audit-subscription" }
+# grant_existing_subscription_access = true
+
+# Optional local manifest produced by the guided UI/discovery script.
+# gcp_discovery_manifest_path = ".cloud-poc/gcp-manifest.json"
 # elastic_agent_zone = "europe-west3-b"
 # elastic_agent_version = "9.5.4"

@@ -1,9 +1,8 @@
 id: gcp-cockpit-cloudrun-recommendations
 name: GCP Cloud Run Recommendations
-description: >
-  Analyzes Cloud Run metrics over the last 24 hours and writes recommendation
-  documents for elevated 5xx error rates (performance_risk) and idle
-  instances with no requests (cost_optimization).
+description: >-
+  Requires the cloudrun-gcp/metrics input. Produces a bounded current snapshot;
+  zero requests is considered inactivity only when metric documents exist.
 
 triggers:
   - type: manual
@@ -12,6 +11,13 @@ triggers:
       every: "1h"
 
 steps:
+  - name: remove_previous_cloudrun_insights
+    type: elasticsearch.request
+    with:
+      method: POST
+      path: /gcp-cockpit-recommendations/_delete_by_query?conflicts=proceed&refresh=true
+      body: {query: {term: {resource.type: cloudrun_service}}}
+
   - name: query_metrics
     type: elasticsearch.esql.query
     with:
@@ -19,24 +25,32 @@ steps:
         FROM metrics-gcp.cloudrun_metrics-default
         | WHERE @timestamp > NOW() - 24 hours
         | EVAL is_5xx_count = CASE(gcp.labels.metrics.response_code_class == "5xx", gcp.cloudrun_metrics.request.count, 0)
-        | STATS total_requests = SUM(gcp.cloudrun_metrics.request.count), error_requests = SUM(is_5xx_count), avg_instance_count = AVG(gcp.cloudrun_metrics.container.instance.count) BY service_name = gcp.labels.resource.service_name
-        | EVAL error_rate_pct = TO_DOUBLE(error_requests) / TO_DOUBLE(total_requests) * 100
-        | KEEP service_name, total_requests, error_requests, avg_instance_count, error_rate_pct
+        | STATS observations = COUNT(*), total_requests = SUM(gcp.cloudrun_metrics.request.count), error_requests = SUM(is_5xx_count), avg_instance_count = AVG(gcp.cloudrun_metrics.container.instance.count)
+          BY service_name = gcp.labels.resource.service_name,
+             region = gcp.labels.resource.location, project_id = cloud.account.id
+        | WHERE service_name IS NOT NULL AND total_requests IS NOT NULL
+        | EVAL error_rate_pct = CASE(total_requests > 0, TO_DOUBLE(error_requests) / TO_DOUBLE(total_requests) * 100, 0.0)
+        | KEEP observations, total_requests, error_requests, avg_instance_count,
+               service_name, region, project_id, error_rate_pct
+        | LIMIT 200
 
   - name: map_rows
     type: data.map
-    items: "{{ steps.query_metrics.output.values }}"
+    items: "${{ steps.query_metrics.output.values }}"
     with:
       fields:
-        service_name: "{{ item[0] }}"
+        observations: "{{ item[0] }}"
         total_requests: "{{ item[1] }}"
         error_requests: "{{ item[2] }}"
         avg_instance_count: "{{ item[3] }}"
-        error_rate_pct: "{{ item[4] }}"
+        service_name: "{{ item[4] }}"
+        region: "{{ item[5] }}"
+        project_id: "{{ item[6] }}"
+        error_rate_pct: "{{ item[7] }}"
 
   - name: process_services
     type: foreach
-    foreach: "{{ steps.map_rows.output | json }}"
+    foreach: "${{ steps.map_rows.output }}"
     steps:
       - name: check_performance_risk
         type: if
@@ -46,7 +60,7 @@ steps:
             type: elasticsearch.index
             with:
               index: "gcp-cockpit-recommendations"
-              id: "{{ foreach.item.service_name }}-performance_risk-{{ now | date: '%Y%m%dT%H%M' }}"
+              id: "{{ foreach.item.project_id }}-{{ foreach.item.region }}-{{ foreach.item.service_name }}-cloudrun-health"
               document:
                 "@timestamp": "{{ now | date_to_xmlschema }}"
                 category: "performance_risk"
@@ -55,23 +69,46 @@ steps:
                 metric_value: "{{ foreach.item.error_rate_pct }}"
                 threshold: 10
                 recommendation: "Cloud Run service has elevated 5xx error rate over 24h (>10%) — investigate deployments/deps."
+                confidence: high
+                activity_status: observed
+                lookback_days: 1
+                evidence_refs: [gcp.cloudrun_metrics.request.count]
+                contradictory_evidence: []
+                missing_telemetry: []
+                expected_value: "5xx error rate at or below 10%"
+                safe_next_action: "Review recent revisions, logs, and downstream failures."
                 resource:
                   type: "cloudrun_service"
                   name: "{{ foreach.item.service_name }}"
+                  id: "{{ foreach.item.service_name }}"
+                  key: "{{ foreach.item.project_id }}:{{ foreach.item.region }}:cloudrun_service:{{ foreach.item.service_name }}"
+                cloud:
+                  region: "{{ foreach.item.region }}"
+                  project: {id: "{{ foreach.item.project_id }}"}
 
       - name: check_cost_optimization
         type: if
-        condition: "foreach.item.total_requests <= 0 and foreach.item.avg_instance_count > 0.3"
+        condition: "foreach.item.observations > 0 and foreach.item.total_requests == 0 and foreach.item.avg_instance_count > 0.3"
         steps:
           - name: index_cost_optimization
             type: elasticsearch.index
             with:
               index: "gcp-cockpit-recommendations"
-              id: "{{ foreach.item.service_name }}-cost_optimization-{{ now | date: '%Y%m%dT%H%M' }}"
+              id: "{{ foreach.item.project_id }}-{{ foreach.item.region }}-{{ foreach.item.service_name }}-potentially-unused"
               document:
                 "@timestamp": "{{ now | date_to_xmlschema }}"
-                category: "cost_optimization"
+                category: "unused_resource"
                 severity: "medium"
+                confidence: high
+                activity_status: potentially_unused
+                lookback_days: 1
+                evidence_refs:
+                  - gcp.cloudrun_metrics.request.count
+                  - gcp.cloudrun_metrics.container.instance.count
+                contradictory_evidence: []
+                missing_telemetry: []
+                expected_value: "Provisioned instances should receive requests."
+                safe_next_action: "Confirm triggers and ownership before setting minimum instances to zero."
                 metric_name: "cloudrun_avg_instance_count"
                 metric_value: "{{ foreach.item.avg_instance_count }}"
                 threshold: 0.3
@@ -79,3 +116,8 @@ steps:
                 resource:
                   type: "cloudrun_service"
                   name: "{{ foreach.item.service_name }}"
+                  id: "{{ foreach.item.service_name }}"
+                  key: "{{ foreach.item.project_id }}:{{ foreach.item.region }}:cloudrun_service:{{ foreach.item.service_name }}"
+                cloud:
+                  region: "{{ foreach.item.region }}"
+                  project: {id: "{{ foreach.item.project_id }}"}

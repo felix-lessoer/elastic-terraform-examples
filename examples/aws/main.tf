@@ -936,8 +936,8 @@ resource "terraform_data" "fleet_agent_reconciliation" {
       KIBANA_USERNAME = self.input.kibana_username
       KIBANA_PASSWORD = self.input.kibana_password
       AGENT_POLICY_ID = self.input.agent_policy_id
-      AWS_INSTANCE_ID = self.input.aws_instance_id
-      AWS_PRIVATE_IP  = self.input.aws_private_ip
+      CURRENT_INSTANCE_ID = self.input.aws_instance_id
+      CURRENT_PRIVATE_IP  = self.input.aws_private_ip
     }
   }
 

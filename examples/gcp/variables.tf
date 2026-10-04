@@ -101,10 +101,69 @@ variable "enable_billing_metrics" {
   default     = false
 }
 
+variable "enable_gke_metrics" {
+  type        = bool
+  description = "Enable GKE metrics and the GKE insight workflow. May increase Cloud Monitoring and Elastic ingest cost."
+  default     = false
+}
+
+variable "enable_cloudrun_metrics" {
+  type        = bool
+  description = "Enable Cloud Run metrics and the Cloud Run insight workflow. May increase Cloud Monitoring and Elastic ingest cost."
+  default     = false
+}
+
+variable "enable_cloudsql_metrics" {
+  type        = bool
+  description = "Enable Cloud SQL metrics and the Cloud SQL insight workflow. May increase Cloud Monitoring and Elastic ingest cost."
+  default     = false
+}
+
+variable "enable_pubsub_metrics" {
+  type        = bool
+  description = "Enable Pub/Sub metrics for coverage and backlog analysis. May increase Cloud Monitoring and Elastic ingest cost."
+  default     = false
+}
+
 variable "billing_dataset_id" {
   type        = string
   description = "BigQuery dataset id for GCP billing export (required when enable_billing_metrics is true)."
   default     = ""
+}
+
+variable "existing_topic_names" {
+  type        = map(string)
+  description = "Customer-owned Pub/Sub topics to attach by stream key instead of creating duplicates."
+  default     = {}
+}
+
+variable "existing_sink_names" {
+  type        = map(string)
+  description = "Customer-owned Logging sinks to attach by stream key; matching existing topics are required."
+  default     = {}
+}
+
+variable "existing_subscription_names" {
+  type        = map(string)
+  description = "Customer-owned Pub/Sub subscriptions to attach by stream key; matching existing topics are required."
+  default     = {}
+}
+
+variable "grant_existing_subscription_access" {
+  type        = bool
+  description = "Grant the PoC collector subscriber access to attached customer subscriptions. False preserves customer IAM ownership."
+  default     = false
+}
+
+variable "gcp_discovery_manifest_path" {
+  type        = string
+  description = "Optional path to a validated local brownfield manifest. Only its hash and summary are retained by Terraform."
+  default     = ""
+
+  validation {
+    condition     = var.gcp_discovery_manifest_path == "" || fileexists(var.gcp_discovery_manifest_path)
+    error_message = "gcp_discovery_manifest_path must be empty or point to a readable validated manifest."
+  }
 }
 
 variable "enable_detection_rules" {

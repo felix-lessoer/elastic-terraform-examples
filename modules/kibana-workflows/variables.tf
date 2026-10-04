@@ -25,6 +25,13 @@ variable "workflows_dir" {
   description = "Directory of workflow YAML files (*.yml / *.yaml) to deploy. Filename (without extension) becomes the stable workflow_id."
 }
 
+variable "enabled_workflow_ids" {
+  type        = set(string)
+  description = "Optional allow-list of workflow ids to deploy. Null deploys every YAML file in workflows_dir."
+  default     = null
+  nullable    = true
+}
+
 variable "execute_on_apply" {
   type        = bool
   description = "After create/update, manually run each enabled workflow once (POST /api/workflows/workflow/{id}/run)."

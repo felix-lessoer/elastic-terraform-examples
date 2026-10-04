@@ -60,6 +60,29 @@ output "pubsub_topics" {
   value = module.gcp_cloud.topic_names
 }
 
+output "pubsub_subscriptions" {
+  value = module.gcp_cloud.subscription_names
+}
+
+output "logging_sinks" {
+  value = module.gcp_cloud.sink_names
+}
+
+output "collection_ownership" {
+  description = "Whether each collection path is Terraform-managed or attached as customer-owned."
+  value       = module.gcp_cloud.collection_ownership
+}
+
+output "discovery_manifest_sha256" {
+  description = "Hash of the local brownfield manifest; the manifest itself is not stored in Terraform state."
+  value       = var.gcp_discovery_manifest_path == "" ? null : filesha256(var.gcp_discovery_manifest_path)
+}
+
+output "discovery_summary" {
+  description = "Non-sensitive resource/error counts from the local brownfield manifest."
+  value       = var.gcp_discovery_manifest_path == "" ? null : try(jsondecode(file(var.gcp_discovery_manifest_path)).summary, null)
+}
+
 output "applied_labels" {
   value = module.gcp_cloud.applied_labels
 }
@@ -109,8 +132,27 @@ output "workflow_ids" {
   description = "Pinned Kibana workflow ids deployed to Observability (and Security when enabled)."
   value = distinct(concat(
     try(module.workflows_obs[0].workflow_ids, []),
+    try(module.workflow_summary_obs[0].workflow_ids, []),
     try(module.workflows_security[0].workflow_ids, []),
   ))
+}
+
+output "workflow_telemetry_status" {
+  description = "Required Fleet inputs and whether each GCP workflow is eligible to deploy."
+  value = {
+    for workflow_id, requirements in local.gcp_workflow_telemetry_requirements :
+    workflow_id => {
+      required_inputs = requirements
+      enabled = alltrue([
+        for requirement in requirements :
+        lookup(local.gcp_metric_input_enabled, requirement, false)
+      ])
+      status = alltrue([
+        for requirement in requirements :
+        lookup(local.gcp_metric_input_enabled, requirement, false)
+      ]) ? "enabled" : "skipped_missing_telemetry"
+    }
+  }
 }
 
 output "next_steps" {
@@ -125,6 +167,7 @@ output "next_steps" {
     - Cockpit dashboard: ${try(module.cockpit[0].dashboard_url, "(pending)")}
     - Agent Builder: gcp-security-analyst, gcp-obs-triage
     - ML jobs: gcp-event-rate, gcp-cspm-findings-rate
-    - Workflows: ${join(", ", distinct(concat(try(module.workflows_obs[0].workflow_ids, []), try(module.workflows_security[0].workflow_ids, []))))}
+    - Workflows: ${join(", ", distinct(concat(try(module.workflows_obs[0].workflow_ids, []), try(module.workflow_summary_obs[0].workflow_ids, []), try(module.workflows_security[0].workflow_ids, []))))}
+    - Workflow telemetry eligibility: inspect output workflow_telemetry_status
   EOT
 }

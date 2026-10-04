@@ -11,10 +11,20 @@ locals {
       trimsuffix(f, ".yml") => abspath("${var.workflows_dir}/${f}")
     },
   )
+
+  selected_workflow_files = {
+    for id, path in local.workflow_files : id => path
+    if var.enabled_workflow_ids == null || contains(var.enabled_workflow_ids, id)
+  }
+
+  missing_workflow_ids = var.enabled_workflow_ids == null ? toset([]) : setsubtract(
+    var.enabled_workflow_ids,
+    toset(keys(local.workflow_files)),
+  )
 }
 
 resource "elasticstack_kibana_agentbuilder_workflow" "this" {
-  for_each = local.workflow_files
+  for_each = local.selected_workflow_files
 
   space_id           = var.space_id
   workflow_id        = each.key
@@ -24,6 +34,13 @@ resource "elasticstack_kibana_agentbuilder_workflow" "this" {
     endpoints = [local.kibana_url]
     username  = var.elasticsearch_username
     password  = var.elasticsearch_password
+  }
+}
+
+check "enabled_workflow_ids_exist" {
+  assert {
+    condition     = length(local.missing_workflow_ids) == 0
+    error_message = "enabled_workflow_ids contains ids without a matching YAML file: ${join(", ", sort(tolist(local.missing_workflow_ids)))}"
   }
 }
 

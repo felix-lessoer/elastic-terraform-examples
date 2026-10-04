@@ -60,6 +60,17 @@ const credentialSchema = z
         });
       }
     }
+    if (
+      value.applicationCredentialsPath &&
+      !value.applicationCredentialsPath.startsWith('/')
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['applicationCredentialsPath'],
+        message:
+          'The credential path must exist on the Linux UI server; upload a credential JSON when using a forwarded Cloud Agent UI',
+      });
+    }
   });
 
 type StoredCredentials = Partial<

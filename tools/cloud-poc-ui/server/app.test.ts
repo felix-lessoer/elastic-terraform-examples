@@ -358,6 +358,25 @@ describe('owner-only local files', () => {
       uploadedPath,
     );
   });
+
+  it('rejects workstation paths that do not exist in the Cloud Agent VM', async () => {
+    const directory = await temporaryDirectory();
+    await expect(
+      saveCredentials(
+        path.join(directory, 'credentials.env'),
+        {
+          elasticCloudApiKey: 'elastic-test-secret',
+          applicationCredentialsPath:
+            'C:\\Users\\operator\\Downloads\\gcp.json',
+          applicationCredentialsJson: '',
+          impersonateServiceAccount: '',
+        },
+        {},
+      ),
+    ).rejects.toThrow(
+      'upload a credential JSON when using a forwarded Cloud Agent UI',
+    );
+  });
 });
 
 describe('persisted operation state', () => {

@@ -23,6 +23,12 @@ process that starts the UI. Live discovery also requires the `google-auth`
 Python package. Preflight checks Terraform and Google Cloud CLI before querying
 the selected project and reports an actionable missing-command error.
 
+When the UI is running in a Cloud Agent, upload the Google credential JSON in
+the credential form. A path from the operator's Windows or macOS machine is not
+visible inside the remote Linux VM. Uploads are validated, stored with mode
+`0600` under `.cloud-poc/`, never returned by the API, and used by both ADC and
+`gcloud`.
+
 The guided GCP operations are:
 
 1. `preflight`

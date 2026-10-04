@@ -21,6 +21,9 @@ const projectInput = document.querySelector('#projectId');
 const credentialsForm = document.querySelector('#credentials');
 const credentialsButton = document.querySelector('#save-credentials');
 const credentialsStatus = document.querySelector('#credentials-status');
+const applicationCredentialsFile = document.querySelector(
+  '#applicationCredentialsFile',
+);
 const visibilityCandidates = document.querySelector('#visibility-candidates');
 const visibilityMessage = document.querySelector('#visibility-message');
 projectInput.value = localStorage.getItem('gcpProjectId') ?? '';
@@ -275,6 +278,13 @@ credentialsForm.addEventListener('submit', async (event) => {
   credentialsStatus.className = 'form-status muted';
   credentialsStatus.textContent = 'Saving credentials to the owner-only local file…';
   try {
+    const uploadedCredential = applicationCredentialsFile.files[0];
+    if (uploadedCredential) {
+      if (uploadedCredential.size > 65_536) {
+        throw new Error('Google credential JSON must be 64 KiB or smaller');
+      }
+      values.applicationCredentialsJson = await uploadedCredential.text();
+    }
     const status = await api('/api/credentials', {
       method: 'PUT',
       body: JSON.stringify(values),

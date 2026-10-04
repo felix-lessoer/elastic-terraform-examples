@@ -117,6 +117,12 @@ form {
   background: var(--light-poppy);
 }
 
+.field-help {
+  margin: -0.45rem 0 0;
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
 input {
   width: 100%;
   padding: 0.75rem;

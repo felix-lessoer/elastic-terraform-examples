@@ -325,6 +325,39 @@ describe('owner-only local files', () => {
       CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE: '/home/user/gcp-adc.json',
     });
   });
+
+  it('stores an uploaded Google credential JSON in an owner-only local file', async () => {
+    const directory = await temporaryDirectory();
+    const filePath = path.join(directory, 'credentials.env');
+    const environment: NodeJS.ProcessEnv = {};
+    await saveCredentials(
+      filePath,
+      {
+        elasticCloudApiKey: 'elastic-test-secret',
+        applicationCredentialsPath: '',
+        applicationCredentialsJson: JSON.stringify({
+          type: 'service_account',
+          project_id: 'valid-project1',
+          private_key_id: 'key-id',
+          private_key: 'private-test-secret',
+          client_email: 'terraform@valid-project1.iam.gserviceaccount.com',
+          client_id: '123',
+          token_uri: 'https://oauth2.googleapis.com/token',
+        }),
+        impersonateServiceAccount: '',
+      },
+      environment,
+    );
+    const uploadedPath = path.join(
+      directory,
+      'gcp-application-credentials.json',
+    );
+    expect((await fs.stat(uploadedPath)).mode & 0o777).toBe(0o600);
+    expect(environment.GOOGLE_APPLICATION_CREDENTIALS).toBe(uploadedPath);
+    expect(environment.CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE).toBe(
+      uploadedPath,
+    );
+  });
 });
 
 describe('persisted operation state', () => {

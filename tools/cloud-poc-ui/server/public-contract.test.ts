@@ -13,6 +13,8 @@ describe('credential form feedback', () => {
     expect(html).toContain('id="credentials-status"');
     expect(html).toContain('role="status"');
     expect(html).toContain('aria-live="polite"');
+    expect(html).toContain('id="applicationCredentialsFile"');
+    expect(html).toContain('accept="application/json,.json"');
   });
 
   it('shows saving, success, and failure feedback and restores the button', async () => {
@@ -28,5 +30,8 @@ describe('credential form feedback', () => {
     );
     expect(script).toContain('credentialsForm.reset()');
     expect(script).not.toContain('event.currentTarget.reset()');
+    expect(script).toContain(
+      'values.applicationCredentialsJson = await uploadedCredential.text()',
+    );
   });
 });

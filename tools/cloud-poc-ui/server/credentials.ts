@@ -1,5 +1,6 @@
 import { parse } from 'dotenv';
 import { promises as fs } from 'node:fs';
+import path from 'node:path';
 import { z } from 'zod';
 import type { CredentialStatus } from './cloud-provider.js';
 import { writeOwnerOnly } from './local-files.js';
@@ -8,6 +9,7 @@ const credentialSchema = z
   .object({
     elasticCloudApiKey: z.string().max(16_384).optional().default(''),
     applicationCredentialsPath: z.string().max(4096).optional().default(''),
+    applicationCredentialsJson: z.string().max(65_536).optional().default(''),
     impersonateServiceAccount: z
       .string()
       .email()
@@ -19,11 +21,42 @@ const credentialSchema = z
   .strict()
   .superRefine((value, context) => {
     for (const [key, item] of Object.entries(value)) {
-      if (/[\u0000-\u001f\u007f]/.test(item)) {
+      const invalidControlCharacter =
+        key === 'applicationCredentialsJson'
+          ? /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/
+          : /[\u0000-\u001f\u007f]/;
+      if (invalidControlCharacter.test(item)) {
         context.addIssue({
           code: 'custom',
           path: [key],
           message: 'Credential fields cannot contain control characters',
+        });
+      }
+    }
+    if (value.applicationCredentialsJson) {
+      try {
+        const credential = JSON.parse(value.applicationCredentialsJson) as {
+          type?: unknown;
+        };
+        if (
+          !credential ||
+          typeof credential !== 'object' ||
+          !['service_account', 'external_account', 'authorized_user'].includes(
+            String(credential.type ?? ''),
+          )
+        ) {
+          context.addIssue({
+            code: 'custom',
+            path: ['applicationCredentialsJson'],
+            message:
+              'Uploaded credentials must be a supported Google credential JSON file',
+          });
+        }
+      } catch {
+        context.addIssue({
+          code: 'custom',
+          path: ['applicationCredentialsJson'],
+          message: 'Uploaded Google credentials are not valid JSON',
         });
       }
     }
@@ -84,8 +117,22 @@ export async function saveCredentials(
   const parsed = credentialSchema.parse(input);
   const previous = await readStored(filePath);
   const next: StoredCredentials = { ...previous };
+  let uploadedCredential:
+    | { filePath: string; contents: string }
+    | undefined;
   if (parsed.elasticCloudApiKey) next.EC_API_KEY = parsed.elasticCloudApiKey;
-  if (parsed.applicationCredentialsPath) {
+  if (parsed.applicationCredentialsJson) {
+    const uploadedPath = path.join(
+      path.dirname(filePath),
+      'gcp-application-credentials.json',
+    );
+    uploadedCredential = {
+      filePath: uploadedPath,
+      contents: `${JSON.stringify(JSON.parse(parsed.applicationCredentialsJson), null, 2)}\n`,
+    };
+    next.GOOGLE_APPLICATION_CREDENTIALS = uploadedPath;
+    next.CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE = uploadedPath;
+  } else if (parsed.applicationCredentialsPath) {
     next.GOOGLE_APPLICATION_CREDENTIALS = parsed.applicationCredentialsPath;
     next.CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE =
       parsed.applicationCredentialsPath;
@@ -111,6 +158,12 @@ export async function saveCredentials(
     !environment.CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE
   ) {
     throw new Error('Configure application-default credentials or impersonation');
+  }
+  if (uploadedCredential) {
+    await writeOwnerOnly(
+      uploadedCredential.filePath,
+      uploadedCredential.contents,
+    );
   }
   const contents = [
     '# Local-only Cloud PoC credentials. Never commit this file.',

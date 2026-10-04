@@ -28,8 +28,20 @@
             <input name="elasticCloudApiKey" type="password" autocomplete="off" />
           </label>
           <label>
-            Application credentials path
-            <input name="applicationCredentialsPath" placeholder="/home/me/gcp-adc.json" />
+            Upload Google credential JSON
+            <input
+              id="applicationCredentialsFile"
+              type="file"
+              accept="application/json,.json"
+            />
+          </label>
+          <p class="field-help muted">
+            Recommended for a forwarded Cloud Agent UI. The file is stored only
+            in the agent's owner-only local directory.
+          </p>
+          <label>
+            Or credential path on the UI server
+            <input name="applicationCredentialsPath" placeholder="/home/ubuntu/gcp-adc.json" />
           </label>
           <label>
             Service account to impersonate (optional)

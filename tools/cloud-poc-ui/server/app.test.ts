@@ -322,6 +322,7 @@ describe('owner-only local files', () => {
     expect(restartedEnvironment).toMatchObject({
       EC_API_KEY: 'elastic-test-secret',
       GOOGLE_APPLICATION_CREDENTIALS: '/home/user/gcp-adc.json',
+      CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE: '/home/user/gcp-adc.json',
     });
   });
 });

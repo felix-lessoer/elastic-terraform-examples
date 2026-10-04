@@ -31,7 +31,10 @@ const credentialSchema = z
 
 type StoredCredentials = Partial<
   Record<
-    'EC_API_KEY' | 'GOOGLE_APPLICATION_CREDENTIALS' | 'GCP_IMPERSONATE_SERVICE_ACCOUNT',
+    | 'EC_API_KEY'
+    | 'GOOGLE_APPLICATION_CREDENTIALS'
+    | 'CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE'
+    | 'GCP_IMPERSONATE_SERVICE_ACCOUNT',
     string
   >
 >;
@@ -84,9 +87,18 @@ export async function saveCredentials(
   if (parsed.elasticCloudApiKey) next.EC_API_KEY = parsed.elasticCloudApiKey;
   if (parsed.applicationCredentialsPath) {
     next.GOOGLE_APPLICATION_CREDENTIALS = parsed.applicationCredentialsPath;
+    next.CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE =
+      parsed.applicationCredentialsPath;
   }
   if (parsed.impersonateServiceAccount) {
     next.GCP_IMPERSONATE_SERVICE_ACCOUNT = parsed.impersonateServiceAccount;
+  }
+  if (
+    next.GOOGLE_APPLICATION_CREDENTIALS &&
+    !next.CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE
+  ) {
+    next.CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE =
+      next.GOOGLE_APPLICATION_CREDENTIALS;
   }
   if (!next.EC_API_KEY && !environment.EC_API_KEY) {
     throw new Error('Enter an Elastic Cloud API key');
@@ -122,6 +134,13 @@ export async function loadCredentialEnvironment(
   environment: NodeJS.ProcessEnv = process.env,
 ): Promise<CredentialStatus> {
   const stored = await readStored(filePath);
+  if (
+    stored.GOOGLE_APPLICATION_CREDENTIALS &&
+    !stored.CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE
+  ) {
+    stored.CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE =
+      stored.GOOGLE_APPLICATION_CREDENTIALS;
+  }
   for (const [key, value] of Object.entries(stored)) {
     if (value && !environment[key]) environment[key] = value;
   }

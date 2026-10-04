@@ -164,11 +164,19 @@ function renderGuidedPath() {
   const records = steps.map(({ operation }) =>
     projectId ? latestOperation(operation, projectId) : undefined,
   );
-  const nextIndex = records.findIndex(
+  const failedApply = records[3];
+  const latestPlan = records[2];
+  const replanRequired =
+    failedApply?.state === 'failed' &&
+    latestPlan?.state === 'succeeded' &&
+    latestPlan.startedAt <= (failedApply.finishedAt ?? failedApply.updatedAt);
+  let nextIndex = records.findIndex(
     (record) => record?.state !== 'succeeded',
   );
+  if (replanRequired) nextIndex = 2;
   const completed = records.filter(
-    (record) => record?.state === 'succeeded',
+    (record, index) =>
+      record?.state === 'succeeded' && !(replanRequired && index === 2),
   ).length;
 
   if (!credentialsReady) {
@@ -177,6 +185,10 @@ function renderGuidedPath() {
   } else if (!projectId) {
     guidedSummary.textContent =
       'Credentials are saved. Next: enter the GCP project ID in step 2.';
+  } else if (replanRequired) {
+    guidedSummary.textContent =
+      `${completed} of ${steps.length} steps complete for ${projectId}. ` +
+      'The apply attempt failed after the saved plan was created. Regenerate and review Step 3 before retrying Step 4.';
   } else if (nextIndex === -1) {
     guidedSummary.textContent =
       `All ${steps.length} guided steps are complete for ${projectId}. ` +
@@ -196,7 +208,8 @@ function renderGuidedPath() {
   stepContainer.replaceChildren();
   steps.forEach((step, index) => {
     const record = records[index];
-    const complete = record?.state === 'succeeded';
+    const stepNeedsReplan = replanRequired && index === 2;
+    const complete = record?.state === 'succeeded' && !stepNeedsReplan;
     const failed = record?.state === 'failed';
     const running = ['queued', 'running', 'validating'].includes(record?.state);
     const next = index === nextIndex;
@@ -228,16 +241,20 @@ function renderGuidedPath() {
       const history = document.createElement('p');
       history.className = 'step-history';
       const when = new Date(record.finishedAt ?? record.updatedAt).toLocaleString();
-      history.textContent = complete
-        ? `Completed ${when}.`
-        : failed
-          ? `Last attempt failed ${when}. Review the operation log below, then retry.`
-          : `Started ${new Date(record.startedAt).toLocaleString()}.`;
+      history.textContent = stepNeedsReplan
+        ? 'The previous plan is stale after a failed apply and must be regenerated.'
+        : complete
+          ? `Completed ${when}.`
+          : failed
+            ? `Last attempt failed ${when}. Review the operation log below, then retry.`
+            : `Started ${new Date(record.startedAt).toLocaleString()}.`;
       copy.append(history);
     }
     const status = document.createElement('span');
     status.className = 'step-status';
-    status.textContent = complete
+    status.textContent = stepNeedsReplan
+      ? 'Replan required'
+      : complete
       ? 'Complete'
       : failed
         ? 'Needs attention'
@@ -247,7 +264,9 @@ function renderGuidedPath() {
             ? 'Next'
             : 'Locked';
     const button = actionButton(
-      complete
+      stepNeedsReplan
+        ? 'Regenerate saved plan'
+        : complete
         ? 'Run again'
         : failed
           ? 'Retry step'

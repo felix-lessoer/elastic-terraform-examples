@@ -44,6 +44,9 @@ describe('credential form feedback', () => {
     expect(script).toContain('appendFriendlyResult(card, step, record)');
     expect(script).toContain("'Approval required'");
     expect(script).toContain("'Apply reviewed plan'");
+    expect(script).toContain("'Replan required'");
+    expect(script).toContain("'Regenerate saved plan'");
+    expect(script).toContain('The previous plan is stale after a failed apply');
     expect(script).not.toContain(
       "window.prompt('Type APPLY to apply the reviewed saved plan.')",
     );

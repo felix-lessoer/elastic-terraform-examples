@@ -263,14 +263,14 @@ module "workflows_security" {
 module "gcp_cloud" {
   source = "../../modules/gcp-cloud"
 
-  project_id          = var.google_cloud_project
-  name_prefix         = var.name_prefix
-  region              = var.google_cloud_region
-  company_labels      = var.company_labels
-  required_label_keys = var.required_label_keys
-  existing_topic_names              = var.existing_topic_names
-  existing_sink_names               = var.existing_sink_names
-  existing_subscription_names       = var.existing_subscription_names
+  project_id                         = var.google_cloud_project
+  name_prefix                        = var.name_prefix
+  region                             = var.google_cloud_region
+  company_labels                     = var.company_labels
+  required_label_keys                = var.required_label_keys
+  existing_topic_names               = var.existing_topic_names
+  existing_sink_names                = var.existing_sink_names
+  existing_subscription_names        = var.existing_subscription_names
   grant_existing_subscription_access = var.grant_existing_subscription_access
   additional_labels = {
     cloud = "gcp"
@@ -754,10 +754,10 @@ resource "terraform_data" "fleet_agent_reconciliation_security" {
   provisioner "local-exec" {
     interpreter = ["/bin/bash", "-c"]
     environment = {
-      KIBANA_URL         = module.elastic.kibana_endpoint
-      KIBANA_USERNAME    = module.elastic.username
-      KIBANA_PASSWORD    = module.elastic.password
-      AGENT_POLICY_ID    = module.stack.agent_policy_id
+      KIBANA_URL          = module.elastic.kibana_endpoint
+      KIBANA_USERNAME     = module.elastic.username
+      KIBANA_PASSWORD     = module.elastic.password
+      AGENT_POLICY_ID     = module.stack.agent_policy_id
       CURRENT_INSTANCE_ID = tostring(module.elastic_agent[0].instance_id)
     }
     command = "python3 '${path.module}/../aws/scripts/reconcile_fleet_agents.py' reconcile"

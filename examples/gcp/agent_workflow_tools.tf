@@ -13,12 +13,12 @@ locals {
   }
 
   gcp_metric_input_enabled = {
-    "compute-gcp/metrics"   = true
-    "storage-gcp/metrics"   = true
-    "gke-gcp/metrics"       = var.enable_gke_metrics
-    "cloudrun-gcp/metrics"  = var.enable_cloudrun_metrics
-    "cloudsql-gcp/metrics"  = var.enable_cloudsql_metrics
-    "pubsub-gcp/metrics"    = var.enable_pubsub_metrics
+    "compute-gcp/metrics"  = true
+    "storage-gcp/metrics"  = true
+    "gke-gcp/metrics"      = var.enable_gke_metrics
+    "cloudrun-gcp/metrics" = var.enable_cloudrun_metrics
+    "cloudsql-gcp/metrics" = var.enable_cloudsql_metrics
+    "pubsub-gcp/metrics"   = var.enable_pubsub_metrics
   }
 
   gcp_service_workflow_ids = setunion(

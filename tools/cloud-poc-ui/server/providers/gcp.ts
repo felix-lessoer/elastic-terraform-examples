@@ -12,6 +12,7 @@ import type { CommandRunner } from '../commands.js';
 import type { GcpDeploymentConfig } from '../gcp-config.js';
 import {
   findUnmappedGcpServices,
+  type GcpServiceId,
   readGcpManifestWithHash,
   recommendGcpIntegrations,
 } from '../gcp-integrations.js';
@@ -37,7 +38,7 @@ const workflowIds = new Set([
   'gcp-cockpit-pubsub-recommendations',
   'gcp-cockpit-insight-engine-summary',
 ]);
-const workflowService = new Map([
+const workflowService = new Map<string, GcpServiceId>([
   ['gcp-cockpit-host-recommendations', 'compute'],
   ['gcp-cockpit-storage-recommendations', 'storage'],
   ['gcp-cockpit-loadbalancing-recommendations', 'loadbalancing'],

@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -65,6 +66,11 @@ OPTIONAL_RAW_INDICES = (
     "metrics-gcp.cloudrun_metrics",
     "metrics-gcp.pubsub",
     "metrics-gcp.cloudsql",
+    "traces-agent_builder.otel",
+)
+CONTENT_ADDRESSED_INDEX = re.compile(
+    r"((?:gcp-cockpit-[a-z0-9_.-]+|metrics-gcp\.[a-z0-9_.-]+))"
+    r"-[0-9a-f]{64}"
 )
 
 
@@ -139,6 +145,7 @@ def scrub(panel: dict, cps_prefixes: tuple[str, ...] = ()) -> dict:
             ".ml-anomalies-shared-000001",
         )
         raw = raw.replace(f'"{normalized}:', '"')
+    raw = CONTENT_ADDRESSED_INDEX.sub(r"\1", raw)
     return json.loads(raw)
 
 

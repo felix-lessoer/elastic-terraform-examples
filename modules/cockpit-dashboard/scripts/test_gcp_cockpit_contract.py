@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+import re
 import sys
 import unittest
 
@@ -68,9 +69,19 @@ class GcpCockpitSavedObjectContractTests(unittest.TestCase):
             "metrics-gcp.cloudrun_metrics",
             "metrics-gcp.pubsub",
             "metrics-gcp.cloudsql",
+            "traces-agent_builder.otel",
         ):
             self.assertNotIn(optional_source, self.serialized_panels)
         self.assertIn("FROM gcp-cockpit-coverage", self.serialized_panels)
+
+    def test_lens_bindings_are_not_tied_to_source_cluster_hashes(self):
+        self.assertIsNone(
+            re.search(
+                r"(?:gcp-cockpit-|metrics-gcp\.)[a-z0-9_.-]+"
+                r"-[0-9a-f]{64}",
+                self.serialized_panels,
+            )
+        )
 
     def test_gcp_has_aws_parity_insight_panels(self):
         expected_titles = {

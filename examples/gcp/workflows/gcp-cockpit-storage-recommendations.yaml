@@ -1,0 +1,94 @@
+id: gcp-cockpit-storage-recommendations
+name: GCP Cloud Storage Recommendations
+description: >-
+  Requires the storage-gcp/metrics input (always enabled). Reports large,
+  potentially unused buckets only when both storage and request metrics were
+  observed, and maintains a bounded current snapshot.
+
+triggers:
+  - type: manual
+  - type: scheduled
+    with:
+      every: "1h"
+
+steps:
+  - name: remove_previous_storage_insights
+    type: elasticsearch.request
+    with:
+      method: POST
+      path: /gcp-cockpit-recommendations/_delete_by_query?conflicts=proceed&refresh=true
+      body: {query: {term: {resource.type: gcs_bucket}}}
+
+  - name: query_potentially_unused_buckets
+    type: elasticsearch.esql.query
+    with:
+      format: json
+      query: |
+        FROM metrics-gcp.storage-default
+        | WHERE @timestamp > NOW() - 14 days
+        | STATS observations = COUNT(*),
+                size_observations = COUNT(gcp.storage.storage.total.bytes),
+                request_observations = COUNT(gcp.storage.api.request.count),
+                max_size_bytes = MAX(gcp.storage.storage.total.bytes),
+                total_requests = SUM(gcp.storage.api.request.count)
+          BY bucket = gcp.labels.resource.bucket_name,
+             region = gcp.labels.resource.location, project_id = cloud.account.id
+        | WHERE bucket IS NOT NULL AND region IS NOT NULL AND project_id IS NOT NULL
+            AND size_observations > 0 AND request_observations > 0
+            AND max_size_bytes >= 107374182400 AND total_requests == 0
+        | KEEP observations, size_observations, request_observations,
+               max_size_bytes, total_requests, bucket, region, project_id
+        | LIMIT 200
+
+  - name: map_buckets
+    type: data.map
+    items: "${{ steps.query_potentially_unused_buckets.output.values }}"
+    with:
+      fields:
+        observations: "{{ item[0] }}"
+        size_observations: "{{ item[1] }}"
+        request_observations: "{{ item[2] }}"
+        max_size_bytes: "{{ item[3] }}"
+        total_requests: "{{ item[4] }}"
+        bucket: "{{ item[5] }}"
+        region: "{{ item[6] }}"
+        project_id: "{{ item[7] }}"
+
+  - name: publish_potentially_unused_buckets
+    type: foreach
+    foreach: "${{ steps.map_buckets.output }}"
+    steps:
+      - name: index_potentially_unused_bucket
+        type: elasticsearch.index
+        with:
+          index: gcp-cockpit-recommendations
+          id: "{{ foreach.item.project_id }}-{{ foreach.item.region }}-{{ foreach.item.bucket }}-potentially-unused"
+          document:
+            "@timestamp": "{{ now | date_to_xmlschema }}"
+            category: unused_resource
+            severity: medium
+            confidence: high
+            activity_status: potentially_unused
+            lookback_days: 14
+            evidence_refs:
+              - gcp.storage.storage.total.bytes
+              - gcp.storage.api.request.count
+            contradictory_evidence: []
+            missing_telemetry: []
+            expected_value: "Large buckets should show API request activity during the 14-day observation window."
+            safe_next_action: "Confirm ownership, lifecycle policy, and non-API access requirements before archiving or deleting objects."
+            metric_name: storage_request_count_14d
+            metric_value: "{{ foreach.item.total_requests }}"
+            threshold: 0
+            recommendation: >-
+              Bucket {{ foreach.item.bucket }} stored at least 100 GiB but had
+              zero API requests across {{ foreach.item.request_observations }}
+              observed request samples over 14 days.
+            resource:
+              type: gcs_bucket
+              name: "{{ foreach.item.bucket }}"
+              id: "{{ foreach.item.bucket }}"
+              key: "{{ foreach.item.project_id }}:{{ foreach.item.region }}:gcs_bucket:{{ foreach.item.bucket }}"
+            cloud:
+              region: "{{ foreach.item.region }}"
+              project: {id: "{{ foreach.item.project_id }}"}

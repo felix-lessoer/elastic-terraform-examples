@@ -22,6 +22,16 @@ triggers:
       every: "1h"
 
 steps:
+  - name: remove_previous_host_insights
+    type: elasticsearch.request
+    with:
+      method: POST
+      path: /gcp-cockpit-recommendations/_delete_by_query?conflicts=proceed&refresh=true
+      body:
+        query:
+          term:
+            resource.type: gce_instance
+
   # Primary data source: GCP Compute metrics
   - name: query_gcp_cpu
     type: elasticsearch.esql.query
@@ -30,7 +40,13 @@ steps:
       query: |
         FROM metrics-gcp.compute-default
         | WHERE @timestamp > NOW() - 24 hours
-        | STATS avg_cpu = AVG(gcp.compute.instance.cpu.usage.pct) BY host.name, cloud.availability_zone, cloud.project.id
+        | EVAL cpu_pct = gcp.compute.instance.cpu.usage.pct * 100
+        | STATS observations = COUNT(*),
+                avg_cpu = AVG(cpu_pct)
+          BY instance_name = cloud.instance.name, instance_id = cloud.instance.id,
+             cloud.availability_zone, cloud.region, project_id = cloud.account.id
+        | WHERE instance_id IS NOT NULL AND (avg_cpu < 20 OR avg_cpu > 85)
+        | LIMIT 200
     on-failure:
       continue: true
 
@@ -45,24 +61,28 @@ steps:
         | WHERE @timestamp > NOW() - 24 hours
         | EVAL cpu_pct = system.cpu.total.norm.pct * 100
         | STATS avg_cpu = AVG(cpu_pct) BY host.name
+        | LIMIT 200
     on-failure:
       continue: true
 
   - name: map_gcp_hosts
     type: data.map
     if: 'steps.query_gcp_cpu.status: "success"'
-    items: "{{ steps.query_gcp_cpu.output.values | json }}"
+    items: "${{ steps.query_gcp_cpu.output.values }}"
     with:
       fields:
-        host: "{{ item[1] }}"
-        avg_cpu: "{{ item[0] }}"
-        zone: "{{ item[2] }}"
-        project_id: "{{ item[3] }}"
+        observations: "{{ item[0] }}"
+        avg_cpu: "{{ item[1] }}"
+        host: "{{ item[2] }}"
+        instance_id: "{{ item[3] }}"
+        zone: "{{ item[4] }}"
+        region: "{{ item[5] }}"
+        project_id: "{{ item[6] }}"
 
   - name: map_system_hosts
     type: data.map
     if: 'steps.query_gcp_cpu.status: "failed"'
-    items: "{{ steps.query_system_cpu_fallback.output.values | json }}"
+    items: "${{ steps.query_system_cpu_fallback.output.values }}"
     with:
       fields:
         host: "{{ item[1] }}"
@@ -73,7 +93,7 @@ steps:
   - name: process_gcp_hosts
     type: foreach
     if: 'steps.query_gcp_cpu.status: "success"'
-    foreach: "{{ steps.map_gcp_hosts.output | json }}"
+    foreach: "${{ steps.map_gcp_hosts.output }}"
     steps:
       - name: check_low_cpu_gcp
         type: if
@@ -83,16 +103,26 @@ steps:
             type: elasticsearch.index
             with:
               index: gcp-cockpit-recommendations
-              id: "{{ foreach.item.host }}-cost_optimization-{{ now | date: '%Y%m%d%H%M%S' }}-{{ foreach.index }}"
+              id: "{{ foreach.item.project_id }}-{{ foreach.item.instance_id }}-cost_optimization"
               document:
                 "@timestamp": "{{ now | date_to_xmlschema }}"
                 category: cost_optimization
                 severity: medium
+                confidence: medium
+                activity_status: observed
+                lookback_days: 1
+                evidence_refs: [gcp.compute.instance.cpu.usage.pct]
+                contradictory_evidence: []
+                missing_telemetry: [network_activity]
+                expected_value: "Average CPU at or above the configured low threshold"
+                safe_next_action: "Confirm owner and traffic evidence before resizing or stopping."
                 metric_name: avg_cpu_pct
                 recommendation: "Host {{ foreach.item.host }} is underutilized (avg CPU {{ foreach.item.avg_cpu | round: 1 }}% over 24h) - consider downsizing or stopping this instance to save cost."
                 resource:
-                  type: compute_instance
+                  type: gce_instance
                   name: "{{ foreach.item.host }}"
+                  id: "{{ foreach.item.instance_id }}"
+                  key: "{{ foreach.item.project_id }}:{{ foreach.item.region }}:gce_instance:{{ foreach.item.instance_id }}"
                 threshold: "{{ inputs.low_cpu_threshold }}"
                 metric_value: "{{ foreach.item.avg_cpu | round: 2 }}"
                 cloud:
@@ -108,16 +138,26 @@ steps:
                 type: elasticsearch.index
                 with:
                   index: gcp-cockpit-recommendations
-                  id: "{{ foreach.item.host }}-performance_risk-{{ now | date: '%Y%m%d%H%M%S' }}-{{ foreach.index }}"
+                  id: "{{ foreach.item.project_id }}-{{ foreach.item.instance_id }}-performance_risk"
                   document:
                     "@timestamp": "{{ now | date_to_xmlschema }}"
                     category: performance_risk
                     severity: high
+                    confidence: high
+                    activity_status: observed
+                    lookback_days: 1
+                    evidence_refs: [gcp.compute.instance.cpu.usage.pct]
+                    contradictory_evidence: []
+                    missing_telemetry: []
+                    expected_value: "Average CPU below the configured high threshold"
+                    safe_next_action: "Review capacity and scaling configuration."
                     metric_name: avg_cpu_pct
                     recommendation: "Host {{ foreach.item.host }} shows sustained high CPU utilization (avg CPU {{ foreach.item.avg_cpu | round: 1 }}% over 24h) - consider upsizing this instance or redistributing workload to avoid performance degradation."
                     resource:
-                      type: compute_instance
+                      type: gce_instance
                       name: "{{ foreach.item.host }}"
+                      id: "{{ foreach.item.instance_id }}"
+                      key: "{{ foreach.item.project_id }}:{{ foreach.item.region }}:gce_instance:{{ foreach.item.instance_id }}"
                     threshold: "{{ inputs.high_cpu_threshold }}"
                     metric_value: "{{ foreach.item.avg_cpu | round: 2 }}"
                     cloud:
@@ -128,7 +168,7 @@ steps:
   - name: process_system_hosts
     type: foreach
     if: 'steps.query_gcp_cpu.status: "failed"'
-    foreach: "{{ steps.map_system_hosts.output | json }}"
+    foreach: "${{ steps.map_system_hosts.output }}"
     steps:
       - name: check_low_cpu_system
         type: if
@@ -138,16 +178,26 @@ steps:
             type: elasticsearch.index
             with:
               index: gcp-cockpit-recommendations
-              id: "{{ foreach.item.host }}-cost_optimization-{{ now | date: '%Y%m%d%H%M%S' }}-{{ foreach.index }}"
+              id: "unknown-global-gce_instance-{{ foreach.item.host }}-cost_optimization"
               document:
                 "@timestamp": "{{ now | date_to_xmlschema }}"
                 category: cost_optimization
                 severity: medium
+                confidence: low
+                activity_status: observed
+                lookback_days: 1
+                evidence_refs: [system.cpu.total.norm.pct]
+                contradictory_evidence: []
+                missing_telemetry: [gcp_compute_identity, network_activity]
+                expected_value: "Average CPU at or above the configured low threshold"
+                safe_next_action: "Resolve the GCP instance identity and confirm traffic before resizing."
                 metric_name: avg_cpu_pct
                 recommendation: "Host {{ foreach.item.host }} is underutilized (avg CPU {{ foreach.item.avg_cpu | round: 1 }}% over 24h) - consider downsizing or stopping this instance to save cost."
                 resource:
-                  type: compute_instance
+                  type: gce_instance
                   name: "{{ foreach.item.host }}"
+                  id: "{{ foreach.item.host }}"
+                  key: "unknown:global:gce_instance:{{ foreach.item.host }}"
                 threshold: "{{ inputs.low_cpu_threshold }}"
                 metric_value: "{{ foreach.item.avg_cpu | round: 2 }}"
                 cloud:
@@ -163,19 +213,105 @@ steps:
                 type: elasticsearch.index
                 with:
                   index: gcp-cockpit-recommendations
-                  id: "{{ foreach.item.host }}-performance_risk-{{ now | date: '%Y%m%d%H%M%S' }}-{{ foreach.index }}"
+                  id: "unknown-global-gce_instance-{{ foreach.item.host }}-performance_risk"
                   document:
                     "@timestamp": "{{ now | date_to_xmlschema }}"
                     category: performance_risk
                     severity: high
+                    confidence: low
+                    activity_status: observed
+                    lookback_days: 1
+                    evidence_refs: [system.cpu.total.norm.pct]
+                    contradictory_evidence: []
+                    missing_telemetry: [gcp_compute_identity]
+                    expected_value: "Average CPU below the configured high threshold"
+                    safe_next_action: "Resolve the GCP instance identity, then review capacity."
                     metric_name: avg_cpu_pct
                     recommendation: "Host {{ foreach.item.host }} shows sustained high CPU utilization (avg CPU {{ foreach.item.avg_cpu | round: 1 }}% over 24h) - consider upsizing this instance or redistributing workload to avoid performance degradation."
                     resource:
-                      type: compute_instance
+                      type: gce_instance
                       name: "{{ foreach.item.host }}"
+                      id: "{{ foreach.item.host }}"
+                      key: "unknown:global:gce_instance:{{ foreach.item.host }}"
                     threshold: "{{ inputs.high_cpu_threshold }}"
                     metric_value: "{{ foreach.item.avg_cpu | round: 2 }}"
                     cloud:
                       availability_zone: "{{ foreach.item.zone }}"
                       project:
                         id: "{{ foreach.item.project_id }}"
+
+  - name: query_potentially_unused_hosts
+    type: elasticsearch.esql.query
+    with:
+      format: json
+      query: |
+        FROM metrics-gcp.compute-default
+        | WHERE @timestamp > NOW() - 14 days
+        | EVAL cpu_pct = gcp.compute.instance.cpu.usage.pct * 100
+        | STATS observations = COUNT(*),
+                avg_cpu = AVG(cpu_pct),
+                network_in = SUM(gcp.compute.instance.network.received.bytes),
+                network_out = SUM(gcp.compute.instance.network.sent.bytes)
+          BY instance_name = cloud.instance.name, instance_id = cloud.instance.id,
+             cloud.region, project_id = cloud.account.id
+        | WHERE instance_id IS NOT NULL
+            AND avg_cpu < 1
+            AND network_in IS NOT NULL
+            AND network_out IS NOT NULL
+            AND network_in + network_out < 10485760
+        | EVAL network_bytes = TO_DOUBLE(network_in) + TO_DOUBLE(network_out)
+        | LIMIT 200
+
+  - name: map_potentially_unused_hosts
+    type: data.map
+    items: "${{ steps.query_potentially_unused_hosts.output.values }}"
+    with:
+      fields:
+        observations: "{{ item[0] }}"
+        avg_cpu: "{{ item[1] }}"
+        network_in: "{{ item[2] }}"
+        network_out: "{{ item[3] }}"
+        host: "{{ item[4] }}"
+        instance_id: "{{ item[5] }}"
+        region: "{{ item[6] }}"
+        project_id: "{{ item[7] }}"
+        network_bytes: "{{ item[8] }}"
+
+  - name: publish_potentially_unused_hosts
+    type: foreach
+    foreach: "${{ steps.map_potentially_unused_hosts.output }}"
+    steps:
+      - name: index_potentially_unused_host
+        type: elasticsearch.index
+        with:
+          index: gcp-cockpit-recommendations
+          id: "{{ foreach.item.project_id }}-{{ foreach.item.instance_id }}-potentially-unused"
+          document:
+            "@timestamp": "{{ now | date_to_xmlschema }}"
+            category: unused_resource
+            severity: medium
+            confidence: high
+            activity_status: potentially_unused
+            lookback_days: 14
+            evidence_refs:
+              - gcp.compute.instance.cpu.usage.pct
+              - gcp.compute.instance.network.received.bytes
+              - gcp.compute.instance.network.sent.bytes
+            contradictory_evidence: []
+            missing_telemetry: []
+            expected_value: Active instances should show CPU or network activity.
+            safe_next_action: Confirm ownership and dependencies before stopping the instance.
+            metric_name: network_bytes_14d
+            metric_value: "{{ foreach.item.network_bytes }}"
+            threshold: 10485760
+            recommendation: >-
+              Host {{ foreach.item.host }} had less than 1% CPU and 10 MiB of
+              network traffic over 14 days across observed metric documents.
+            resource:
+              type: gce_instance
+              name: "{{ foreach.item.host }}"
+              id: "{{ foreach.item.instance_id }}"
+              key: "{{ foreach.item.project_id }}:{{ foreach.item.region }}:gce_instance:{{ foreach.item.instance_id }}"
+            cloud:
+              region: "{{ foreach.item.region }}"
+              project: {id: "{{ foreach.item.project_id }}"}

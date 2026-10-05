@@ -1,0 +1,80 @@
+name: GCP Insight Engine Summary
+id: gcp-cockpit-insight-engine-summary
+description: Runs after deterministic service workflows to publish one evidence-based briefing.
+triggers:
+  - type: manual
+  - type: scheduled
+    with: {every: "1h"}
+steps:
+  - name: recommendation_snapshot
+    type: elasticsearch.esql.query
+    with:
+      format: json
+      query: |
+        FROM gcp-cockpit-recommendations
+        | WHERE @timestamp > NOW() - 7 days
+        | STATS count = COUNT(*) BY severity, category
+        | SORT count DESC
+        | LIMIT 25
+  - name: coverage_snapshot
+    type: elasticsearch.esql.query
+    with:
+      format: json
+      query: |
+        FROM gcp-cockpit-coverage
+        | STATS services = COUNT(*), documents = SUM(docs_24h) BY status
+        | SORT services DESC
+        | LIMIT 25
+  - name: event_snapshot
+    type: elasticsearch.esql.query
+    with:
+      format: json
+      query: |
+        FROM gcp-cockpit-events
+        | WHERE @timestamp > NOW() - 24 hours
+        | KEEP @timestamp, event.source, event.severity, title, detail
+        | SORT @timestamp DESC
+        | LIMIT 20
+  - name: agent_summary
+    type: ai.agent
+    agent-id: gcp-recs-advisor
+    create-conversation: true
+    with:
+      message: |
+        Create the current GCP cockpit Insight Engine briefing from these
+        deterministic snapshots. Do not infer activity from absent telemetry.
+        Recommendations: {{ steps.recommendation_snapshot.output.values | json }}
+        Coverage: {{ steps.coverage_snapshot.output.values | json }}
+        Recent events: {{ steps.event_snapshot.output.values | json }}
+        State evidence, confidence, contradictions, and blind spots. Be concise.
+      schema:
+        type: object
+        required: [priority, headline, summary, action_1, action_2, action_3]
+        properties:
+          priority:
+            type: string
+            enum: [critical, high, medium, low, informational]
+          headline: {type: string}
+          summary: {type: string}
+          action_1: {type: string}
+          action_2: {type: string}
+          action_3: {type: string}
+        additionalProperties: false
+  - name: publish_summary
+    type: elasticsearch.index
+    with:
+      index: gcp-cockpit-insight-summary
+      id: latest
+      document:
+        "@timestamp": "{{ now | date_to_xmlschema }}"
+        level: agent_summary
+        source: gcp-cockpit-insight-engine-summary
+        agent_id: gcp-recs-advisor
+        conversation_id: "{{ steps.agent_summary.output.conversation_id }}"
+        priority: "{{ steps.agent_summary.output.structured_output.priority }}"
+        headline: "{{ steps.agent_summary.output.structured_output.headline }}"
+        summary: "{{ steps.agent_summary.output.structured_output.summary }}"
+        action_1: "{{ steps.agent_summary.output.structured_output.action_1 }}"
+        action_2: "{{ steps.agent_summary.output.structured_output.action_2 }}"
+        action_3: "{{ steps.agent_summary.output.structured_output.action_3 }}"
+        lookup: {key: latest}

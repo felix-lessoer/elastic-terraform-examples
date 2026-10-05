@@ -32,3 +32,8 @@ tools/aws-poc-ui/.env.*.tmp
 tools/aws-poc-ui/.elastic-poc/
 examples/aws/aws-poc-ui.auto.tfvars.json
 examples/aws/.aws-poc-ui.tfplan
+
+# Shared local Cloud PoC guide
+tools/cloud-poc-ui/.cloud-poc/
+tools/cloud-poc-ui/*.tsbuildinfo
+examples/gcp/.cloud-poc-gcp.tfplan

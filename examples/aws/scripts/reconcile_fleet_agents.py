@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Remove stale Fleet enrollments after the Terraform collector is online."""
+"""Remove stale Fleet enrollments after a Terraform collector is online.
+
+The reconciler is cloud-neutral: Fleet's cloud instance id and optional host
+address are sufficient to identify the replacement collector.
+"""
 
 from __future__ import annotations
 
@@ -172,8 +176,14 @@ def main() -> int:
     if len(sys.argv) != 2 or sys.argv[1] != "reconcile":
         raise SystemExit("usage: reconcile_fleet_agents.py reconcile")
     policy_id = os.environ["AGENT_POLICY_ID"]
-    expected_instance = os.environ["AWS_INSTANCE_ID"]
-    expected_private_ip = os.environ.get("AWS_PRIVATE_IP", "")
+    expected_instance = os.environ.get(
+        "CURRENT_INSTANCE_ID", os.environ.get("AWS_INSTANCE_ID", "")
+    )
+    expected_private_ip = os.environ.get(
+        "CURRENT_PRIVATE_IP", os.environ.get("AWS_PRIVATE_IP", "")
+    )
+    if not expected_instance:
+        raise SystemExit("CURRENT_INSTANCE_ID is required")
     client = FleetClient()
     wait_seconds = int(os.environ.get("FLEET_WAIT_SECONDS", "300"))
     deadline = time.monotonic() + wait_seconds

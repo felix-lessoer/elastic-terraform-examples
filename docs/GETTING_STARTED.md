@@ -25,7 +25,8 @@ Stand up an Elastic **Security Complete** environment and the cloud collectors n
 |---|---|
 | [`examples/aws`](../examples/aws) | One Serverless Observability project + managed AWS collection + one EC2 agent for non-managed integrations, with cockpit and workflows |
 | [`examples/azure`](../examples/azure) | Azure-only PoC |
-| [`examples/gcp`](../examples/gcp) | GCP Security + Observability (CPS) + cockpit dashboard |
+| [`tools/cloud-poc-ui`](../tools/cloud-poc-ui) | Guided GCP preflight, saved plan, discovery, apply, insights, and rollback |
+| [`examples/gcp`](../examples/gcp) | Advanced Terraform automation for GCP Security + Observability (CPS) + cockpit |
 | [`examples/multicloud`](../examples/multicloud) | One or more clouds + CPS/CCS hub |
 
 ```bash
@@ -36,6 +37,18 @@ terraform apply
 ```
 
 Open the `kibana_url` output. CSPM findings, integration dashboards, and Security rules should populate as data arrives.
+
+For the GCP customer path:
+
+```bash
+cd tools/cloud-poc-ui
+npm install
+npm start
+```
+
+Open `http://127.0.0.1:5603`. Credentials and discovery manifests remain local;
+the UI separates read-only discovery from telemetry enablement and optional
+workload visibility changes.
 
 ## Defaults (PoC-friendly)
 

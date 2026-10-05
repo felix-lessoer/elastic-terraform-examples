@@ -3,14 +3,21 @@
 
 from __future__ import annotations
 
+import argparse
 import json
+import os
+import re
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 NDJSON = ROOT / "cockpit.ndjson"
 
-from build_aws_cockpit_ndjson import esql_metric_panel, esql_xy_panel  # noqa: E402
+from build_aws_cockpit_ndjson import (  # noqa: E402
+    esql_metric_panel,
+    esql_table_panel,
+    esql_xy_panel,
+)
 from insight_fabric_common import (  # noqa: E402
     MATRIX_TMPL,
     TIMELINE_TMPL,
@@ -26,6 +33,22 @@ DRILLDOWN_H = 4
 SCOREBOARD_ID = "c0ffee10-6ee2-4c91-94f8-f034e8d34510"
 MATRIX_ID = "c0ffee11-6ee2-4c91-94f8-f034e8d34511"
 TIMELINE_ID = "c0ffee12-6ee2-4c91-94f8-f034e8d34512"
+SUMMARY_ID = "c0ffee13-6ee2-4c91-94f8-f034e8d34513"
+INVENTORY_IDS = (
+    "c0ffee20-6ee2-4c91-94f8-f034e8d34520",
+    "c0ffee21-6ee2-4c91-94f8-f034e8d34521",
+    "c0ffee22-6ee2-4c91-94f8-f034e8d34522",
+)
+PARITY_IDS = (
+    "c0ffee30-6ee2-4c91-94f8-f034e8d34530",
+    "c0ffee31-6ee2-4c91-94f8-f034e8d34531",
+    "c0ffee32-6ee2-4c91-94f8-f034e8d34532",
+    "c0ffee33-6ee2-4c91-94f8-f034e8d34533",
+    "c0ffee34-6ee2-4c91-94f8-f034e8d34534",
+    "c0ffee35-6ee2-4c91-94f8-f034e8d34535",
+    "c0ffee36-6ee2-4c91-94f8-f034e8d34536",
+    "c0ffee37-6ee2-4c91-94f8-f034e8d34537",
+)
 
 TOP_KPI_IDS = {
     "1dfcd0c5-db92-46ee-a0cc-6b38079265ab",
@@ -37,7 +60,18 @@ TOP_KPI_IDS = {
 
 KPI_INDEX = "gcp-cockpit-security-kpi"
 ASSETS_INDEX = "gcp-cockpit-assets"
-CPS_PREFIX = "gcp-observe-and-protect-ff5053"
+SUMMARY_INDEX = "gcp-cockpit-insight-summary"
+OPTIONAL_RAW_INDICES = (
+    "metrics-gcp.gke",
+    "metrics-gcp.cloudrun_metrics",
+    "metrics-gcp.pubsub",
+    "metrics-gcp.cloudsql",
+    "traces-agent_builder.otel",
+)
+CONTENT_ADDRESSED_INDEX = re.compile(
+    r"((?:gcp-cockpit-[a-z0-9_.-]+|metrics-gcp\.[a-z0-9_.-]+))"
+    r"-[0-9a-f]{64}"
+)
 
 
 def build_top_kpis() -> list[dict]:
@@ -96,17 +130,22 @@ def build_top_kpis() -> list[dict]:
     ]
 
 
-def scrub(panel: dict) -> dict:
+def scrub(panel: dict, cps_prefixes: tuple[str, ...] = ()) -> dict:
     raw = json.dumps(panel)
-    raw = raw.replace(
-        f"{CPS_PREFIX}:security_solution-cloud_security_posture.misconfiguration_latest",
-        "security_solution-*.misconfiguration_latest",
-    )
-    raw = raw.replace(
-        f".ml-anomalies-shared-000001,{CPS_PREFIX}:.ml-anomalies-shared-000001",
-        ".ml-anomalies-shared-000001",
-    )
-    raw = raw.replace(f'"{CPS_PREFIX}:', '"')
+    for prefix in cps_prefixes:
+        normalized = prefix.strip().rstrip(":")
+        if not normalized:
+            continue
+        raw = raw.replace(
+            f"{normalized}:security_solution-cloud_security_posture.misconfiguration_latest",
+            "security_solution-*.misconfiguration_latest",
+        )
+        raw = raw.replace(
+            f".ml-anomalies-shared-000001,{normalized}:.ml-anomalies-shared-000001",
+            ".ml-anomalies-shared-000001",
+        )
+        raw = raw.replace(f'"{normalized}:', '"')
+    raw = CONTENT_ADDRESSED_INDEX.sub(r"\1", raw)
     return json.loads(raw)
 
 
@@ -124,6 +163,7 @@ def rebuild_inventory_panels(y: int) -> list[dict]:
             ),
             index=ASSETS_INDEX,
             grid={"x": 0, "y": y, "w": 16, "h": 14},
+            panel_id=INVENTORY_IDS[0],
         ),
         esql_xy_panel(
             title="Top assets by name",
@@ -137,6 +177,7 @@ def rebuild_inventory_panels(y: int) -> list[dict]:
             ),
             index=ASSETS_INDEX,
             grid={"x": 16, "y": y, "w": 16, "h": 14},
+            panel_id=INVENTORY_IDS[1],
         ),
         esql_xy_panel(
             title="GCE by zone",
@@ -151,15 +192,130 @@ def rebuild_inventory_panels(y: int) -> list[dict]:
             ),
             index=ASSETS_INDEX,
             grid={"x": 32, "y": y, "w": 16, "h": 14},
+            panel_id=INVENTORY_IDS[2],
         ),
     ]
 
 
-def inject(panels: list[dict]) -> list[dict]:
-    drop_ids = set(TOP_KPI_IDS) | {
+def build_parity_panels(y: int) -> list[dict]:
+    recommendations = "gcp-cockpit-recommendations"
+    coverage = "gcp-cockpit-coverage"
+    return [
+        esql_metric_panel(
+            panel_id=PARITY_IDS[0],
+            title="Discovered GCP assets",
+            metric_label="Assets",
+            esql=f"FROM {ASSETS_INDEX}\n| STATS `Assets` = COUNT(*)",
+            index=ASSETS_INDEX,
+            grid={"x": 0, "y": y, "w": 12, "h": 5},
+        ),
+        esql_metric_panel(
+            panel_id=PARITY_IDS[1],
+            title="Services with fresh signals",
+            metric_label="Healthy services",
+            esql=(
+                f"FROM {coverage}\n"
+                '| WHERE status == "healthy"\n'
+                "| STATS `Healthy services` = COUNT_DISTINCT(service)"
+            ),
+            index=coverage,
+            grid={"x": 12, "y": y, "w": 12, "h": 5},
+        ),
+        esql_metric_panel(
+            panel_id=PARITY_IDS[2],
+            title="Open recommendations",
+            metric_label="Recommendations",
+            esql=(
+                f"FROM {recommendations}\n"
+                "| STATS `Recommendations` = COUNT(*)"
+            ),
+            index=recommendations,
+            grid={"x": 24, "y": y, "w": 12, "h": 5},
+        ),
+        esql_metric_panel(
+            panel_id=PARITY_IDS[3],
+            title="High-severity recommendations",
+            metric_label="High severity",
+            esql=(
+                f"FROM {recommendations}\n"
+                '| WHERE severity IN ("high", "critical")\n'
+                "| STATS `High severity` = COUNT(*)"
+            ),
+            index=recommendations,
+            grid={"x": 36, "y": y, "w": 12, "h": 5},
+        ),
+        esql_xy_panel(
+            panel_id=PARITY_IDS[4],
+            title="Coverage by signal status",
+            x_field="Status",
+            y_field="Resources",
+            esql=(
+                f"FROM {coverage}\n"
+                "| STATS `Resources` = COUNT(*) BY `Status` = status\n"
+                "| SORT `Resources` DESC"
+            ),
+            index=coverage,
+            grid={"x": 0, "y": y + 5, "w": 16, "h": 12},
+        ),
+        esql_xy_panel(
+            panel_id=PARITY_IDS[5],
+            title="Recommendations by category",
+            x_field="Category",
+            y_field="Count",
+            esql=(
+                f"FROM {recommendations}\n"
+                "| STATS `Count` = COUNT(*) BY `Category` = category\n"
+                "| SORT `Count` DESC"
+            ),
+            index=recommendations,
+            grid={"x": 16, "y": y + 5, "w": 16, "h": 12},
+        ),
+        esql_xy_panel(
+            panel_id=PARITY_IDS[6],
+            title="Recommendations by severity",
+            x_field="Severity",
+            y_field="Count",
+            esql=(
+                f"FROM {recommendations}\n"
+                "| STATS `Count` = COUNT(*) BY `Severity` = severity\n"
+                "| SORT `Count` DESC"
+            ),
+            index=recommendations,
+            grid={"x": 32, "y": y + 5, "w": 16, "h": 12},
+        ),
+        esql_table_panel(
+            panel_id=PARITY_IDS[7],
+            title="Latest actionable GCP insights",
+            esql=(
+                f"FROM {recommendations}\n"
+                "| KEEP @timestamp, severity, category, resource.type, "
+                "resource.name, recommendation, metric_name, metric_value\n"
+                "| SORT @timestamp DESC\n"
+                "| LIMIT 50"
+            ),
+            index=f"{recommendations}-@timestamp",
+            columns=[
+                ("@timestamp", "date"),
+                ("severity", "string"),
+                ("category", "string"),
+                ("resource.type", "string"),
+                ("resource.name", "string"),
+                ("recommendation", "string"),
+                ("metric_name", "string"),
+                ("metric_value", "number"),
+            ],
+            grid={"x": 0, "y": y + 17, "w": 48, "h": 14},
+        ),
+    ]
+
+
+def inject(panels: list[dict], cps_prefixes: tuple[str, ...] = ()) -> list[dict]:
+    drop_ids = set(TOP_KPI_IDS) | set(INVENTORY_IDS) | set(PARITY_IDS) | {
         SCOREBOARD_ID,
         MATRIX_ID,
         TIMELINE_ID,
+        SUMMARY_ID,
+        DRILLDOWN_IDS["gcp"],
         PANEL_IDS["gcp"],
     }
     drop_titles = {
@@ -174,16 +330,19 @@ def inject(panels: list[dict]) -> list[dict]:
     for p in panels:
         if p.get("panelIndex") in drop_ids:
             continue
+        if any(index in json.dumps(p) for index in OPTIONAL_RAW_INDICES):
+            continue
         title = (p.get("embeddableConfig") or {}).get("title") or ""
         attrs_title = ((p.get("embeddableConfig") or {}).get("attributes") or {}).get("title") or ""
         if title in drop_titles or attrs_title in drop_titles:
             continue
-        kept.append(scrub(p))
+        kept.append(scrub(p, cps_prefixes))
 
     kept = inject_ootb_nav(kept, "gcp", y=8)
     insight_y = 8 + NAV_HEIGHT
-    scoreboard_h, matrix_h = 8, 14
-    drill_y = insight_y + scoreboard_h
+    summary_h, scoreboard_h, matrix_h = 10, 8, 14
+    scoreboard_y = insight_y + summary_h
+    drill_y = scoreboard_y + scoreboard_h
     matrix_y = drill_y + DRILLDOWN_H
     insight_end = matrix_y + matrix_h
 
@@ -224,7 +383,28 @@ def inject(panels: list[dict]) -> list[dict]:
             ],
         ),
         esql_query=f"FROM {KPI_INDEX}\n| SORT @timestamp DESC\n| LIMIT 1",
-        grid={"x": 0, "y": insight_y, "w": 48, "h": scoreboard_h},
+        grid={"x": 0, "y": scoreboard_y, "w": 48, "h": scoreboard_h},
+    )
+    summary = esql_table_panel(
+        panel_id=SUMMARY_ID,
+        title="Insight Engine — Agent summary",
+        esql=(
+            f"FROM {SUMMARY_INDEX}\n"
+            "| SORT @timestamp DESC\n"
+            "| LIMIT 1\n"
+            "| KEEP @timestamp, priority, headline, summary, action_1, action_2, action_3"
+        ),
+        index=f"{SUMMARY_INDEX}-@timestamp",
+        columns=[
+            ("@timestamp", "date"),
+            ("priority", "string"),
+            ("headline", "string"),
+            ("summary", "string"),
+            ("action_1", "string"),
+            ("action_2", "string"),
+            ("action_3", "string"),
+        ],
+        grid={"x": 0, "y": insight_y, "w": 48, "h": summary_h},
     )
     drilldowns = drilldowns_panel("gcp", y=drill_y, h=DRILLDOWN_H)
     matrix = custom_panel(
@@ -315,10 +495,11 @@ def inject(panels: list[dict]) -> list[dict]:
         header_panels
         + top
         + [p for p in kept if p.get("panelIndex") == PANEL_IDS["gcp"]]
-        + [scoreboard, drilldowns, matrix, timeline]
+        + [summary, scoreboard, drilldowns, matrix, timeline]
         + body_panels
         + section_panels
         + rebuild_inventory_panels(inv_y)
+        + build_parity_panels(inv_y + 14)
     )
     seen: set[str] = set()
     deduped = []
@@ -339,25 +520,51 @@ def inject(panels: list[dict]) -> list[dict]:
 
 
 def main() -> int:
-    path = Path(sys.argv[1]) if len(sys.argv) > 1 else NDJSON
+    parser = argparse.ArgumentParser()
+    parser.add_argument("path", nargs="?", type=Path, default=NDJSON)
+    parser.add_argument(
+        "--cps-prefix",
+        action="append",
+        default=None,
+        help=(
+            "Cross-project search alias to remove from local cockpit queries; "
+            "repeat for multiple aliases (or set GCP_CPS_PREFIXES comma-separated)"
+        ),
+    )
+    args = parser.parse_args()
+    configured = args.cps_prefix
+    if configured is None:
+        configured = [
+            value
+            for value in os.environ.get("GCP_CPS_PREFIXES", "").split(",")
+            if value.strip()
+        ]
+    prefixes = tuple(value.strip().rstrip(":") for value in configured)
+    path = args.path
     lines = [l for l in path.read_text().splitlines() if l.strip()]
+    objects = [json.loads(line) for line in lines]
+    exported = {(obj.get("type"), obj.get("id")) for obj in objects}
     out_lines = []
-    for line in lines:
-        obj = json.loads(line)
+    for obj in objects:
+        obj["references"] = [
+            reference
+            for reference in obj.get("references", [])
+            if (reference.get("type"), reference.get("id")) in exported
+        ]
         attrs = obj.get("attributes") or {}
         if "panelsJSON" not in attrs:
             out_lines.append(json.dumps(obj, separators=(",", ":")))
             continue
         panels = json.loads(attrs["panelsJSON"])
-        panels = inject(panels)
+        panels = inject(panels, prefixes)
         text = json.dumps(panels)
-        assert f"{CPS_PREFIX}:" not in text
+        assert not any(f"{prefix}:" in text for prefix in prefixes)
         assert ".alerts-security.alerts-default" not in text
         attrs["panelsJSON"] = json.dumps(panels, separators=(",", ":"))
         attrs["description"] = (
-            "GCP Observe & Protect cockpit with Datadog-comparable insight fabric: "
-            "mirrored Security KPIs, service coverage matrix, events timeline, "
-            "live asset inventory, OOTB integration nav, and recommendation workflows."
+            "GCP Observe & Protect cockpit powered by three Insight Engine levels: "
+            "raw GCP telemetry and discovered resources, deterministic workflow "
+            "findings and recommendations, and an Agent Builder insight summary."
         )
         obj["attributes"] = attrs
         out_lines.append(json.dumps(obj, separators=(",", ":")))

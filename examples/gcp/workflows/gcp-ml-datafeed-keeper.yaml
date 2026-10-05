@@ -1,0 +1,32 @@
+name: GCP ML Datafeed Keeper
+id: gcp-ml-datafeed-keeper
+description: Idempotently opens GCP anomaly jobs and starts their datafeeds when sources exist.
+triggers:
+  - type: manual
+  - type: scheduled
+    with: {every: "5m"}
+steps:
+  - name: open_event_rate_job
+    type: elasticsearch.request
+    on-failure: {continue: true}
+    with:
+      method: POST
+      path: /_ml/anomaly_detectors/gcp-event-rate/_open
+  - name: start_event_rate_datafeed
+    type: elasticsearch.request
+    on-failure: {continue: true}
+    with:
+      method: POST
+      path: /_ml/datafeeds/datafeed-gcp-event-rate/_start
+  - name: open_security_findings_job
+    type: elasticsearch.request
+    on-failure: {continue: true}
+    with:
+      method: POST
+      path: /_ml/anomaly_detectors/gcp-cspm-findings-rate/_open
+  - name: start_security_findings_datafeed
+    type: elasticsearch.request
+    on-failure: {continue: true}
+    with:
+      method: POST
+      path: /_ml/datafeeds/datafeed-gcp-cspm-findings-rate/_start

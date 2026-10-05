@@ -1,0 +1,89 @@
+id: gcp-cockpit-loadbalancing-recommendations
+name: GCP HTTP(S) Load Balancing Recommendations
+description: >-
+  Requires the loadbalancing-gcp/metrics input (always enabled). Reports
+  potentially inactive HTTP(S) load balancers only from observed request-count
+  metrics and maintains a bounded current snapshot.
+
+triggers:
+  - type: manual
+  - type: scheduled
+    with:
+      every: "1h"
+
+steps:
+  - name: remove_previous_loadbalancing_insights
+    type: elasticsearch.request
+    with:
+      method: POST
+      path: /gcp-cockpit-recommendations/_delete_by_query?conflicts=proceed&refresh=true
+      body: {query: {term: {resource.type: gcp_https_load_balancer}}}
+
+  - name: query_potentially_inactive_load_balancers
+    type: elasticsearch.esql.query
+    with:
+      format: json
+      query: |
+        FROM metrics-gcp.loadbalancing_metrics-default
+        | WHERE @timestamp > NOW() - 14 days
+            AND gcp.loadbalancing_metrics.https.request.count IS NOT NULL
+        | EVAL region = COALESCE(gcp.labels.resource.region, cloud.region, "global")
+        | STATS observations = COUNT(gcp.loadbalancing_metrics.https.request.count),
+                total_requests = SUM(gcp.loadbalancing_metrics.https.request.count)
+          BY load_balancer = gcp.labels.resource.forwarding_rule_name,
+             region, project_id = cloud.account.id
+        | WHERE load_balancer IS NOT NULL AND project_id IS NOT NULL
+            AND observations > 0 AND total_requests == 0
+        | KEEP observations, total_requests, load_balancer, region, project_id
+        | LIMIT 200
+
+  - name: map_load_balancers
+    type: data.map
+    items: "${{ steps.query_potentially_inactive_load_balancers.output.values }}"
+    with:
+      fields:
+        observations: "{{ item[0] }}"
+        total_requests: "{{ item[1] }}"
+        load_balancer: "{{ item[2] }}"
+        region: "{{ item[3] }}"
+        project_id: "{{ item[4] }}"
+
+  - name: publish_potentially_inactive_load_balancers
+    type: foreach
+    foreach: "${{ steps.map_load_balancers.output }}"
+    steps:
+      - name: index_potentially_inactive_load_balancer
+        type: elasticsearch.index
+        with:
+          index: gcp-cockpit-recommendations
+          id: "{{ foreach.item.project_id }}-{{ foreach.item.region }}-{{ foreach.item.load_balancer }}-potentially-unused"
+          document:
+            "@timestamp": "{{ now | date_to_xmlschema }}"
+            category: unused_resource
+            severity: medium
+            confidence: high
+            activity_status: potentially_unused
+            lookback_days: 14
+            evidence_refs:
+              - gcp.loadbalancing_metrics.https.request.count
+            contradictory_evidence: []
+            missing_telemetry:
+              - non_http_traffic
+              - planned_failover_usage
+            expected_value: "Provisioned HTTP(S) load balancers should serve requests during the 14-day observation window."
+            safe_next_action: "Confirm DNS, forwarding-rule, failover, and owner dependencies before removing the load balancer."
+            metric_name: https_request_count_14d
+            metric_value: "{{ foreach.item.total_requests }}"
+            threshold: 0
+            recommendation: >-
+              HTTP(S) load balancer {{ foreach.item.load_balancer }} served
+              zero requests across {{ foreach.item.observations }} observed
+              request-count samples over 14 days.
+            resource:
+              type: gcp_https_load_balancer
+              name: "{{ foreach.item.load_balancer }}"
+              id: "{{ foreach.item.load_balancer }}"
+              key: "{{ foreach.item.project_id }}:{{ foreach.item.region }}:gcp_https_load_balancer:{{ foreach.item.load_balancer }}"
+            cloud:
+              region: "{{ foreach.item.region }}"
+              project: {id: "{{ foreach.item.project_id }}"}

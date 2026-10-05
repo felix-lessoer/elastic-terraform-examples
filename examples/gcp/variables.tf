@@ -74,6 +74,12 @@ variable "name_prefix" {
   default = "elastic-poc"
 }
 
+variable "elastic_labels_required" {
+  type        = bool
+  description = "Whether organization-specific Elastic labels must be applied to provisioned GCP resources."
+  default     = true
+}
+
 variable "company_labels" {
   type        = map(string)
   description = "Company-policy labels applied to all GCP resources (and sanitized onto the Elastic project)."
@@ -101,10 +107,92 @@ variable "enable_billing_metrics" {
   default     = false
 }
 
+variable "enable_gke_metrics" {
+  type        = bool
+  description = "Enable GKE metrics and the GKE insight workflow. May increase Cloud Monitoring and Elastic ingest cost."
+  default     = false
+}
+
+variable "enable_cloudrun_metrics" {
+  type        = bool
+  description = "Enable Cloud Run metrics and the Cloud Run insight workflow. May increase Cloud Monitoring and Elastic ingest cost."
+  default     = false
+}
+
+variable "enable_cloudsql_metrics" {
+  type        = bool
+  description = "Enable Cloud SQL metrics and the Cloud SQL insight workflow. May increase Cloud Monitoring and Elastic ingest cost."
+  default     = false
+}
+
+variable "enable_pubsub_metrics" {
+  type        = bool
+  description = "Enable Pub/Sub metrics for coverage and backlog analysis. May increase Cloud Monitoring and Elastic ingest cost."
+  default     = false
+}
+
+variable "enable_firestore_metrics" {
+  type        = bool
+  description = "Enable Firestore metrics when discovery finds Firestore and the customer selects it."
+  default     = false
+}
+
+variable "enable_dataproc_metrics" {
+  type        = bool
+  description = "Enable Dataproc metrics when discovery finds Dataproc and the customer selects it."
+  default     = false
+}
+
+variable "enable_redis_metrics" {
+  type        = bool
+  description = "Enable Memorystore for Redis metrics when discovery finds Redis and the customer selects it."
+  default     = false
+}
+
 variable "billing_dataset_id" {
   type        = string
   description = "BigQuery dataset id for GCP billing export (required when enable_billing_metrics is true)."
   default     = ""
+
+  validation {
+    condition     = !var.enable_billing_metrics || trimspace(var.billing_dataset_id) != ""
+    error_message = "billing_dataset_id is required when enable_billing_metrics is true."
+  }
+}
+
+variable "existing_topic_names" {
+  type        = map(string)
+  description = "Customer-owned Pub/Sub topics to attach by stream key instead of creating duplicates."
+  default     = {}
+}
+
+variable "existing_sink_names" {
+  type        = map(string)
+  description = "Customer-owned Logging sinks to attach by stream key; matching existing topics are required."
+  default     = {}
+}
+
+variable "existing_subscription_names" {
+  type        = map(string)
+  description = "Customer-owned Pub/Sub subscriptions to attach by stream key; matching existing topics are required."
+  default     = {}
+}
+
+variable "grant_existing_subscription_access" {
+  type        = bool
+  description = "Grant the PoC collector subscriber access to attached customer subscriptions. False preserves customer IAM ownership."
+  default     = false
+}
+
+variable "gcp_discovery_manifest_path" {
+  type        = string
+  description = "Optional path to a validated local brownfield manifest. Only its hash and summary are retained by Terraform."
+  default     = ""
+
+  validation {
+    condition     = var.gcp_discovery_manifest_path == "" || fileexists(var.gcp_discovery_manifest_path)
+    error_message = "gcp_discovery_manifest_path must be empty or point to a readable validated manifest."
+  }
 }
 
 variable "enable_detection_rules" {

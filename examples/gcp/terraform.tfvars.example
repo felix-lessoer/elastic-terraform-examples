@@ -5,16 +5,29 @@ google_cloud_project = "my-gcp-project"
 google_cloud_region  = "europe-west3"
 # google_cloud_credentials_file = "/path/to/sa.json"
 
-# Required: company policy labels (applied to every labelable GCP resource)
+# Internal Elastic accounts keep this enabled. Customer accounts can disable it
+# while still supplying their own non-empty company_labels map.
+elastic_labels_required = true
+
+# Company policy labels (applied to every labelable GCP resource)
 company_labels = {
-  cost-center = "platform"
-  owner       = "sre-team"
+  division    = "field"
+  org         = "sa"
+  keep-until  = "2026-10-31"
+  team        = "change-me"
+  project     = "gcp-observability"
   environment = "poc"
-  # data-classification = "internal"
 }
 
-# Optional: fail plan if these keys are missing from company_labels
-# required_label_keys = ["cost-center", "owner", "environment"]
+# When elastic_labels_required is true, fail the plan if any key is missing.
+required_label_keys = [
+  "division",
+  "org",
+  "keep-until",
+  "team",
+  "project",
+  "environment",
+]
 
 enable_cspm            = true
 enable_detection_rules = true
@@ -22,5 +35,27 @@ enable_detection_rules = true
 enable_elastic_agent   = true
 # Second serverless project + CPS + cockpit dashboard
 enable_observability_project = true
+# Optional service metrics. Matching workflows are skipped until enabled.
+# These can increase Cloud Monitoring and Elastic ingest costs.
+# enable_gke_metrics      = true
+# enable_cloudrun_metrics = true
+# enable_cloudsql_metrics = true
+# enable_pubsub_metrics   = true
+# enable_firestore_metrics = true
+# enable_dataproc_metrics  = true
+# enable_redis_metrics     = true
+# enable_billing_metrics   = true
+# billing_dataset_id       = "billing-project.gcp_billing_export"
+
+# Optional brownfield reuse. A reused sink/subscription must reference a reused
+# topic with the same stream key. Customer IAM is preserved unless explicitly
+# granted below.
+# existing_topic_names        = { audit = "existing-audit-topic" }
+# existing_sink_names         = { audit = "existing-audit-sink" }
+# existing_subscription_names = { audit = "existing-audit-subscription" }
+# grant_existing_subscription_access = true
+
+# Optional local manifest produced by the guided UI/discovery script.
+# gcp_discovery_manifest_path = ".cloud-poc/gcp-manifest.json"
 # elastic_agent_zone = "europe-west3-b"
 # elastic_agent_version = "9.5.4"

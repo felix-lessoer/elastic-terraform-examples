@@ -83,8 +83,10 @@ module "observability_seed" {
   security_elasticsearch_username = module.elastic.username
   security_elasticsearch_password = module.elastic.password
   enable_ml_jobs                  = var.enable_ml_jobs
+  start_ml_datafeeds              = false
   enable_ai_agents                = var.enable_ai_agents
   enable_observability_alerts     = var.enable_observability_alerts
+  additional_tool_ids             = [for tool in elasticstack_kibana_agentbuilder_tool.gcp_insight_read : tool.tool_id]
   cloud_slug                      = "gcp"
   cloud_display_name              = "GCP"
 
@@ -108,22 +110,36 @@ module "cockpit" {
   depends_on = [module.observability, module.observability_seed]
 }
 
-# Kibana Workflows pinned from examples/gcp/workflows/*.yaml (recommendation generators).
-module "workflows_obs" {
-  count  = var.enable_workflows && length(module.observability) > 0 ? 1 : 0
-  source = "../../modules/kibana-workflows"
+# Lookup mode must be selected before workflows write reference documents.
+resource "terraform_data" "prepare_gcp_lookup_indices" {
+  count = length(module.observability) > 0 ? 1 : 0
 
-  kibana_endpoint        = module.observability[0].kibana_endpoint
-  elasticsearch_username = module.observability[0].username
-  elasticsearch_password = module.observability[0].password
-  workflows_dir          = "${path.module}/workflows"
-  execute_on_apply       = var.execute_workflows_on_apply
+  triggers_replace = [
+    filesha256("${path.module}/../../modules/cockpit-dashboard/scripts/prepare_gcp_lookup_indices.py"),
+    module.observability[0].elasticsearch_endpoint,
+  ]
 
-  depends_on = [module.observability, module.observability_seed, module.cockpit]
+  provisioner "local-exec" {
+    interpreter = ["/bin/bash", "-c"]
+    environment = {
+      OBS_ES   = module.observability[0].elasticsearch_endpoint
+      OBS_USER = module.observability[0].username
+      OBS_PASS = module.observability[0].password
+    }
+    command = <<-EOT
+      set -euo pipefail
+      python3 "${path.module}/../../modules/cockpit-dashboard/scripts/prepare_gcp_lookup_indices.py" \
+        --es-url "$OBS_ES" \
+        --user "$OBS_USER" \
+        --password "$OBS_PASS"
+    EOT
+  }
+
+  depends_on = [module.cockpit]
 }
 
-# Cross-project insight fabric: mirror Security KPIs + coverage/assets/events into
-# Observability indices so the cockpit never depends on broken CPS qualifiers.
+# Cross-project insight fabric: mirror Security evidence and ingest the optional
+# local discovery manifest. Terraform retains only the manifest hash.
 resource "terraform_data" "seed_gcp_insight_indices" {
   count = length(module.observability) > 0 ? 1 : 0
 
@@ -131,6 +147,7 @@ resource "terraform_data" "seed_gcp_insight_indices" {
     filesha256("${path.module}/../../modules/cockpit-dashboard/scripts/seed_gcp_insight_indices.py"),
     filesha256("${path.module}/../../modules/cockpit-dashboard/scripts/insight_fabric_common.py"),
     filesha256("${path.module}/../../modules/cockpit-dashboard/cockpit.ndjson"),
+    var.gcp_discovery_manifest_path == "" ? "no-manifest" : filesha256(var.gcp_discovery_manifest_path),
     module.observability[0].elasticsearch_endpoint,
     module.elastic.elasticsearch_endpoint,
   ]
@@ -144,24 +161,89 @@ resource "terraform_data" "seed_gcp_insight_indices" {
       SEC_USER = module.elastic.username
       OBS_PASS = module.observability[0].password
       SEC_PASS = module.elastic.password
+      MANIFEST = var.gcp_discovery_manifest_path
     }
     command = <<-EOT
       set -euo pipefail
+      manifest_args=()
+      if [[ -n "$MANIFEST" ]]; then
+        manifest_args=(--manifest "$MANIFEST")
+      fi
       python3 "${path.module}/../../modules/cockpit-dashboard/scripts/seed_gcp_insight_indices.py" \
         --obs-es "$OBS_ES" \
         --sec-es "$SEC_ES" \
         --obs-user "$OBS_USER" \
         --sec-user "$SEC_USER" \
         --obs-password "$OBS_PASS" \
-        --sec-password "$SEC_PASS"
+        --sec-password "$SEC_PASS" \
+        "$${manifest_args[@]}"
     EOT
   }
 
   depends_on = [
+    terraform_data.prepare_gcp_lookup_indices,
     module.cockpit,
-    module.workflows_obs,
     module.observability_seed,
   ]
+}
+
+# Deterministic recommendations provide a useful initial snapshot before the
+# scheduled service workflows begin.
+resource "terraform_data" "generate_gcp_recommendations" {
+  count = length(module.observability) > 0 ? 1 : 0
+
+  triggers_replace = [
+    filesha256("${path.module}/../../modules/cockpit-dashboard/scripts/generate_gcp_recommendations.py"),
+    terraform_data.seed_gcp_insight_indices[0].id,
+  ]
+
+  provisioner "local-exec" {
+    interpreter = ["/bin/bash", "-c"]
+    environment = {
+      OBS_ES   = module.observability[0].elasticsearch_endpoint
+      OBS_USER = module.observability[0].username
+      OBS_PASS = module.observability[0].password
+    }
+    command = <<-EOT
+      set -euo pipefail
+      python3 "${path.module}/../../modules/cockpit-dashboard/scripts/generate_gcp_recommendations.py" \
+        --es-url "$OBS_ES" \
+        --user "$OBS_USER" \
+        --password "$OBS_PASS"
+    EOT
+  }
+
+  depends_on = [terraform_data.seed_gcp_insight_indices]
+}
+
+# Deploy only workflows whose telemetry prerequisites are enabled. The summary
+# is a separate module so its first run cannot race deterministic workflows.
+module "workflows_obs" {
+  count  = var.enable_workflows && length(module.observability) > 0 ? 1 : 0
+  source = "../../modules/kibana-workflows"
+
+  kibana_endpoint        = module.observability[0].kibana_endpoint
+  elasticsearch_username = module.observability[0].username
+  elasticsearch_password = module.observability[0].password
+  workflows_dir          = "${path.module}/workflows"
+  enabled_workflow_ids   = local.gcp_service_workflow_ids
+  execute_on_apply       = var.execute_workflows_on_apply
+
+  depends_on = [terraform_data.generate_gcp_recommendations]
+}
+
+module "workflow_summary_obs" {
+  count  = var.enable_workflows && var.enable_ai_agents && length(module.observability) > 0 ? 1 : 0
+  source = "../../modules/kibana-workflows"
+
+  kibana_endpoint        = module.observability[0].kibana_endpoint
+  elasticsearch_username = module.observability[0].username
+  elasticsearch_password = module.observability[0].password
+  workflows_dir          = "${path.module}/workflows"
+  enabled_workflow_ids   = toset(["gcp-cockpit-insight-engine-summary"])
+  execute_on_apply       = var.execute_workflows_on_apply
+
+  depends_on = [module.workflows_obs]
 }
 
 module "workflows_security" {
@@ -172,6 +254,7 @@ module "workflows_security" {
   elasticsearch_username = module.elastic.username
   elasticsearch_password = module.elastic.password
   workflows_dir          = "${path.module}/workflows"
+  enabled_workflow_ids   = local.gcp_service_workflow_ids
   execute_on_apply       = var.execute_workflows_on_apply
 
   depends_on = [module.elastic, module.stack]
@@ -180,11 +263,15 @@ module "workflows_security" {
 module "gcp_cloud" {
   source = "../../modules/gcp-cloud"
 
-  project_id          = var.google_cloud_project
-  name_prefix         = var.name_prefix
-  region              = var.google_cloud_region
-  company_labels      = var.company_labels
-  required_label_keys = var.required_label_keys
+  project_id                         = var.google_cloud_project
+  name_prefix                        = var.name_prefix
+  region                             = var.google_cloud_region
+  company_labels                     = var.company_labels
+  required_label_keys                = var.elastic_labels_required ? var.required_label_keys : []
+  existing_topic_names               = var.existing_topic_names
+  existing_sink_names                = var.existing_sink_names
+  existing_subscription_names        = var.existing_subscription_names
+  grant_existing_subscription_access = var.grant_existing_subscription_access
   additional_labels = {
     cloud = "gcp"
   }
@@ -206,76 +293,89 @@ locals {
   }
 
   # Metrics templates the GCP package enables by default unless declared.
-  gcp_extra_metrics_disabled = {
+  gcp_extra_metrics = {
     "firestore-gcp/metrics" = {
-      enabled = false
+      enabled = var.enable_firestore_metrics
       streams = {
         "gcp.firestore" = {
-          enabled = false
+          enabled = var.enable_firestore_metrics
           vars    = jsonencode({ period = "10m", tags = ["gcp-firestore"] })
         }
       }
     }
     "gke-gcp/metrics" = {
-      enabled = false
+      enabled = var.enable_gke_metrics
       streams = {
         "gcp.gke" = {
-          enabled = false
+          enabled = var.enable_gke_metrics
           vars    = jsonencode({ period = "10m", tags = ["gcp-gke"] })
         }
       }
     }
     "dataproc-gcp/metrics" = {
-      enabled = false
+      enabled = var.enable_dataproc_metrics
       streams = {
         "gcp.dataproc" = {
-          enabled = false
+          enabled = var.enable_dataproc_metrics
           vars    = jsonencode({ period = "10m", tags = ["gcp-dataproc"] })
         }
       }
     }
     "pubsub-gcp/metrics" = {
-      enabled = false
+      enabled = var.enable_pubsub_metrics
       streams = {
         "gcp.pubsub" = {
-          enabled = false
+          enabled = var.enable_pubsub_metrics
           vars    = jsonencode({ period = "5m", tags = ["gcp-pubsub"] })
         }
       }
     }
     "redis-gcp/metrics" = {
-      enabled = false
+      enabled = var.enable_redis_metrics
       streams = {
         "gcp.redis" = {
-          enabled = false
+          enabled = var.enable_redis_metrics
           vars    = jsonencode({ period = "10m", tags = ["gcp-redis"] })
         }
       }
     }
     "cloudrun-gcp/metrics" = {
-      enabled = false
+      enabled = var.enable_cloudrun_metrics
       streams = {
         "gcp.cloudrun_metrics" = {
-          enabled = false
+          enabled = var.enable_cloudrun_metrics
           vars    = jsonencode({ period = "10m", tags = ["gcp-cloudrun"] })
         }
       }
     }
     "cloudsql-gcp/metrics" = {
-      enabled = false
+      enabled = var.enable_cloudsql_metrics
       streams = {
         "gcp.cloudsql_mysql" = {
-          enabled = false
+          enabled = var.enable_cloudsql_metrics
           vars    = jsonencode({ period = "10m", tags = ["gcp-cloudsql-mysql"] })
         }
         "gcp.cloudsql_postgresql" = {
-          enabled = false
+          enabled = var.enable_cloudsql_metrics
           vars    = jsonencode({ period = "10m", tags = ["gcp-cloudsql-postgresql"] })
         }
         "gcp.cloudsql_sqlserver" = {
-          enabled = false
+          enabled = var.enable_cloudsql_metrics
           vars    = jsonencode({ period = "10m", tags = ["gcp-cloudsql-sqlserver"] })
         }
+      }
+    }
+  }
+
+  # Keep these optional templates explicitly disabled in the Security policy;
+  # selected customer metrics belong only in the Observability policy.
+  gcp_extra_metrics_security = {
+    for input_id, input in local.gcp_extra_metrics :
+    input_id => {
+      enabled = false
+      streams = {
+        for stream_id, stream in input.streams :
+        stream_id => merge(stream, { enabled = false })
       }
     }
   }
@@ -424,7 +524,7 @@ locals {
               }
             }
           }
-        }, local.gcp_extra_metrics_disabled)
+        }, local.gcp_extra_metrics_security)
       }
     ]
   )
@@ -446,7 +546,7 @@ locals {
       })
       var_group_selections = {}
       cloud_connector      = null
-      inputs = {
+      inputs = merge({
         "audit-gcp-pubsub" = {
           enabled = false
           streams = {
@@ -540,7 +640,51 @@ locals {
             }
           }
         }
-      }
+        "gke-gcp/metrics" = {
+          enabled = var.enable_gke_metrics
+          streams = {
+            "gcp.gke" = {
+              enabled = var.enable_gke_metrics
+              vars    = jsonencode({ period = "10m", tags = ["gcp-gke"] })
+            }
+          }
+        }
+        "cloudrun-gcp/metrics" = {
+          enabled = var.enable_cloudrun_metrics
+          streams = {
+            "gcp.cloudrun_metrics" = {
+              enabled = var.enable_cloudrun_metrics
+              vars    = jsonencode({ period = "10m", tags = ["gcp-cloudrun"] })
+            }
+          }
+        }
+        "cloudsql-gcp/metrics" = {
+          enabled = var.enable_cloudsql_metrics
+          streams = {
+            "gcp.cloudsql_mysql" = {
+              enabled = var.enable_cloudsql_metrics
+              vars    = jsonencode({ period = "10m", tags = ["gcp-cloudsql-mysql"] })
+            }
+            "gcp.cloudsql_postgresql" = {
+              enabled = var.enable_cloudsql_metrics
+              vars    = jsonencode({ period = "10m", tags = ["gcp-cloudsql-postgresql"] })
+            }
+            "gcp.cloudsql_sqlserver" = {
+              enabled = var.enable_cloudsql_metrics
+              vars    = jsonencode({ period = "10m", tags = ["gcp-cloudsql-sqlserver"] })
+            }
+          }
+        }
+        "pubsub-gcp/metrics" = {
+          enabled = var.enable_pubsub_metrics
+          streams = {
+            "gcp.pubsub" = {
+              enabled = var.enable_pubsub_metrics
+              vars    = jsonencode({ period = "5m", tags = ["gcp-pubsub"] })
+            }
+          }
+        }
+      }, local.gcp_extra_metrics)
     }
   ]
 }
@@ -609,4 +753,51 @@ module "elastic_agent_obs" {
   agent_version    = var.elastic_agent_version
 
   depends_on = [module.stack_obs]
+}
+
+# Remove stale enrollments only after the replacement GCE collector is online.
+resource "terraform_data" "fleet_agent_reconciliation_security" {
+  count = var.enable_elastic_agent ? 1 : 0
+
+  triggers_replace = [
+    tostring(module.elastic_agent[0].instance_id),
+    filesha256("${path.module}/../aws/scripts/reconcile_fleet_agents.py"),
+  ]
+
+  provisioner "local-exec" {
+    interpreter = ["/bin/bash", "-c"]
+    environment = {
+      KIBANA_URL          = module.elastic.kibana_endpoint
+      KIBANA_USERNAME     = module.elastic.username
+      KIBANA_PASSWORD     = module.elastic.password
+      AGENT_POLICY_ID     = module.stack.agent_policy_id
+      CURRENT_INSTANCE_ID = tostring(module.elastic_agent[0].instance_id)
+    }
+    command = "python3 '${path.module}/../aws/scripts/reconcile_fleet_agents.py' reconcile"
+  }
+
+  depends_on = [module.elastic_agent, module.stack]
+}
+
+resource "terraform_data" "fleet_agent_reconciliation_observability" {
+  count = var.enable_elastic_agent && length(module.elastic_agent_obs) > 0 ? 1 : 0
+
+  triggers_replace = [
+    tostring(module.elastic_agent_obs[0].instance_id),
+    filesha256("${path.module}/../aws/scripts/reconcile_fleet_agents.py"),
+  ]
+
+  provisioner "local-exec" {
+    interpreter = ["/bin/bash", "-c"]
+    environment = {
+      KIBANA_URL          = module.observability[0].kibana_endpoint
+      KIBANA_USERNAME     = module.observability[0].username
+      KIBANA_PASSWORD     = module.observability[0].password
+      AGENT_POLICY_ID     = module.stack_obs[0].agent_policy_id
+      CURRENT_INSTANCE_ID = tostring(module.elastic_agent_obs[0].instance_id)
+    }
+    command = "python3 '${path.module}/../aws/scripts/reconcile_fleet_agents.py' reconcile"
+  }
+
+  depends_on = [module.elastic_agent_obs, module.stack_obs]
 }

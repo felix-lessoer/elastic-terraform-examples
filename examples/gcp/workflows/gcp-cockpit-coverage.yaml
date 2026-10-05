@@ -1,8 +1,8 @@
 name: GCP Cockpit Coverage Scout
 id: gcp-cockpit-coverage
 description: >-
-  Builds a Datadog-style service coverage snapshot from Observability datasets
-  into gcp-cockpit-coverage for the cockpit service matrix panel.
+  Builds a supplemental dataset-presence snapshot. This does not claim
+  resource-level coverage; missing datasets remain explicit telemetry gaps.
 triggers:
   - type: manual
   - type: scheduled
@@ -10,20 +10,26 @@ triggers:
       every: "1h"
 
 steps:
+  - name: remove_previous_dataset_coverage
+    type: elasticsearch.request
+    with:
+      method: POST
+      path: /gcp-cockpit-coverage/_delete_by_query?conflicts=proceed&refresh=true
+      body: {query: {term: {category: dataset}}}
   - name: dataset_stats
     type: elasticsearch.esql.query
     with:
       format: json
       query: |
         FROM logs-*, metrics-*
-        | WHERE @timestamp > NOW() - 7 days
+        | WHERE @timestamp > NOW() - 24 hours
         | STATS docs = COUNT(*), last_seen = MAX(@timestamp) BY data_stream.dataset
         | SORT docs DESC
         | LIMIT 100
 
   - name: map_datasets
     type: data.map
-    items: "{{ steps.dataset_stats.output.values }}"
+    items: "${{ steps.dataset_stats.output.values }}"
     with:
       fields:
         docs: "{{ item[0] }}"
@@ -32,7 +38,7 @@ steps:
 
   - name: index_rows
     type: foreach
-    foreach: "{{ steps.map_datasets.output }}"
+    foreach: "${{ steps.map_datasets.output }}"
     steps:
       - name: write_coverage_row
         type: elasticsearch.index
@@ -45,8 +51,11 @@ steps:
             label: "{{ foreach.item.dataset }}"
             category: dataset
             status: healthy
+            coverage_scope: dataset_presence
             docs_24h: "{{ foreach.item.docs }}"
             last_seen: "{{ foreach.item.last_seen }}"
             datasets:
               - "{{ foreach.item.dataset }}"
             detail: "{{ foreach.item.docs }} docs"
+            lookup:
+              key: "{{ foreach.item.dataset }}"

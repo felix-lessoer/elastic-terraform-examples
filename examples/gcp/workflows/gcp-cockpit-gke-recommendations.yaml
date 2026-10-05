@@ -1,14 +1,20 @@
 id: gcp-cockpit-gke-recommendations
 name: GCP GKE Recommendations
-description: >
-  Finds underutilized GKE nodes (avg CPU < 5% over 24h) and writes
-  cost-optimization recommendations to gcp-cockpit-recommendations.
+description: >-
+  Requires the gke-gcp/metrics input. Reports potentially unused nodes only
+  from observed utilization samples and maintains a current bounded snapshot.
 triggers:
   - type: manual
   - type: scheduled
     with:
       every: "1h"
 steps:
+  - name: remove_previous_gke_insights
+    type: elasticsearch.request
+    with:
+      method: POST
+      path: /gcp-cockpit-recommendations/_delete_by_query?conflicts=proceed&refresh=true
+      body: {query: {term: {resource.type: gke_node}}}
   - name: query_underutilized_nodes
     type: elasticsearch.esql.query
     with:
@@ -16,30 +22,50 @@ steps:
       query: |
         FROM metrics-gcp.gke-default
         | WHERE @timestamp > NOW() - 24 hours
-        | STATS avg_cpu_pct = AVG(gcp.gke.node.cpu.allocatable_utilization.pct) BY node_name = gcp.labels.resource.node_name, cluster_name = gcp.labels.resource.cluster_name
-        | WHERE avg_cpu_pct < 5
+        | EVAL cpu_pct = gcp.gke.node.cpu.allocatable_utilization.pct * 100
+        | STATS observations = COUNT(*),
+                avg_cpu_pct = AVG(cpu_pct)
+          BY node_name = gcp.labels.resource.node_name,
+             cluster_name = gcp.labels.resource.cluster_name,
+             region = gcp.labels.resource.location, project_id = cloud.account.id
+        | WHERE node_name IS NOT NULL AND avg_cpu_pct IS NOT NULL AND avg_cpu_pct < 5
+        | LIMIT 200
 
   - name: process_underutilized_nodes
     type: foreach
-    foreach: "{{ steps.query_underutilized_nodes.output.values | json }}"
+    foreach: "${{ steps.query_underutilized_nodes.output.values }}"
     steps:
       - name: index_recommendation
         type: elasticsearch.index
         with:
           index: gcp-cockpit-recommendations
-          id: "{{ foreach.item[1] }}-cost_optimization-{{ now | date: '%Y%m%dT%H%M' }}"
+          id: "{{ foreach.item[5] }}-{{ foreach.item[4] }}-{{ foreach.item[3] }}-{{ foreach.item[2] }}-potentially-unused"
           document:
             "@timestamp": "{{ now | date_to_xmlschema }}"
-            category: cost_optimization
+            category: unused_resource
             severity: medium
+            confidence: medium
+            activity_status: potentially_unused
+            lookback_days: 1
+            evidence_refs: [gcp.gke.node.cpu.allocatable_utilization.pct]
+            contradictory_evidence: []
+            missing_telemetry: [network_activity, workload_requests]
+            expected_value: "Allocated nodes should show at least 5% CPU utilization."
+            safe_next_action: "Confirm workload scheduling and autoscaler constraints before reducing the node pool."
             metric_name: node_avg_cpu_pct
             recommendation: >-
-              GKE node {{ foreach.item[1] }} in cluster {{ foreach.item[2] }} is
-              underutilized (avg CPU {{ foreach.item[0] }}% over 24h) - consider
+              GKE node {{ foreach.item[2] }} in cluster {{ foreach.item[3] }} is
+              potentially unused based on {{ foreach.item[0] }} observed
+              documents (avg CPU {{ foreach.item[1] }}% over 24h) - consider
               reducing node pool size or enabling more aggressive cluster
               autoscaling.
             resource:
               type: gke_node
-              name: "{{ foreach.item[1] }}"
+              name: "{{ foreach.item[2] }}"
+              id: "{{ foreach.item[2] }}"
+              key: "{{ foreach.item[5] }}:{{ foreach.item[4] }}:gke_node:{{ foreach.item[2] }}"
             threshold: "5"
-            metric_value: "{{ foreach.item[0] }}"
+            metric_value: "{{ foreach.item[1] }}"
+            cloud:
+              region: "{{ foreach.item[4] }}"
+              project: {id: "{{ foreach.item[5] }}"}

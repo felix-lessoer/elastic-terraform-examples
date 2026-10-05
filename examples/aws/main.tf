@@ -932,12 +932,12 @@ resource "terraform_data" "fleet_agent_reconciliation" {
     interpreter = ["/bin/bash", "-c"]
     command     = "python3 '${path.module}/scripts/reconcile_fleet_agents.py' reconcile"
     environment = {
-      KIBANA_URL      = self.input.kibana_url
-      KIBANA_USERNAME = self.input.kibana_username
-      KIBANA_PASSWORD = self.input.kibana_password
-      AGENT_POLICY_ID = self.input.agent_policy_id
-      AWS_INSTANCE_ID = self.input.aws_instance_id
-      AWS_PRIVATE_IP  = self.input.aws_private_ip
+      KIBANA_URL          = self.input.kibana_url
+      KIBANA_USERNAME     = self.input.kibana_username
+      KIBANA_PASSWORD     = self.input.kibana_password
+      AGENT_POLICY_ID     = self.input.agent_policy_id
+      CURRENT_INSTANCE_ID = self.input.aws_instance_id
+      CURRENT_PRIVATE_IP  = self.input.aws_private_ip
     }
   }
 

@@ -71,6 +71,22 @@ terraform init
 terraform apply
 ```
 
+## Quick start (GCP)
+
+Run the shared local PoC Builder for bounded discovery, readable plan review,
+telemetry-aware workflows, and rollback:
+
+```bash
+export EC_API_KEY="your-elastic-cloud-api-key"
+export GOOGLE_APPLICATION_CREDENTIALS="/path/to/gcp.json"
+cd tools/cloud-poc-ui
+npm install
+npm start
+```
+
+Open <http://127.0.0.1:5603>. See
+[`tools/cloud-poc-ui/README.md`](tools/cloud-poc-ui/README.md).
+
 ## Legacy trees (deprecated)
 
 `AWS/`, `AWS-agents/`, `Azure/`, `GoogleCloud/`, `MultiCloud/`, `Monitoring/`, `Kubernetes/`, and `lib/` remain for reference only. They target Elastic Stack ~8.4–8.5 era APIs and should not be used for new PoCs.

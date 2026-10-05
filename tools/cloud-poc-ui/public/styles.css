@@ -145,6 +145,57 @@ form {
   background: var(--light-grey);
 }
 
+.integration-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(260px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.billing-dataset {
+  max-width: 38rem;
+  margin-bottom: 1rem;
+}
+
+.integration-option {
+  display: grid;
+  gap: 0.55rem;
+  padding: 1rem;
+  border: 1px solid var(--developer-blue);
+  border-radius: 8px;
+  background: var(--white);
+}
+
+.integration-option.recommended {
+  border-color: var(--light-teal);
+  background: color-mix(in srgb, var(--light-teal), var(--white) 92%);
+}
+
+.integration-option .checkbox-label {
+  font-weight: 700;
+}
+
+.integration-option p,
+.integration-option dl {
+  margin: 0;
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.integration-option dl {
+  display: grid;
+  grid-template-columns: minmax(90px, auto) 1fr;
+  gap: 0.35rem 0.75rem;
+}
+
+.integration-option dt {
+  font-weight: 700;
+}
+
+.integration-option dd {
+  margin: 0;
+}
+
 input {
   width: 100%;
   padding: 0.75rem;
@@ -459,6 +510,10 @@ td {
   }
 
   .label-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .integration-grid {
     grid-template-columns: 1fr;
   }
 }

@@ -131,10 +131,33 @@ variable "enable_pubsub_metrics" {
   default     = false
 }
 
+variable "enable_firestore_metrics" {
+  type        = bool
+  description = "Enable Firestore metrics when discovery finds Firestore and the customer selects it."
+  default     = false
+}
+
+variable "enable_dataproc_metrics" {
+  type        = bool
+  description = "Enable Dataproc metrics when discovery finds Dataproc and the customer selects it."
+  default     = false
+}
+
+variable "enable_redis_metrics" {
+  type        = bool
+  description = "Enable Memorystore for Redis metrics when discovery finds Redis and the customer selects it."
+  default     = false
+}
+
 variable "billing_dataset_id" {
   type        = string
   description = "BigQuery dataset id for GCP billing export (required when enable_billing_metrics is true)."
   default     = ""
+
+  validation {
+    condition     = !var.enable_billing_metrics || trimspace(var.billing_dataset_id) != ""
+    error_message = "billing_dataset_id is required when enable_billing_metrics is true."
+  }
 }
 
 variable "existing_topic_names" {

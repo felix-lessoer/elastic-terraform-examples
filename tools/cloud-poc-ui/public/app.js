@@ -5,6 +5,11 @@ const steps = [
     description: 'Validate credentials, required tools, and access to the named project.',
   },
   {
+    operation: 'discovery',
+    label: 'Discover customer GCP',
+    description: 'Inventory services and existing telemetry paths before selecting integrations.',
+  },
+  {
     operation: 'terraform-init',
     label: 'Initialize Terraform',
     description: 'Download and initialize the pinned providers and local modules.',
@@ -12,17 +17,12 @@ const steps = [
   {
     operation: 'terraform-plan',
     label: 'Review saved plan',
-    description: 'Create the exact plan and review its resource actions before applying.',
+    description: 'Create the exact customer-specific plan and review its resource actions before applying.',
   },
   {
     operation: 'terraform-apply',
     label: 'Apply saved plan',
     description: 'Apply only the reviewed plan after typing the explicit confirmation.',
-  },
-  {
-    operation: 'discovery',
-    label: 'Discover GCP',
-    description: 'Run bounded, read-only Cloud Asset Inventory discovery.',
   },
   {
     operation: 'analysis',
@@ -60,10 +60,14 @@ let configurationState = {
     elasticLabelsRequired: false,
     companyLabels: {},
     requiredLabelKeys: internalLabelKeys,
+    selectedServiceIds: [],
+    billingDatasetId: '',
   },
   saved: false,
 };
 let configurationDirty = false;
+let activeIntegrationCatalog;
+let integrationDirty = false;
 let operationHistory = [];
 let operationRunning = false;
 let applyConfirmationVisible = false;
@@ -87,6 +91,11 @@ const elasticLabelsRequired = document.querySelector(
 const internalLabelFields = document.querySelector(
   '#internal-label-fields',
 );
+const integrationCatalog = document.querySelector('#integration-catalog');
+const integrationMessage = document.querySelector('#integration-message');
+const integrationStatus = document.querySelector('#integration-status');
+const integrationSaveButton = document.querySelector('#save-integrations');
+const billingDatasetInput = document.querySelector('#billingDatasetId');
 const applicationCredentialsFile = document.querySelector(
   '#applicationCredentialsFile',
 );
@@ -154,7 +163,7 @@ function appendApplyConfirmation(card) {
   heading.textContent = 'Approval required';
   const explanation = document.createElement('p');
   explanation.textContent =
-    'This applies the exact saved plan shown in Step 3. Review its attached resource actions, then type APPLY to continue.';
+    'This applies the exact saved plan from the preceding Review step. Review its attached resource actions, then type APPLY to continue.';
   const label = document.createElement('label');
   label.textContent = 'Type APPLY';
   const input = document.createElement('input');
@@ -193,24 +202,42 @@ function renderGuidedPath() {
   const records = steps.map(({ operation }) =>
     projectId ? latestOperation(operation, projectId) : undefined,
   );
-  const failedApply = records[3];
-  const latestPlan = records[2];
+  const discoveryIndex = steps.findIndex(
+    (step) => step.operation === 'discovery',
+  );
+  const planIndex = steps.findIndex(
+    (step) => step.operation === 'terraform-plan',
+  );
+  const applyIndex = steps.findIndex(
+    (step) => step.operation === 'terraform-apply',
+  );
+  const latestDiscovery = records[discoveryIndex];
+  const integrationSelectionReady =
+    latestDiscovery?.state === 'succeeded' &&
+    !integrationDirty &&
+    configurationState.config.selectionProjectId === projectId &&
+    configurationState.config.selectionManifestHash ===
+      latestDiscovery.result?.manifestHash;
+  const failedApply = records[applyIndex];
+  const latestPlan = records[planIndex];
   const replanRequired =
     failedApply?.state === 'failed' &&
     latestPlan?.state === 'succeeded' &&
     latestPlan.startedAt <= (failedApply.finishedAt ?? failedApply.updatedAt);
-  const labelsChangedAfterPlan =
+  const configurationChangedAfterPlan =
     latestPlan?.state === 'succeeded' &&
     configurationState.updatedAt &&
     latestPlan.startedAt <= configurationState.updatedAt;
-  const planNeedsRefresh = replanRequired || labelsChangedAfterPlan;
+  const planNeedsRefresh =
+    replanRequired || configurationChangedAfterPlan;
   let nextIndex = records.findIndex(
     (record) => record?.state !== 'succeeded',
   );
-  if (planNeedsRefresh) nextIndex = 2;
+  if (planNeedsRefresh) nextIndex = planIndex;
   const completed = records.filter(
     (record, index) =>
-      record?.state === 'succeeded' && !(planNeedsRefresh && index === 2),
+      record?.state === 'succeeded' &&
+      !(planNeedsRefresh && index === planIndex),
   ).length;
 
   if (!credentialsReady) {
@@ -222,14 +249,20 @@ function renderGuidedPath() {
   } else if (configurationNeedsSave) {
     guidedSummary.textContent =
       'Next: save the account policy label settings before creating a Terraform plan.';
-  } else if (labelsChangedAfterPlan) {
+  } else if (
+    latestDiscovery?.state === 'succeeded' &&
+    !integrationSelectionReady
+  ) {
+    guidedSummary.textContent =
+      'Next: review and save the customer integration selection in section 4.';
+  } else if (configurationChangedAfterPlan) {
     guidedSummary.textContent =
       `${completed} of ${steps.length} steps complete for ${projectId}. ` +
-      'The account label settings changed. Regenerate and review Step 3 before applying.';
+      'The deployment settings changed. Regenerate and review the saved plan before applying.';
   } else if (replanRequired) {
     guidedSummary.textContent =
       `${completed} of ${steps.length} steps complete for ${projectId}. ` +
-      'The apply attempt failed after the saved plan was created. Regenerate and review Step 3 before retrying Step 4.';
+      'The apply attempt failed after the saved plan was created. Regenerate and review the plan before retrying apply.';
   } else if (nextIndex === -1) {
     guidedSummary.textContent =
       `All ${steps.length} guided steps are complete for ${projectId}. ` +
@@ -243,13 +276,13 @@ function renderGuidedPath() {
   }
   if (applyConfirmationVisible) {
     guidedSummary.textContent =
-      'Step 4 is waiting for approval. Review the Step 3 plan, then type APPLY in the confirmation panel.';
+      'Apply is waiting for approval. Review the preceding saved plan, then type APPLY in the confirmation panel.';
   }
 
   stepContainer.replaceChildren();
   steps.forEach((step, index) => {
     const record = records[index];
-    const stepNeedsReplan = planNeedsRefresh && index === 2;
+    const stepNeedsReplan = planNeedsRefresh && index === planIndex;
     const complete = record?.state === 'succeeded' && !stepNeedsReplan;
     const failed = record?.state === 'failed';
     const running = ['queued', 'running', 'validating'].includes(record?.state);
@@ -257,7 +290,8 @@ function renderGuidedPath() {
     const locked =
       !credentialsReady ||
       !projectId ||
-      (configurationNeedsSave && index >= 2) ||
+      (configurationNeedsSave && index >= planIndex) ||
+      (!integrationSelectionReady && index > discoveryIndex) ||
       (nextIndex !== -1 && index > nextIndex && !complete);
     const card = document.createElement('article');
     card.className = [
@@ -284,8 +318,8 @@ function renderGuidedPath() {
       history.className = 'step-history';
       const when = new Date(record.finishedAt ?? record.updatedAt).toLocaleString();
       history.textContent = stepNeedsReplan
-        ? labelsChangedAfterPlan
-          ? 'The previous plan is stale because the account label settings changed.'
+        ? configurationChangedAfterPlan
+          ? 'The previous plan is stale because deployment settings changed.'
           : 'The previous plan is stale after a failed apply and must be regenerated.'
         : complete
           ? `Completed ${when}.`
@@ -304,10 +338,12 @@ function renderGuidedPath() {
         ? 'Needs attention'
         : running
           ? 'In progress'
-          : next && credentialsReady && projectId
-            ? 'Next'
-            : configurationNeedsSave && index >= 2
-              ? 'Save labels first'
+          : configurationNeedsSave && index >= planIndex
+            ? 'Save labels first'
+            : !integrationSelectionReady && index > discoveryIndex
+              ? 'Select integrations first'
+              : next && credentialsReady && projectId
+                ? 'Next'
             : 'Locked';
     const button = actionButton(
       stepNeedsReplan
@@ -395,6 +431,12 @@ function renderOperation(operation) {
   if (terminal && activeEvents) {
     activeEvents.close();
     activeEvents = undefined;
+  }
+  if (
+    operation.operation === 'discovery' &&
+    operation.state === 'succeeded'
+  ) {
+    renderIntegrationCatalog(operation);
   }
   if (
     operation.operation === 'analysis' &&
@@ -530,6 +572,12 @@ function appendFriendlyResult(container, step, record) {
             ? `Elastic internal labels enabled (${(value.labels.requiredKeys ?? []).join(', ')})`
             : `Customer mode (${(value.labels?.keys ?? []).join(', ')})`,
         );
+        appendText(
+          output,
+          'Selected integrations',
+          (value.integrations?.selectedServiceIds ?? []).join(', ') ||
+            'None',
+        );
         if (Array.isArray(value.resources) && value.resources.length) {
           const list = document.createElement('ul');
           for (const resource of value.resources.slice(0, 12)) {
@@ -552,6 +600,13 @@ function appendFriendlyResult(container, step, record) {
       case 'discovery':
         appendText(output, 'Resources discovered', value.resourceCount ?? 0);
         appendText(output, 'Manifest', value.partial ? 'Partial results' : 'Complete');
+        appendText(
+          output,
+          'Recommended integrations',
+          Array.isArray(value.integrations)
+            ? value.integrations.filter((item) => item.recommended).length
+            : 0,
+        );
         break;
       case 'analysis':
         appendText(
@@ -700,6 +755,146 @@ async function loadVisibility() {
   }
 }
 
+function deploymentConfigurationPayload(overrides = {}) {
+  const config = configurationState.config;
+  return {
+    elasticLabelsRequired: config.elasticLabelsRequired,
+    companyLabels: config.companyLabels,
+    requiredLabelKeys: config.requiredLabelKeys,
+    selectedServiceIds: config.selectedServiceIds ?? [],
+    billingDatasetId: config.billingDatasetId ?? '',
+    ...(config.selectionProjectId
+      ? { selectionProjectId: config.selectionProjectId }
+      : {}),
+    ...(config.selectionManifestHash
+      ? { selectionManifestHash: config.selectionManifestHash }
+      : {}),
+    ...overrides,
+  };
+}
+
+function renderIntegrationCatalog(discovery) {
+  const integrations = discovery?.result?.integrations;
+  if (!Array.isArray(integrations)) return;
+  const projectId = discovery.projectId;
+  const manifestHash = discovery.result.manifestHash;
+  const savedForDiscovery =
+    configurationState.config.selectionProjectId === projectId &&
+    configurationState.config.selectionManifestHash === manifestHash;
+  const selected = new Set(
+    savedForDiscovery
+      ? configurationState.config.selectedServiceIds
+      : integrations
+          .filter((integration) => integration.selectedByDefault)
+          .map((integration) => integration.id),
+  );
+  activeIntegrationCatalog = {
+    projectId,
+    manifestHash,
+    integrations,
+    unmappedServices: discovery.result.unmappedServices ?? [],
+  };
+  integrationDirty = false;
+  integrationCatalog.replaceChildren();
+  for (const integration of integrations) {
+    const card = document.createElement('article');
+    card.className = `integration-option${integration.recommended ? ' recommended' : ''}`;
+    const label = document.createElement('label');
+    label.className = 'checkbox-label';
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.value = integration.id;
+    checkbox.checked = selected.has(integration.id);
+    checkbox.disabled = integration.mode === 'core';
+    checkbox.dataset.integrationId = integration.id;
+    checkbox.addEventListener('change', () => {
+      integrationDirty = true;
+      integrationStatus.className = 'form-status warning';
+      integrationStatus.textContent =
+        'Integration selection changed. Save it before Terraform planning.';
+      renderGuidedPath();
+    });
+    label.append(checkbox, document.createTextNode(integration.name));
+    const reason = document.createElement('p');
+    reason.textContent = integration.reason;
+    const details = document.createElement('dl');
+    for (const [term, value] of [
+      ['Signals', integration.signals.join(', ')],
+      ['Permissions', integration.permissions],
+      ['GCP impact', integration.gcpCost],
+      ['Elastic impact', integration.elasticCost],
+    ]) {
+      detail(details, term, value);
+    }
+    card.append(label, reason, details);
+    integrationCatalog.append(card);
+  }
+  integrationMessage.textContent =
+    `${integrations.filter((item) => item.discovered).length} service families detected. ` +
+    'Core signals stay selected; optional recommendations can be changed before planning. ' +
+    (activeIntegrationCatalog.unmappedServices.length
+      ? `${activeIntegrationCatalog.unmappedServices.length} enabled API(s) are not automated yet and remain explicit coverage gaps: ${activeIntegrationCatalog.unmappedServices.join(', ')}.`
+      : 'No unsupported enabled APIs were detected.');
+  integrationStatus.className = savedForDiscovery
+    ? 'form-status success'
+    : 'form-status warning';
+  integrationStatus.textContent = savedForDiscovery
+    ? 'This integration selection matches the latest discovery manifest.'
+    : 'Review and save this discovery-backed selection before Terraform planning.';
+  integrationSaveButton.disabled = false;
+  renderGuidedPath();
+}
+
+integrationSaveButton.addEventListener('click', async () => {
+  if (!activeIntegrationCatalog) return;
+  integrationSaveButton.disabled = true;
+  integrationSaveButton.textContent = 'Saving…';
+  integrationStatus.className = 'form-status muted';
+  integrationStatus.textContent = 'Saving the customer integration profile…';
+  try {
+    const selectedServiceIds = [
+      ...integrationCatalog.querySelectorAll(
+        'input[data-integration-id]:checked',
+      ),
+    ].map((input) => input.dataset.integrationId);
+    const configuration = await api('/api/configuration', {
+      method: 'PUT',
+      body: JSON.stringify(
+        deploymentConfigurationPayload({
+          selectedServiceIds,
+          billingDatasetId: billingDatasetInput.value.trim(),
+          selectionProjectId: activeIntegrationCatalog.projectId,
+          selectionManifestHash: activeIntegrationCatalog.manifestHash,
+        }),
+      ),
+    });
+    populateConfiguration(configuration);
+    integrationDirty = false;
+    integrationStatus.className = 'form-status success';
+    integrationStatus.textContent =
+      'Integration selection saved. Terraform will enable only these selected optional metrics.';
+    message.textContent =
+      'Customer integration profile saved. Continue with Terraform initialization and plan review.';
+  } catch (error) {
+    integrationStatus.className = 'form-status failed';
+    integrationStatus.textContent =
+      `Integration selection was not saved: ${error.message}`;
+  } finally {
+    integrationSaveButton.disabled = false;
+    integrationSaveButton.textContent = 'Save integration selection';
+    renderGuidedPath();
+  }
+});
+
+billingDatasetInput.addEventListener('input', () => {
+  if (!activeIntegrationCatalog) return;
+  integrationDirty = true;
+  integrationStatus.className = 'form-status warning';
+  integrationStatus.textContent =
+    'Billing configuration changed. Save the integration selection before planning.';
+  renderGuidedPath();
+});
+
 function renderConfigurationFields() {
   const enabled = elasticLabelsRequired.checked;
   internalLabelFields.hidden = !enabled;
@@ -717,6 +912,8 @@ function populateConfiguration(configuration) {
     configurationForm.elements.namedItem(key).value =
       configuration.config.companyLabels[key] ?? '';
   }
+  billingDatasetInput.value =
+    configuration.config.billingDatasetId ?? '';
   renderConfigurationFields();
   configurationStatus.className = configuration.saved
     ? 'form-status success'
@@ -773,11 +970,13 @@ configurationForm.addEventListener('submit', async (event) => {
     }
     const configuration = await api('/api/configuration', {
       method: 'PUT',
-      body: JSON.stringify({
-        elasticLabelsRequired: enabled,
-        companyLabels: enabled ? enteredLabels : {},
-        requiredLabelKeys: internalLabelKeys,
-      }),
+      body: JSON.stringify(
+        deploymentConfigurationPayload({
+          elasticLabelsRequired: enabled,
+          companyLabels: enabled ? enteredLabels : {},
+          requiredLabelKeys: internalLabelKeys,
+        }),
+      ),
     });
     populateConfiguration(configuration);
     message.textContent = enabled
@@ -796,6 +995,20 @@ configurationForm.addEventListener('submit', async (event) => {
 
 projectInput.addEventListener('input', () => {
   localStorage.setItem('gcpProjectId', projectInput.value.trim());
+  const discovery = latestOperation(
+    'discovery',
+    projectInput.value.trim(),
+  );
+  if (discovery?.state === 'succeeded') {
+    renderIntegrationCatalog(discovery);
+  } else {
+    activeIntegrationCatalog = undefined;
+    integrationDirty = false;
+    integrationCatalog.replaceChildren();
+    integrationSaveButton.disabled = true;
+    integrationMessage.textContent =
+      'Run the guided Discovery step to build a customer-specific integration profile.';
+  }
   renderGuidedPath();
 });
 
@@ -860,6 +1073,13 @@ try {
       `Credentials are saved locally (${credentialState.method}). Run Preflight to validate them.`;
   }
   renderGuidedPath();
+  const latestDiscovery = latestOperation(
+    'discovery',
+    projectInput.value.trim(),
+  );
+  if (latestDiscovery?.state === 'succeeded') {
+    renderIntegrationCatalog(latestDiscovery);
+  }
   const latest = bootstrap.operations.find(
     (operation) => operation.projectId === projectInput.value.trim(),
   );

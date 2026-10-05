@@ -41,6 +41,11 @@ enable_observability_project = true
 # enable_cloudrun_metrics = true
 # enable_cloudsql_metrics = true
 # enable_pubsub_metrics   = true
+# enable_firestore_metrics = true
+# enable_dataproc_metrics  = true
+# enable_redis_metrics     = true
+# enable_billing_metrics   = true
+# billing_dataset_id       = "billing-project.gcp_billing_export"
 
 # Optional brownfield reuse. A reused sink/subscription must reference a reused
 # topic with the same stream key. Customer IAM is preserved unless explicitly

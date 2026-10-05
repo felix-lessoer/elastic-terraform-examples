@@ -20,6 +20,10 @@ describe('credential form feedback', () => {
     expect(html).toContain('id="elasticLabelsRequired"');
     expect(html).toContain('Elastic internal labels required');
     expect(html).toContain('id="configuration-status"');
+    expect(html).toContain('id="integration-catalog"');
+    expect(html).toContain('id="save-integrations"');
+    expect(html).toContain('id="billingDatasetId"');
+    expect(html).toContain('Choose customer integrations');
     expect(html).toContain('Advanced: current raw output');
   });
 
@@ -56,8 +60,12 @@ describe('credential form feedback', () => {
     expect(script).toContain("'Account labels'");
     expect(script).toContain('Elastic internal labels enabled');
     expect(script).toContain(
-      'The previous plan is stale because the account label settings changed.',
+      'The previous plan is stale because deployment settings changed.',
     );
+    expect(script).toContain('selectedServiceIds');
+    expect(script).toContain('selectionManifestHash');
+    expect(script).toContain('customer integration profile');
+    expect(script).toContain('Core signals stay selected');
     expect(script).not.toContain(
       "window.prompt('Type APPLY to apply the reviewed saved plan.')",
     );

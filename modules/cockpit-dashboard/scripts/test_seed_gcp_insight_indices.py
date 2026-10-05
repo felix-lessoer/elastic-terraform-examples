@@ -6,6 +6,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from seed_gcp_insight_indices import (
+    SERVICE_CATALOG,
     build_resource_coverage_docs,
     manifest_documents,
 )
@@ -79,6 +80,21 @@ class GcpManifestIngestionTests(unittest.TestCase):
         self.assertEqual(resources[0][1]["owner"], "platform")
         self.assertEqual(candidates[0][1]["service"], "compute")
         self.assertEqual(len(dependencies), 1)
+
+    def test_catalog_includes_customer_selectable_metric_families(self):
+        services = {item["service"] for item in SERVICE_CATALOG}
+        self.assertTrue(
+            {
+                "gke",
+                "cloudrun",
+                "cloudsql",
+                "pubsub",
+                "firestore",
+                "dataproc",
+                "redis",
+                "billing",
+            }.issubset(services)
+        )
 
     @patch("seed_gcp_insight_indices.time.time", return_value=1_759_579_200)
     def test_coverage_is_per_resource_and_missing_signals_are_unknown(self, _time):

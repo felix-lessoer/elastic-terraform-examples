@@ -171,6 +171,9 @@ SERVICE_CATALOG = [
     {"service": "storage", "label": "Cloud Storage", "datasets": ["gcp.storage"], "category": "storage", "link": _dash("gcp-ca401040-8e52-11ea-9fa6-4d675d5290dc")},
     {"service": "cloudsql", "label": "Cloud SQL", "datasets": ["gcp.cloudsql_postgresql", "gcp.cloudsql_mysql"], "category": "data", "link": _dash("gcp-ddc19780-3a0a-11ee-8736-83dacf143f01")},
     {"service": "pubsub", "label": "Pub/Sub", "datasets": ["gcp.pubsub"], "category": "platform", "link": _dash("gcp-2b0fd7b0-feac-11ea-b032-d59f894a5072")},
+    {"service": "firestore", "label": "Firestore", "datasets": ["gcp.firestore"], "category": "data", "link": "/app/fleet/integrations"},
+    {"service": "dataproc", "label": "Dataproc", "datasets": ["gcp.dataproc"], "category": "compute", "link": "/app/fleet/integrations"},
+    {"service": "redis", "label": "Memorystore for Redis", "datasets": ["gcp.redis"], "category": "data", "link": "/app/fleet/integrations"},
     {"service": "loadbalancing", "label": "Load Balancing", "datasets": ["gcp.loadbalancing_metrics", "gcp.loadbalancing_logs"], "category": "network", "link": _dash("gcp-aa5b8bd0-9157-11ea-8180-7b0dacd9df87")},
     {"service": "vpcflow", "label": "VPC Flow", "datasets": ["gcp.vpcflow"], "category": "network", "link": _dash("gcp-9484a4cd-685f-450e-aeaa-728fbdbea20f")},
     {"service": "dns", "label": "Cloud DNS", "datasets": ["gcp.dns"], "category": "network", "link": "/app/fleet/integrations"},
@@ -235,6 +238,9 @@ def _service_for(resource: dict[str, Any]) -> str:
         "storage": "storage",
         "sql": "cloudsql",
         "pubsub": "pubsub",
+        "firestore": "firestore",
+        "dataproc": "dataproc",
+        "redis": "redis",
         "loadbalanc": "loadbalancing",
         "dns": "dns",
         "firewall": "firewall",
@@ -263,6 +269,9 @@ def _resource_type(resource: dict[str, Any]) -> str:
         "sqladmin.googleapis.com_instance": "cloud_sql_instance",
         "container.googleapis.com_cluster": "gke_cluster",
         "run.googleapis.com_service": "cloud_run_service",
+        "firestore.googleapis.com_database": "firestore_database",
+        "dataproc.googleapis.com_cluster": "dataproc_cluster",
+        "redis.googleapis.com_instance": "redis_instance",
     }
     return aliases.get(value, value)
 

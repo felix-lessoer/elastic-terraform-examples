@@ -1,4 +1,5 @@
 import { execa } from 'execa';
+import { gcpServiceIds } from './gcp-integrations.js';
 
 export type CommandId =
   | 'gcp.identity'
@@ -29,6 +30,7 @@ const planName = /^\.cloud-poc-[a-z-]+\.tfplan$/;
 const manifestPath = /^\/[A-Za-z0-9_./-]+\/gcp-manifest\.json$/;
 const labelKey = /^[a-z][a-z0-9_-]{0,62}$/;
 const labelValue = /^[a-z0-9_-]{1,63}$/;
+const billingDatasetId = /^[A-Za-z0-9_.:-]{0,256}$/;
 
 function required(
   values: Record<string, string>,
@@ -92,6 +94,26 @@ function requiredBoolean(
   return value;
 }
 
+function selectedServices(values: Record<string, string>): Set<string> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(values.selectedServiceIds ?? '');
+  } catch {
+    throw new Error('Invalid command value: selectedServiceIds');
+  }
+  if (
+    !Array.isArray(parsed) ||
+    parsed.some(
+      (service) =>
+        typeof service !== 'string' ||
+        !gcpServiceIds.includes(service as (typeof gcpServiceIds)[number]),
+    )
+  ) {
+    throw new Error('Invalid command value: selectedServiceIds');
+  }
+  return new Set(parsed);
+}
+
 const commands: Record<
   CommandId,
   {
@@ -149,6 +171,7 @@ const commands: Record<
     timeoutMs: 900_000,
     args: (values) => {
       const projectId = required(values, 'projectId', identifier);
+      const selected = selectedServices(values);
       return [
         'plan',
         '-input=false',
@@ -160,6 +183,24 @@ const commands: Record<
         `-var=elastic_labels_required=${requiredBoolean(
           values,
           'elasticLabelsRequired',
+        )}`,
+        `-var=gcp_discovery_manifest_path=${required(
+          values,
+          'manifestPath',
+          manifestPath,
+        )}`,
+        `-var=enable_gke_metrics=${selected.has('gke')}`,
+        `-var=enable_cloudrun_metrics=${selected.has('cloudrun')}`,
+        `-var=enable_cloudsql_metrics=${selected.has('cloudsql')}`,
+        `-var=enable_pubsub_metrics=${selected.has('pubsub')}`,
+        `-var=enable_firestore_metrics=${selected.has('firestore')}`,
+        `-var=enable_dataproc_metrics=${selected.has('dataproc')}`,
+        `-var=enable_redis_metrics=${selected.has('redis')}`,
+        `-var=enable_billing_metrics=${selected.has('billing')}`,
+        `-var=billing_dataset_id=${required(
+          values,
+          'billingDatasetId',
+          billingDatasetId,
         )}`,
       ];
     },

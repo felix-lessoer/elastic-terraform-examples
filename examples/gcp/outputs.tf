@@ -44,6 +44,32 @@ output "cps_link_statuses" {
   value       = try(module.observability[0].linked_statuses, {})
 }
 
+output "integration_selection" {
+  description = "Customer-selected optional GCP metrics plus the core PoC collection profile."
+  value = {
+    core = [
+      "cspm",
+      "audit",
+      "firewall",
+      "vpcflow",
+      "dns",
+      "loadbalancing",
+      "compute",
+      "storage",
+    ]
+    optional = {
+      billing   = var.enable_billing_metrics
+      gke       = var.enable_gke_metrics
+      cloudrun  = var.enable_cloudrun_metrics
+      cloudsql  = var.enable_cloudsql_metrics
+      pubsub    = var.enable_pubsub_metrics
+      firestore = var.enable_firestore_metrics
+      dataproc  = var.enable_dataproc_metrics
+      redis     = var.enable_redis_metrics
+    }
+  }
+}
+
 output "ai_agent_ids" {
   value = try(module.observability_seed[0].ai_agent_ids, [])
 }

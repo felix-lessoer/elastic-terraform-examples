@@ -10,6 +10,11 @@ import type {
 } from '../cloud-provider.js';
 import type { CommandRunner } from '../commands.js';
 import type { GcpDeploymentConfig } from '../gcp-config.js';
+import {
+  findUnmappedGcpServices,
+  readGcpManifestWithHash,
+  recommendGcpIntegrations,
+} from '../gcp-integrations.js';
 import { writeOwnerOnly } from '../local-files.js';
 import { summarizeTerraformPlan } from '../terraform-plan.js';
 import {
@@ -27,6 +32,19 @@ const workflowIds = new Set([
   'gcp-cockpit-gke-recommendations',
   'gcp-cockpit-cloudrun-recommendations',
   'gcp-cockpit-cloudsql-recommendations',
+  'gcp-cockpit-storage-recommendations',
+  'gcp-cockpit-loadbalancing-recommendations',
+  'gcp-cockpit-pubsub-recommendations',
+  'gcp-cockpit-insight-engine-summary',
+]);
+const workflowService = new Map([
+  ['gcp-cockpit-host-recommendations', 'compute'],
+  ['gcp-cockpit-storage-recommendations', 'storage'],
+  ['gcp-cockpit-loadbalancing-recommendations', 'loadbalancing'],
+  ['gcp-cockpit-pubsub-recommendations', 'pubsub'],
+  ['gcp-cockpit-gke-recommendations', 'gke'],
+  ['gcp-cockpit-cloudrun-recommendations', 'cloudrun'],
+  ['gcp-cockpit-cloudsql-recommendations', 'cloudsql'],
 ]);
 const planName = '.cloud-poc-gcp.tfplan';
 
@@ -155,14 +173,21 @@ export class GcpProvider implements CloudProvider {
       message: 'Validating and hashing the local manifest',
       percent: 90,
     });
+    const { manifest, manifestHash } =
+      await readGcpManifestWithHash(manifestPath);
+    if (manifestHash !== output.manifest_sha256) {
+      throw new Error('Discovery manifest hash changed before validation');
+    }
     return {
       manifestVersion: '1.0',
-      manifestHash: output.manifest_sha256,
+      manifestHash,
       resourceCount: output.summary.resources,
       partial: !output.summary.complete,
       warnings: !output.summary.complete
         ? [`Discovery returned partial results: ${JSON.stringify(output.summary.statuses)}`]
         : [],
+      integrations: recommendGcpIntegrations(manifest),
+      unmappedServices: findUnmappedGcpServices(manifest),
     };
   }
 
@@ -213,9 +238,27 @@ export class GcpProvider implements CloudProvider {
   }
 
   private async runWorkflows(ids: string[], context: ProviderContext) {
-    const selected = ids.length === 0 ? [...workflowIds] : ids;
+    const configuration = await this.configuration();
+    const enabledServices = new Set(configuration.selectedServiceIds);
+    const selected =
+      ids.length === 0
+        ? [...workflowIds].filter((id) => {
+            const service = workflowService.get(id);
+            return !service || enabledServices.has(service);
+          })
+        : ids;
     if (selected.some((id) => !workflowIds.has(id))) {
       throw new Error('Unknown GCP workflow ID');
+    }
+    if (
+      selected.some((id) => {
+        const service = workflowService.get(id);
+        return service && !enabledServices.has(service);
+      })
+    ) {
+      throw new Error(
+        'A selected GCP workflow requires an integration that is not enabled',
+      );
     }
     await context.progress({
       stage: 'workflows',
@@ -231,6 +274,30 @@ export class GcpProvider implements CloudProvider {
 
   private async plan(projectId: string, context: ProviderContext) {
     const configuration = await this.configuration();
+    const manifestPath = path.resolve(
+      this.artifactDirectory,
+      'gcp-manifest.json',
+    );
+    let manifestHash: string;
+    try {
+      const current = await readGcpManifestWithHash(manifestPath);
+      if (!current.manifest.approved_projects.includes(projectId)) {
+        throw new Error('project mismatch');
+      }
+      manifestHash = current.manifestHash;
+    } catch {
+      throw new Error(
+        'Run GCP discovery and confirm the integration selection before planning',
+      );
+    }
+    if (
+      configuration.selectionProjectId !== projectId ||
+      configuration.selectionManifestHash !== manifestHash
+    ) {
+      throw new Error(
+        'Review and save the integration selection from the latest GCP discovery before planning',
+      );
+    }
     const companyLabels = configuration.elasticLabelsRequired
       ? configuration.companyLabels
       : {
@@ -246,11 +313,16 @@ export class GcpProvider implements CloudProvider {
       {
         plan: planName,
         projectId,
+        manifestPath,
         companyLabels: JSON.stringify(companyLabels),
         requiredLabelKeys: JSON.stringify(requiredLabelKeys),
         elasticLabelsRequired: String(
           configuration.elasticLabelsRequired,
         ),
+        selectedServiceIds: JSON.stringify(
+          configuration.selectedServiceIds,
+        ),
+        billingDatasetId: configuration.billingDatasetId,
       },
       context,
     );
@@ -271,6 +343,10 @@ export class GcpProvider implements CloudProvider {
           configuration.elasticLabelsRequired,
         keys: Object.keys(companyLabels).sort(),
         requiredKeys: [...requiredLabelKeys].sort(),
+      },
+      integrations: {
+        selectedServiceIds: [...configuration.selectedServiceIds].sort(),
+        manifestHash,
       },
     };
   }

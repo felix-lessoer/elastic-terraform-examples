@@ -340,6 +340,46 @@ describe('owner-only local files', () => {
       .expect(200);
   });
 
+  it('requires discovery binding and billing prerequisites for selections', async () => {
+    const { app } = await appFixture();
+    const headers = {
+      Origin: 'http://localhost:5603',
+      'x-cloud-poc-csrf': 'csrf-test',
+    };
+    const base = {
+      elasticLabelsRequired: false,
+      companyLabels: {},
+      requiredLabelKeys: [],
+      selectedServiceIds: [
+        'cspm',
+        'audit',
+        'firewall',
+        'vpcflow',
+        'dns',
+        'loadbalancing',
+        'compute',
+        'storage',
+        'billing',
+      ],
+      billingDatasetId: '',
+      selectionProjectId: 'valid-project1',
+    };
+    await request(app)
+      .put('/api/configuration')
+      .set(headers)
+      .send(base)
+      .expect(400);
+    await request(app)
+      .put('/api/configuration')
+      .set(headers)
+      .send({
+        ...base,
+        billingDatasetId: 'billing-project.export_dataset',
+        selectionManifestHash: 'a'.repeat(64),
+      })
+      .expect(200);
+  });
+
   it('persists credentials with mode 0600 and returns status only', async () => {
     const directory = await temporaryDirectory();
     const filePath = path.join(directory, 'credentials.env');

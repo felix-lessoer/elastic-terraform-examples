@@ -121,8 +121,41 @@
         </form>
       </section>
 
+      <section class="card" id="integration-configuration">
+        <h2>4. Choose customer integrations</h2>
+        <div class="accent"></div>
+        <p class="muted">
+          Run discovery first. The builder recommends integrations for services
+          found in this project, keeps core PoC signals selected, and leaves
+          optional cost-bearing metrics under customer control.
+        </p>
+        <div id="integration-message" class="guided-summary">
+          Run the guided Discovery step to build a customer-specific integration profile.
+        </div>
+        <label class="billing-dataset">
+          BigQuery billing export dataset ID (required only when Billing is selected)
+          <input
+            id="billingDatasetId"
+            placeholder="billing-project.gcp_billing_export"
+            autocomplete="off"
+          />
+        </label>
+        <div id="integration-catalog" class="integration-grid"></div>
+        <button id="save-integrations" type="button" disabled>
+          Save integration selection
+        </button>
+        <p
+          id="integration-status"
+          class="form-status muted"
+          role="status"
+          aria-live="polite"
+        >
+          No discovery-backed integration selection has been saved.
+        </p>
+      </section>
+
       <section class="card">
-        <h2>4. Follow the guided path</h2>
+        <h2>5. Follow the guided path</h2>
         <div class="accent"></div>
         <div
           id="guided-summary"
@@ -155,7 +188,7 @@
       <section class="card" aria-labelledby="visibility-heading">
         <div class="progress-heading">
           <div>
-            <h2 id="visibility-heading">5. Optional visibility adapters</h2>
+            <h2 id="visibility-heading">6. Optional visibility adapters</h2>
             <div class="accent"></div>
           </div>
           <button id="cleanup-orphans" type="button">Clean orphaned adapters</button>

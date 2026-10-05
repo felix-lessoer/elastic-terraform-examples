@@ -1,5 +1,9 @@
 import { promises as fs } from 'node:fs';
 import { z } from 'zod';
+import {
+  gcpCoreServiceIds,
+  gcpServiceIdSchema,
+} from './gcp-integrations.js';
 import { readJson, writeOwnerOnly } from './local-files.js';
 
 const labelKey = z
@@ -18,18 +22,82 @@ export const gcpDeploymentConfigSchema = z
     elasticLabelsRequired: z.boolean().default(false),
     companyLabels: z.record(labelKey, labelValue),
     requiredLabelKeys: z.array(labelKey).max(50),
+    selectedServiceIds: z.array(gcpServiceIdSchema).max(50).default([]),
+    billingDatasetId: z
+      .string()
+      .trim()
+      .max(256)
+      .regex(
+        /^[A-Za-z0-9_.:-]*$/,
+        'Enter a valid BigQuery billing dataset ID',
+      )
+      .default(''),
+    selectionProjectId: z
+      .string()
+      .regex(/^[a-z][a-z0-9-]{4,61}[a-z0-9]$/)
+      .optional(),
+    selectionManifestHash: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .optional(),
   })
   .strict()
   .superRefine((config, context) => {
-    if (!config.elasticLabelsRequired) return;
-    for (const key of config.requiredLabelKeys) {
-      if (!config.companyLabels[key]) {
-        context.addIssue({
-          code: 'custom',
-          path: ['companyLabels', key],
-          message: `Enter the required label ${key}`,
-        });
+    if (config.elasticLabelsRequired) {
+      for (const key of config.requiredLabelKeys) {
+        if (!config.companyLabels[key]) {
+          context.addIssue({
+            code: 'custom',
+            path: ['companyLabels', key],
+            message: `Enter the required label ${key}`,
+          });
+        }
       }
+    }
+    const hasSelectionBinding =
+      config.selectionProjectId !== undefined ||
+      config.selectionManifestHash !== undefined;
+    if (
+      hasSelectionBinding &&
+      (!config.selectionProjectId || !config.selectionManifestHash)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['selectionManifestHash'],
+        message: 'Integration selection requires a project and manifest hash',
+      });
+    }
+    if (
+      new Set(config.selectedServiceIds).size !==
+      config.selectedServiceIds.length
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['selectedServiceIds'],
+        message: 'Integration selection contains duplicate services',
+      });
+    }
+    if (
+      config.selectedServiceIds.includes('billing') &&
+      !config.billingDatasetId
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['billingDatasetId'],
+        message: 'Billing metrics require a BigQuery billing dataset ID',
+      });
+    }
+    if (
+      config.selectionManifestHash &&
+      gcpCoreServiceIds.some(
+        (service) => !config.selectedServiceIds.includes(service),
+      )
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['selectedServiceIds'],
+        message: 'The core customer PoC integrations must remain selected',
+      });
     }
   });
 
@@ -55,6 +123,8 @@ export const defaultGcpDeploymentConfig: GcpDeploymentConfig = {
     'project',
     'environment',
   ],
+  selectedServiceIds: [],
+  billingDatasetId: '',
 };
 
 export async function readGcpDeploymentConfig(

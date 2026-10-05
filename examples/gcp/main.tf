@@ -293,76 +293,89 @@ locals {
   }
 
   # Metrics templates the GCP package enables by default unless declared.
-  gcp_extra_metrics_disabled = {
+  gcp_extra_metrics = {
     "firestore-gcp/metrics" = {
-      enabled = false
+      enabled = var.enable_firestore_metrics
       streams = {
         "gcp.firestore" = {
-          enabled = false
+          enabled = var.enable_firestore_metrics
           vars    = jsonencode({ period = "10m", tags = ["gcp-firestore"] })
         }
       }
     }
     "gke-gcp/metrics" = {
-      enabled = false
+      enabled = var.enable_gke_metrics
       streams = {
         "gcp.gke" = {
-          enabled = false
+          enabled = var.enable_gke_metrics
           vars    = jsonencode({ period = "10m", tags = ["gcp-gke"] })
         }
       }
     }
     "dataproc-gcp/metrics" = {
-      enabled = false
+      enabled = var.enable_dataproc_metrics
       streams = {
         "gcp.dataproc" = {
-          enabled = false
+          enabled = var.enable_dataproc_metrics
           vars    = jsonencode({ period = "10m", tags = ["gcp-dataproc"] })
         }
       }
     }
     "pubsub-gcp/metrics" = {
-      enabled = false
+      enabled = var.enable_pubsub_metrics
       streams = {
         "gcp.pubsub" = {
-          enabled = false
+          enabled = var.enable_pubsub_metrics
           vars    = jsonencode({ period = "5m", tags = ["gcp-pubsub"] })
         }
       }
     }
     "redis-gcp/metrics" = {
-      enabled = false
+      enabled = var.enable_redis_metrics
       streams = {
         "gcp.redis" = {
-          enabled = false
+          enabled = var.enable_redis_metrics
           vars    = jsonencode({ period = "10m", tags = ["gcp-redis"] })
         }
       }
     }
     "cloudrun-gcp/metrics" = {
-      enabled = false
+      enabled = var.enable_cloudrun_metrics
       streams = {
         "gcp.cloudrun_metrics" = {
-          enabled = false
+          enabled = var.enable_cloudrun_metrics
           vars    = jsonencode({ period = "10m", tags = ["gcp-cloudrun"] })
         }
       }
     }
     "cloudsql-gcp/metrics" = {
-      enabled = false
+      enabled = var.enable_cloudsql_metrics
       streams = {
         "gcp.cloudsql_mysql" = {
-          enabled = false
+          enabled = var.enable_cloudsql_metrics
           vars    = jsonencode({ period = "10m", tags = ["gcp-cloudsql-mysql"] })
         }
         "gcp.cloudsql_postgresql" = {
-          enabled = false
+          enabled = var.enable_cloudsql_metrics
           vars    = jsonencode({ period = "10m", tags = ["gcp-cloudsql-postgresql"] })
         }
         "gcp.cloudsql_sqlserver" = {
-          enabled = false
+          enabled = var.enable_cloudsql_metrics
           vars    = jsonencode({ period = "10m", tags = ["gcp-cloudsql-sqlserver"] })
         }
+      }
+    }
+  }
+
+  # Keep these optional templates explicitly disabled in the Security policy;
+  # selected customer metrics belong only in the Observability policy.
+  gcp_extra_metrics_security = {
+    for input_id, input in local.gcp_extra_metrics :
+    input_id => {
+      enabled = false
+      streams = {
+        for stream_id, stream in input.streams :
+        stream_id => merge(stream, { enabled = false })
       }
     }
   }
@@ -511,7 +524,7 @@ locals {
               }
             }
           }
-        }, local.gcp_extra_metrics_disabled)
+        }, local.gcp_extra_metrics_security)
       }
     ]
   )
@@ -533,7 +546,7 @@ locals {
       })
       var_group_selections = {}
       cloud_connector      = null
-      inputs = {
+      inputs = merge({
         "audit-gcp-pubsub" = {
           enabled = false
           streams = {
@@ -671,7 +684,7 @@ locals {
             }
           }
         }
-      }
+      }, local.gcp_extra_metrics)
     }
   ]
 }

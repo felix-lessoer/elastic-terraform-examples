@@ -56,6 +56,22 @@ The local PoC Builder keeps credentials and manifests on the operator machine,
 shows a readable saved Terraform plan, and separates read-only discovery from
 paid telemetry enablement and workload mutation.
 
+The guided order is customer-specific:
+
+1. validate credentials and project access;
+2. run bounded, read-only discovery;
+3. review the detected service catalog, permissions, and GCP/Elastic cost
+   impact;
+4. keep the core PoC profile and explicitly select optional metrics;
+5. save the manifest-bound selection before creating the Terraform plan.
+
+The catalog covers CSPM, Audit, Firewall, VPC Flow, DNS, Load Balancing,
+Compute Engine, Cloud Storage, GKE, Cloud Run, Cloud SQL, Pub/Sub, Firestore,
+Dataproc, Memorystore for Redis, and BigQuery billing export. Customers can
+select an optional service even when discovery did not find it, which supports
+incomplete discovery and services created later. Billing requires the named
+BigQuery export dataset.
+
 ```bash
 cd tools/cloud-poc-ui
 npm install

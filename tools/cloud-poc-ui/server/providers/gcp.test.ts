@@ -1,4 +1,5 @@
 import { promises as fs } from 'node:fs';
+import { createHash } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -46,15 +47,14 @@ class FixtureRunner implements CommandRunner {
         recursive: true,
         mode: 0o700,
       });
-      await fs.writeFile(
-        values.manifestPath,
-        `${JSON.stringify(manifest)}\n`,
-        { mode: 0o600 },
-      );
+      const encoded = `${JSON.stringify(manifest)}\n`;
+      await fs.writeFile(values.manifestPath, encoded, { mode: 0o600 });
       return {
         exitCode: 0,
         stdout: JSON.stringify({
-          manifest_sha256: 'a'.repeat(64),
+          manifest_sha256: createHash('sha256')
+            .update(encoded)
+            .digest('hex'),
           summary: manifest.summary,
         }),
         stderr: '',
@@ -104,6 +104,19 @@ afterEach(async () => {
 async function fixture(elasticLabelsRequired = true) {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'gcp-provider-'));
   directories.push(directory);
+  const artifactDirectory = path.join(directory, 'artifacts');
+  await fs.mkdir(artifactDirectory, { recursive: true });
+  const encodedManifest = `${JSON.stringify({
+    approved_projects: ['sample-project1'],
+    resources: [],
+  })}\n`;
+  await fs.writeFile(
+    path.join(artifactDirectory, 'gcp-manifest.json'),
+    encodedManifest,
+  );
+  const manifestHash = createHash('sha256')
+    .update(encodedManifest)
+    .digest('hex');
   const runner = new FixtureRunner();
   const updates: string[] = [];
   const context: ProviderContext = {
@@ -114,7 +127,7 @@ async function fixture(elasticLabelsRequired = true) {
   };
   const provider = new GcpProvider(
     directory,
-    path.join(directory, 'artifacts'),
+    artifactDirectory,
     runner,
     async () => ({
       elasticConfigured: true,
@@ -129,6 +142,20 @@ async function fixture(elasticLabelsRequired = true) {
         environment: 'poc',
       },
       requiredLabelKeys: ['division', 'org'],
+      selectedServiceIds: [
+        'cspm',
+        'audit',
+        'firewall',
+        'vpcflow',
+        'dns',
+        'loadbalancing',
+        'compute',
+        'storage',
+        'gke',
+      ],
+      billingDatasetId: '',
+      selectionProjectId: 'sample-project1',
+      selectionManifestHash: manifestHash,
     }),
     { GCP_POC_COCKPIT_URL: 'https://kibana.example/app/dashboards' },
   );
@@ -164,6 +191,13 @@ describe('GCP provider', () => {
       resourceCount: 1,
       partial: false,
       manifestVersion: '1.0',
+      integrations: expect.arrayContaining([
+        expect.objectContaining({
+          id: 'cloudrun',
+          discovered: true,
+          recommended: true,
+        }),
+      ]),
     });
     const manifestPath = path.join(directory, 'artifacts/gcp-manifest.json');
     expect((await fs.stat(manifestPath)).mode & 0o777).toBe(0o600);
@@ -197,10 +231,17 @@ describe('GCP provider', () => {
     expect(runner.calls[0].values).toEqual({
       plan: '.cloud-poc-gcp.tfplan',
       projectId: 'sample-project1',
+      manifestPath: path.join(
+        directory,
+        'artifacts/gcp-manifest.json',
+      ),
       companyLabels:
         '{"division":"field","org":"sa","environment":"poc"}',
       requiredLabelKeys: '["division","org"]',
       elasticLabelsRequired: 'true',
+      selectedServiceIds:
+        '["cspm","audit","firewall","vpcflow","dns","loadbalancing","compute","storage","gke"]',
+      billingDatasetId: '',
     });
     expect(result).toMatchObject({
       counts: { create: 1 },
@@ -214,6 +255,20 @@ describe('GCP provider', () => {
         elasticInternalRequired: true,
         keys: ['division', 'environment', 'org'],
         requiredKeys: ['division', 'org'],
+      },
+      integrations: {
+        selectedServiceIds: [
+          'audit',
+          'compute',
+          'cspm',
+          'dns',
+          'firewall',
+          'gke',
+          'loadbalancing',
+          'storage',
+          'vpcflow',
+        ],
+        manifestHash: expect.stringMatching(/^[a-f0-9]{64}$/),
       },
     });
     expect(JSON.stringify(result)).not.toContain('must-not-leak');
@@ -231,6 +286,9 @@ describe('GCP provider', () => {
         '{"owner":"elastic-poc-ui","environment":"poc","project":"sample-project1"}',
       requiredLabelKeys: '[]',
       elasticLabelsRequired: 'false',
+      selectedServiceIds:
+        '["cspm","audit","firewall","vpcflow","dns","loadbalancing","compute","storage","gke"]',
+      billingDatasetId: '',
     });
     expect(result).toMatchObject({
       labels: {
@@ -238,6 +296,23 @@ describe('GCP provider', () => {
         requiredKeys: [],
       },
     });
+  });
+
+  it('rejects planning after discovery evidence changes', async () => {
+    const { provider, context, directory } = await fixture();
+    await fs.writeFile(
+      path.join(directory, 'artifacts/gcp-manifest.json'),
+      '{"approved_projects":["sample-project1"],"resources":[{"asset_type":"run.googleapis.com/Service"}]}\n',
+    );
+    await expect(
+      provider.execute(
+        'terraform-plan',
+        { projectId: 'sample-project1' },
+        context,
+      ),
+    ).rejects.toThrow(
+      'Review and save the integration selection from the latest GCP discovery',
+    );
   });
 
   it('allow-lists workflow IDs and emits safe final links', async () => {
@@ -252,6 +327,16 @@ describe('GCP provider', () => {
         context,
       ),
     ).rejects.toThrow('Unknown GCP workflow');
+    await expect(
+      provider.execute(
+        'workflows',
+        {
+          projectId: 'sample-project1',
+          workflowIds: ['gcp-cockpit-cloudsql-recommendations'],
+        },
+        context,
+      ),
+    ).rejects.toThrow('integration that is not enabled');
     expect(
       await provider.execute(
         'final-links',

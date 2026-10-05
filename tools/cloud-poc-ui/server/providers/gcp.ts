@@ -157,6 +157,7 @@ export class GcpProvider implements CloudProvider {
       { projectId, manifestPath },
       context,
     );
+    await fs.chmod(manifestPath, 0o600);
     const output = JSON.parse(result.stdout) as {
       manifest_sha256: string;
       summary: {

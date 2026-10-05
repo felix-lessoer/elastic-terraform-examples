@@ -218,7 +218,7 @@ describe('GCP provider', () => {
   });
 
   it('returns readable plan actions without planned values', async () => {
-    const { provider, runner, context } = await fixture();
+    const { provider, runner, context, directory } = await fixture();
     const result = await provider.execute(
       'terraform-plan',
       { projectId: 'sample-project1' },

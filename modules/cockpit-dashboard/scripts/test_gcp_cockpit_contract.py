@@ -59,6 +59,48 @@ class GcpCockpitSavedObjectContractTests(unittest.TestCase):
         self.assertIn("SORT @timestamp DESC", query)
         self.assertIn("LIMIT 1", query)
 
+    def test_optional_metric_streams_do_not_break_the_default_cockpit(self):
+        # These integrations are opt-in because they can add GCP Monitoring and
+        # Elastic ingest cost. The default dashboard must represent their state
+        # through the always-created coverage index, not query missing streams.
+        for optional_source in (
+            "metrics-gcp.gke",
+            "metrics-gcp.cloudrun_metrics",
+            "metrics-gcp.pubsub",
+            "metrics-gcp.cloudsql",
+        ):
+            self.assertNotIn(optional_source, self.serialized_panels)
+        self.assertIn("FROM gcp-cockpit-coverage", self.serialized_panels)
+
+    def test_gcp_has_aws_parity_insight_panels(self):
+        expected_titles = {
+            "Discovered GCP assets",
+            "Services with fresh signals",
+            "Open recommendations",
+            "High-severity recommendations",
+            "Coverage by signal status",
+            "Recommendations by category",
+            "Recommendations by severity",
+            "Latest actionable GCP insights",
+        }
+        titles = {
+            panel.get("embeddableConfig", {})
+            .get("attributes", {})
+            .get("title")
+            for panel in self.panels
+        }
+        self.assertTrue(expected_titles.issubset(titles))
+        insight_panels = [
+            panel
+            for panel in self.panels
+            if "gcp-cockpit-" in json.dumps(panel)
+            and panel.get("type") == "vis"
+        ]
+        self.assertGreaterEqual(len(insight_panels), 12)
+        for panel in insight_panels:
+            state = panel["embeddableConfig"]["attributes"]["state"]
+            self.assertIn("textBased", state["datasourceStates"])
+
     def test_cps_alias_scrubbing_is_configuration_driven(self):
         alias = "customer-security-project-a1b2c3"
         panel = {

@@ -38,6 +38,16 @@ INVENTORY_IDS = (
     "c0ffee21-6ee2-4c91-94f8-f034e8d34521",
     "c0ffee22-6ee2-4c91-94f8-f034e8d34522",
 )
+PARITY_IDS = (
+    "c0ffee30-6ee2-4c91-94f8-f034e8d34530",
+    "c0ffee31-6ee2-4c91-94f8-f034e8d34531",
+    "c0ffee32-6ee2-4c91-94f8-f034e8d34532",
+    "c0ffee33-6ee2-4c91-94f8-f034e8d34533",
+    "c0ffee34-6ee2-4c91-94f8-f034e8d34534",
+    "c0ffee35-6ee2-4c91-94f8-f034e8d34535",
+    "c0ffee36-6ee2-4c91-94f8-f034e8d34536",
+    "c0ffee37-6ee2-4c91-94f8-f034e8d34537",
+)
 
 TOP_KPI_IDS = {
     "1dfcd0c5-db92-46ee-a0cc-6b38079265ab",
@@ -50,6 +60,12 @@ TOP_KPI_IDS = {
 KPI_INDEX = "gcp-cockpit-security-kpi"
 ASSETS_INDEX = "gcp-cockpit-assets"
 SUMMARY_INDEX = "gcp-cockpit-insight-summary"
+OPTIONAL_RAW_INDICES = (
+    "metrics-gcp.gke",
+    "metrics-gcp.cloudrun_metrics",
+    "metrics-gcp.pubsub",
+    "metrics-gcp.cloudsql",
+)
 
 
 def build_top_kpis() -> list[dict]:
@@ -174,8 +190,120 @@ def rebuild_inventory_panels(y: int) -> list[dict]:
     ]
 
 
+def build_parity_panels(y: int) -> list[dict]:
+    recommendations = "gcp-cockpit-recommendations"
+    coverage = "gcp-cockpit-coverage"
+    return [
+        esql_metric_panel(
+            panel_id=PARITY_IDS[0],
+            title="Discovered GCP assets",
+            metric_label="Assets",
+            esql=f"FROM {ASSETS_INDEX}\n| STATS `Assets` = COUNT(*)",
+            index=ASSETS_INDEX,
+            grid={"x": 0, "y": y, "w": 12, "h": 5},
+        ),
+        esql_metric_panel(
+            panel_id=PARITY_IDS[1],
+            title="Services with fresh signals",
+            metric_label="Healthy services",
+            esql=(
+                f"FROM {coverage}\n"
+                '| WHERE status == "healthy"\n'
+                "| STATS `Healthy services` = COUNT_DISTINCT(service)"
+            ),
+            index=coverage,
+            grid={"x": 12, "y": y, "w": 12, "h": 5},
+        ),
+        esql_metric_panel(
+            panel_id=PARITY_IDS[2],
+            title="Open recommendations",
+            metric_label="Recommendations",
+            esql=(
+                f"FROM {recommendations}\n"
+                "| STATS `Recommendations` = COUNT(*)"
+            ),
+            index=recommendations,
+            grid={"x": 24, "y": y, "w": 12, "h": 5},
+        ),
+        esql_metric_panel(
+            panel_id=PARITY_IDS[3],
+            title="High-severity recommendations",
+            metric_label="High severity",
+            esql=(
+                f"FROM {recommendations}\n"
+                '| WHERE severity IN ("high", "critical")\n'
+                "| STATS `High severity` = COUNT(*)"
+            ),
+            index=recommendations,
+            grid={"x": 36, "y": y, "w": 12, "h": 5},
+        ),
+        esql_xy_panel(
+            panel_id=PARITY_IDS[4],
+            title="Coverage by signal status",
+            x_field="Status",
+            y_field="Resources",
+            esql=(
+                f"FROM {coverage}\n"
+                "| STATS `Resources` = COUNT(*) BY `Status` = status\n"
+                "| SORT `Resources` DESC"
+            ),
+            index=coverage,
+            grid={"x": 0, "y": y + 5, "w": 16, "h": 12},
+        ),
+        esql_xy_panel(
+            panel_id=PARITY_IDS[5],
+            title="Recommendations by category",
+            x_field="Category",
+            y_field="Count",
+            esql=(
+                f"FROM {recommendations}\n"
+                "| STATS `Count` = COUNT(*) BY `Category` = category\n"
+                "| SORT `Count` DESC"
+            ),
+            index=recommendations,
+            grid={"x": 16, "y": y + 5, "w": 16, "h": 12},
+        ),
+        esql_xy_panel(
+            panel_id=PARITY_IDS[6],
+            title="Recommendations by severity",
+            x_field="Severity",
+            y_field="Count",
+            esql=(
+                f"FROM {recommendations}\n"
+                "| STATS `Count` = COUNT(*) BY `Severity` = severity\n"
+                "| SORT `Count` DESC"
+            ),
+            index=recommendations,
+            grid={"x": 32, "y": y + 5, "w": 16, "h": 12},
+        ),
+        esql_table_panel(
+            panel_id=PARITY_IDS[7],
+            title="Latest actionable GCP insights",
+            esql=(
+                f"FROM {recommendations}\n"
+                "| KEEP @timestamp, severity, category, resource.type, "
+                "resource.name, recommendation, metric_name, metric_value\n"
+                "| SORT @timestamp DESC\n"
+                "| LIMIT 50"
+            ),
+            index=f"{recommendations}-@timestamp",
+            columns=[
+                ("@timestamp", "date"),
+                ("severity", "string"),
+                ("category", "string"),
+                ("resource.type", "string"),
+                ("resource.name", "string"),
+                ("recommendation", "string"),
+                ("metric_name", "string"),
+                ("metric_value", "number"),
+            ],
+            grid={"x": 0, "y": y + 17, "w": 48, "h": 14},
+        ),
+    ]
+
+
 def inject(panels: list[dict], cps_prefixes: tuple[str, ...] = ()) -> list[dict]:
-    drop_ids = set(TOP_KPI_IDS) | set(INVENTORY_IDS) | {
+    drop_ids = set(TOP_KPI_IDS) | set(INVENTORY_IDS) | set(PARITY_IDS) | {
         SCOREBOARD_ID,
         MATRIX_ID,
         TIMELINE_ID,
@@ -194,6 +322,8 @@ def inject(panels: list[dict], cps_prefixes: tuple[str, ...] = ()) -> list[dict]
     kept = []
     for p in panels:
         if p.get("panelIndex") in drop_ids:
+            continue
+        if any(index in json.dumps(p) for index in OPTIONAL_RAW_INDICES):
             continue
         title = (p.get("embeddableConfig") or {}).get("title") or ""
         attrs_title = ((p.get("embeddableConfig") or {}).get("attributes") or {}).get("title") or ""
@@ -362,6 +492,7 @@ def inject(panels: list[dict], cps_prefixes: tuple[str, ...] = ()) -> list[dict]
         + body_panels
         + section_panels
         + rebuild_inventory_panels(inv_y)
+        + build_parity_panels(inv_y + 14)
     )
     seen: set[str] = set()
     deduped = []

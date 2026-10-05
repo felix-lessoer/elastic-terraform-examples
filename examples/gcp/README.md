@@ -93,7 +93,10 @@ GKE, Cloud Run, Cloud SQL, and Pub/Sub metrics are opt-in because they can
 increase GCP Monitoring and Elastic ingest cost. Their workflows are not
 deployed or executed until the corresponding metric flag is enabled. Check
 `workflow_telemetry_status` for explicit `enabled` or
-`skipped_missing_telemetry` status.
+`skipped_missing_telemetry` status. The cockpit reads their state from
+`gcp-cockpit-coverage`; it does not query an optional metrics index until that
+integration exists, so a disabled service appears as unavailable rather than
+as a broken visualization.
 
 ## What to open after apply
 
